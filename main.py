@@ -59,14 +59,14 @@ def check_actual_in_past_predictions(actual_df, predicted_df):
         past_predictions = predicted_df[predicted_df['ds'] < actual_date]  # Only consider past predictions
 
         # Initialize a dictionary to keep count of dates with corresponding number of matches
-        # Start from 3 as we're skipping 1 and 2 matches
-        match_counts = {i: [] for i in range(3, len(actual_numbers) + 1)}  # Assuming max matches can be total actual numbers
+        # Now including keys for 5 and 6 matches
+        match_counts = {i: [] for i in range(3, 7)}  # Adjust range up to 7 to include checks for 5 and 6 matches
 
         for _, pred_row in past_predictions.iterrows():
             predicted_numbers = set(str(pred_row['numbers_predicted']).split('-'))
             num_matches = len(actual_numbers & predicted_numbers)  # Count of matching numbers
 
-            # If there are three or more matches, append the date to the corresponding list in the dictionary
+            # Append the date to the corresponding list in the dictionary if there are three or more matches
             if num_matches >= 3:
                 match_counts[num_matches].append(pred_row['ds'].strftime('%Y-%m-%d'))  # Formatting date for readability
 
@@ -87,8 +87,8 @@ def check_actual_in_past_predictions(actual_df, predicted_df):
 
 # Function to define and fit the Prophet model
 def define_and_fit_model(df, holidays):
-    m = Prophet(changepoint_prior_scale=0.1, interval_width=0.95, holidays=holidays, n_changepoints=25)
-    m.add_seasonality(name='monthly', period=30.5, fourier_order=5)
+    m = Prophet(changepoint_prior_scale=1, interval_width=0.50, holidays=holidays, n_changepoints=25)
+    m.add_seasonality(name='monthly', period=30.5, fourier_order=8)
     m.add_country_holidays(country_name='CO')
     m.fit(df)
     return m
@@ -172,6 +172,18 @@ colombia_holidays = pd.DataFrame({
     ])
 })
 
+
+# Function to perform cross-validation and calculate performance metrics
+def evaluate_model_performance(model, initial, period, horizon):
+    # Perform cross-validation
+    df_cv = cross_validation(model, initial=initial, period=period, horizon=horizon)
+
+    # Calculate performance metrics
+    df_p = performance_metrics(df_cv)
+
+    return df_cv, df_p  # Return both the cross-validation results and performance metrics
+
+
 # Main code execution
 if __name__ == "__main__":
     file_path = 'exported_data/final-final.csv'  # Path to your historical data
@@ -191,9 +203,18 @@ if __name__ == "__main__":
 
             # Define and train the Prophet model for this specific series
             model = define_and_fit_model(temp_df, colombia_holidays)
-            forecast = make_predictions(model, 60, max(balls_expanded[i]))  # 60 days ahead
 
-            # Add the adjusted predictions for final compilation
+            # Evaluate model performance using cross-validation
+            initial = '730 days'  # Adjust based on your dataset size and time frame
+            period = '180 days'  # Adjust as needed
+            horizon = '60 days'  # Forecast horizon for evaluation
+            df_cv = cross_validation(model, initial=initial, period=period, horizon=horizon)
+            df_p = performance_metrics(df_cv)
+            print(df_p.head())  # Print the performance metrics for review
+            df_p.to_csv(f'performance_metrics_{i}.csv', index=False)  # Save performance metrics for each ball series
+
+            # Make future predictions and add them to the compilation for final analysis
+            forecast = make_predictions(model, 60, max(balls_expanded[i]))  # Adjust the periods as needed
             all_forecasts.append(
                 forecast[['ds', 'yhat_adjusted']].rename(columns={'yhat_adjusted': f'yhat_adjusted_{i}'}))
 
