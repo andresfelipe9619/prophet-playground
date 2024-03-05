@@ -6,3 +6,4 @@ cmdstanpy>=1.2.1
 prophet>=1.1.5
 requests~=2.31.0
 beautifulsoup4~=4.11.2
+statsmodels~=0.14.1
