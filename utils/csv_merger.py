@@ -5,7 +5,7 @@ import os
 folder_name = 'exported_data'
 
 # The path for the merged output CSV file
-output_file = 'exported_data/merged_file.csv'
+output_file = '../exported_data/merged_file.csv'
 # Get the current directory where the script is located
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -16,7 +16,8 @@ folder_path = os.path.join(current_dir, folder_name)
 data_frames = []
 
 # Get a list of all CSV filenames in the directory
-csv_filenames = [filename for filename in os.listdir(folder_path) if filename.endswith('.csv')]
+csv_filenames = [filename for filename in os.listdir(folder_path) if
+                 filename.endswith('.csv') and filename.startswith(folder_name)]
 
 # Sort the list of filenames alphabetically
 csv_filenames.sort()

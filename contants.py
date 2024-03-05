@@ -1,4 +1,5 @@
 import pandas as pd
+from datetime import timedelta
 
 COLOMBIA_HOLIDAYS = pd.DataFrame({
     'holiday': [
@@ -53,3 +54,19 @@ COLOMBIA_HOLIDAYS = pd.DataFrame({
         '2024-12-08', '2024-12-25'
     ])
 })
+
+# Supongamos que este es tu último día en tus datos
+last_date = pd.to_datetime('2023-03-04')  # Usa la fecha actual como ejemplo
+
+# Lista para guardar las nuevas fechas
+future_dates = []
+
+# Genera 60 fechas futuras como ejemplo (puedes ajustar este número)
+for i in range(1, 365 * 4 + 1):
+    # Incrementa en días hasta que encuentres un miércoles o un sábado
+    next_date = last_date + timedelta(days=i)
+    if next_date.weekday() == 2 or next_date.weekday() == 5:  # 2 es miércoles, 5 es sábado
+        future_dates.append(next_date)
+
+# Convertir la lista de fechas en un DataFrame
+FUTURE_DATES = pd.DataFrame({'ds': future_dates})
