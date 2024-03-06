@@ -1,13 +1,10 @@
 import pandas as pd
-from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-
-from utils.processor import load_actual_2024_data, load_and_preprocess, compare_numbers_by_date, \
-    check_actual_in_past_predictions, process_and_compare_forecasts
+from utils.processor import load_and_preprocess,  process_and_compare_forecasts
 
 
 # Function to define and fit the SARIMA model
-def define_and_fit_model(series, seasonal_order=(1, 0, 1, 2)):
+def define_and_fit_model(series, seasonal_order=(4, 1, 1, 7)):
     """
     Fits a SARIMA model to the series.
 
