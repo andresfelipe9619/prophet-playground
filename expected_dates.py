@@ -79,11 +79,11 @@ draws_data['Last'] = draws_data['Ball'].apply(extract_last)
 
 # Create the summary DataFrame for the first five balls and for the last ball
 summary_df_first_five = create_summary_dataframe(draws_data, 'FirstFive')
-csv_file_path_first_five = 'lottery_ball_summary_first_five.csv'
+csv_file_path_first_five = 'summary/lottery_ball_summary_first_five.csv'
 summary_df_first_five.to_csv(csv_file_path_first_five, index=False)
 
 summary_df_last = create_summary_dataframe(draws_data, 'Last')
-csv_file_path_last = 'lottery_ball_summary_last.csv'
+csv_file_path_last = 'summary/lottery_ball_summary_last.csv'
 summary_df_last.to_csv(csv_file_path_last, index=False)
 
 print(f"CSV file for the first five balls saved: {csv_file_path_first_five}")
