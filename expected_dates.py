@@ -2,6 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.dates as mdates
 
 
 # Function to extract the first five numbers from the draw
@@ -171,4 +172,80 @@ plt.xlabel('Number')
 plt.ylabel('Average Days Between Draws')
 
 plt.tight_layout()
+plt.show()
+
+# Visualización de datos mejorada
+plt.figure(figsize=(18, 6))
+
+# Histogramas de frecuencia mejorados con densidad
+plt.subplot(1, 2, 1)
+sns.histplot(summary_df_first_five, x="Number", weights="Repetitions", bins=44, kde=True, color='blue')
+plt.title('Density and Frequency of First Five Numbers')
+plt.xlabel('Number')
+plt.ylabel('Frequency')
+
+plt.subplot(1, 2, 2)
+sns.histplot(summary_df_last, x="Number", weights="Repetitions", bins=16, kde=True, color='red')
+plt.title('Density and Frequency of Last Number')
+plt.xlabel('Number')
+plt.ylabel('Frequency')
+
+plt.tight_layout()
+plt.show()
+
+# Mapa de calor para la variación en días entre sorteos (Ejemplo)
+# Deberías calcular esto con datos reales
+plt.figure(figsize=(12, 9))
+sns.heatmap(summary_df_first_five.pivot("Number", "Last Date", "Average Days"), cmap="YlGnBu", annot=True, fmt=".0f")
+plt.title('Heatmap of Average Days Between Draws for First Five Numbers')
+plt.xlabel('Last Date of Draw')
+plt.ylabel('Number')
+plt.show()
+
+# Asumiendo que 'draws_data' tiene una columna 'Date' con las fechas de los sorteos
+plt.figure(figsize=(15, 5))
+# Solo mostramos los 50 sorteos más recientes para evitar sobrecargar el gráfico
+last_draws = draws_data.sort_values('Date', ascending=False).head(50)
+plt.plot_date(last_draws['Date'], last_draws.index, linestyle='solid', fmt="o")  # Cambiado para evitar la advertencia
+plt.title('Timeline of the Last 50 Lottery Draws')
+plt.xlabel('Date')
+plt.ylabel('Draw Number')
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+plt.gcf().autofmt_xdate()  # Rotación de fechas para mejor lectura
+plt.grid(True)
+plt.show()
+
+# Agrupando los datos por mes y año para visualización
+draws_data['Year'] = draws_data['Date'].dt.year
+draws_data['Month'] = draws_data['Date'].dt.month_name()
+monthly_counts = draws_data.groupby(['Year', 'Month']).size().unstack(fill_value=0)
+
+# Visualización de los sorteos por mes en cada año
+plt.figure(figsize=(15, 8))
+monthly_counts.plot(kind='bar', stacked=True, colormap='viridis')
+plt.title('Monthly Lottery Draws Over the Years')
+plt.xlabel('Year')
+plt.ylabel('Number of Draws')
+plt.legend(title='Month', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Creación de nuevas columnas para día de la semana y mes
+draws_data['Weekday'] = draws_data['Date'].dt.day_name()
+draws_data['Month'] = draws_data['Date'].dt.month
+
+# Creando una tabla pivot para visualizar los conteos de sorteos
+pivot_table = draws_data.pivot_table(index='Weekday', columns='Month', aggfunc='size', fill_value=0)
+
+# Ordenar los días de la semana de lunes a domingo
+weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+pivot_table = pivot_table.reindex(weekday_order)
+
+# Heatmap de sorteos
+plt.figure(figsize=(12, 7))
+sns.heatmap(summary_df_first_five.pivot(index="Number", columns="Last Date", values="Average Days"), cmap="YlGnBu", annot=True, fmt=".0f")
+plt.title('Lottery Draws Heatmap by Weekday and Month')
+plt.xlabel('Month')
+plt.ylabel('Day of the Week')
 plt.show()

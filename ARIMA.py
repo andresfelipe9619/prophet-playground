@@ -60,7 +60,7 @@ if __name__ == "__main__":
             all_forecasts.append(forecast_df)
 
         # Process and compare forecasts with actual data
-        process_and_compare_forecasts(all_forecasts, actual_2024_file_path)
+        process_and_compare_forecasts(all_forecasts, actual_2024_file_path, "arima_results/")
 
     except Exception as e:
         print(f"An error occurred: {e}")

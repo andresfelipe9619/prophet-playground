@@ -97,7 +97,7 @@ if __name__ == "__main__":
             all_predictions.append(
                 forecast[['ds', 'yhat_adjusted']].rename(columns={'yhat_adjusted': f'yhat_adjusted_{i}'}))
 
-        process_and_compare_forecasts(all_predictions, actual_2024_file_path)
+        process_and_compare_forecasts(all_predictions, actual_2024_file_path, "prophet_results/")
 
     except Exception as e:
         print(f"An error occurred: {e}")

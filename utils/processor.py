@@ -80,13 +80,13 @@ def check_actual_in_past_predictions(actual_df, predicted_df):
     return results_df
 
 
-def process_and_compare_forecasts(all_forecasts, actual_2024_file_path):
+def process_and_compare_forecasts(all_forecasts, actual_2024_file_path, prefix=""):
     # Compile all adjusted predictions into a single DataFrame
     final_combined = pd.concat(all_forecasts, axis=1)
     final_combined = final_combined.loc[:, ~final_combined.columns.duplicated()]  # Remove duplicated 'ds' columns
     final_combined['combined'] = final_combined.filter(like='yhat_adjusted').apply(
         lambda row: '-'.join(row.dropna().astype(str)), axis=1)
-    final_combined[['ds', 'combined']].to_csv('final_combined_forecast.csv', index=False)
+    final_combined[['ds', 'combined']].to_csv(prefix + 'final_combined_forecast.csv', index=False)
 
     # Load and preprocess actual 2024 data
     actual_2024_df = load_actual_2024_data(actual_2024_file_path)
@@ -106,10 +106,10 @@ def process_and_compare_forecasts(all_forecasts, actual_2024_file_path):
     # Compare the actual 2024 numbers with the predicted numbers
     comparison_df = compare_numbers_by_date(actual_2024_df, final_combined)
     comparison_df[["ds", "numbers_actual", "numbers_predicted", "matches"]].to_csv(
-        'matched_numbers_by_date_2024.csv', index=False)
+        prefix + 'matched_numbers_by_date_2024.csv', index=False)
 
     # Check if the actual 2024 numbers appear in any past predictions
     cross_date_matches_df = check_actual_in_past_predictions(actual_2024_df, final_combined)
-    cross_date_matches_df.to_csv('actual_in_past_predictions_2024.csv', index=False)
+    cross_date_matches_df.to_csv(prefix + 'actual_in_past_predictions_2024.csv', index=False)
 
     return comparison_df, cross_date_matches_df  # Optionally return resulting DataFrames
