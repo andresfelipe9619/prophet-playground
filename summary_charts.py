@@ -42,7 +42,7 @@ def create_summary_dataframe(draws_data, column_name):
     return pd.DataFrame(summary_data)
 
 # Data processing
-draws_data = pd.read_csv('exported_data/final-2023.csv')
+draws_data = pd.read_csv('exported_data/final-final.csv')
 draws_data['Date'] = pd.to_datetime(draws_data['Date'], format=DATE_FORMAT)
 draws_data['FirstFive'] = draws_data['Ball'].apply(lambda x: extract_numbers(x, 'first'))
 draws_data['Last'] = draws_data['Ball'].apply(lambda x: extract_numbers(x, 'last'))
@@ -173,3 +173,21 @@ plot_heatmaps_side_by_side(summary_df_first_five, summary_df_last, 'Heatmap for 
 
 # Gráficos de Histograma
 plot_density_histograms_side_by_side(summary_df_first_five, summary_df_last, 'Density and Frequency of First Five Numbers', 'Density and Frequency of Last Number', 'Number', 'Repetitions', bins=44)
+
+# Gráficos de Caja para 'Average Days'
+plt.subplot(1, 2, 2)  # Este es el segundo
+sns.boxplot(data=summary_df_last, y='Average Days')
+plt.title('Box Plot of Average Days Between Draws for Last Ball', fontsize=16)
+plt.tight_layout()
+plt.show()
+
+# Gráficos de Densidad para 'Average Days'
+plt.figure(figsize=(14, 8))
+sns.kdeplot(data=summary_df_first_five, x='Average Days', shade=True, label='First Five Balls')
+sns.kdeplot(data=summary_df_last, x='Average Days', shade=True, label='Last Ball')
+plt.title('Density Plot of Average Days Between Draws', fontsize=18)
+plt.xlabel('Average Days Between Draws', fontsize=16)
+plt.ylabel('Density', fontsize=16)
+plt.legend()
+plt.tight_layout()
+plt.show()
