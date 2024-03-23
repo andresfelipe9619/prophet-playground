@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import csv
 import re
 
-year = 2012
+year = 2024
 # The URL of the webpage you want to scrape
 url = 'https://www.loterias.com/baloto/resultados/' + str(year)
 
