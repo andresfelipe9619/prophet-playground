@@ -4,102 +4,93 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.dates as mdates
 
+# Constants
+FIRST_FIVE_BALLS_RANGE = range(1, 44)
+LAST_BALL_RANGE = range(1, 17)
+DATE_FORMAT = '%d/%m/%Y'
 
-# Function to extract the first five numbers from the draw
-def extract_first_five(ball_str):
-    return list(map(int, ball_str.split('-')[:5]))
+# Utility functions for lottery draws
+def extract_numbers(ball_str, position='first'):
+    """Extract numbers from a lottery draw string."""
+    numbers = list(map(int, ball_str.split('-')))
+    return numbers[:5] if position == 'first' else [numbers[-1]]
 
-
-# Function to extract the last number from the draw
-def extract_last(ball_str):
-    return [int(ball_str.split('-')[-1])]
-
-
-# Function to count the repetitions of each number
-def count_repetitions(number, draws_data, column):
-    return sum(draws_data[column].apply(lambda x: number in x))
-
-
-# Function to calculate the average number of days between appearances of a number
-def calculate_average_days(number, draws_data, column):
-    dates = draws_data[draws_data[column].apply(lambda x: number in x)]['Date']
-    if len(dates) < 2:
-        return None  # Can't calculate if there are fewer than two dates
+def calculate_date_differences(dates):
+    """Calculate differences between consecutive dates."""
     sorted_dates = sorted(dates)
-    differences = [(sorted_dates[i] - sorted_dates[i - 1]).days for i in range(1, len(sorted_dates))]
-    return sum(differences) / len(differences) if differences else None
+    return [(sorted_dates[i] - sorted_dates[i - 1]).days for i in range(1, len(sorted_dates))]
 
-
-# Function to calculate the next expected date based on the last date and average days
-def calculate_expected_date(last_date, average_days):
-    if last_date is None or average_days is None:
-        return None
-    return last_date + timedelta(days=round(average_days))
-
-
-# Function to create a summary DataFrame for each number with additional statistics
 def create_summary_dataframe(draws_data, column_name):
+    """Create a summary DataFrame for lottery draw data."""
     summary_data = []
-    number_range = range(1, 44) if column_name == 'FirstFive' else range(1, 17)  # Adjust this range according to
-    # your numbers
+    number_range = FIRST_FIVE_BALLS_RANGE if column_name == 'FirstFive' else LAST_BALL_RANGE
     for number in number_range:
-        repetitions = count_repetitions(number, draws_data, column_name)
-        last_date = draws_data[draws_data[column_name].apply(lambda x: number in x)]['Date'].max()
-        dates = draws_data[draws_data[column_name].apply(lambda x: number in x)]['Date']
-        if len(dates) < 2:
-            average_days = None
-            min_days = None
-            max_days = None
-            std_dev_days = None
-        else:
-            sorted_dates = sorted(dates)
-            differences = [(sorted_dates[i] - sorted_dates[i - 1]).days for i in range(1, len(sorted_dates))]
-            average_days = sum(differences) / len(differences)
-            min_days = min(differences)
-            max_days = max(differences)
-            std_dev_days = pd.Series(differences).std()
-        expected_date = calculate_expected_date(last_date, average_days)
+        relevant_draws = draws_data[draws_data[column_name].apply(lambda x: number in x)]
+        repetitions = len(relevant_draws)
+        last_date = relevant_draws['Date'].max()
+        date_differences = calculate_date_differences(relevant_draws['Date'])
         summary_data.append({
             'Number': number,
             'Repetitions': repetitions,
             'Last Date': last_date,
-            'Average Days': average_days,
-            'Min Days': min_days,
-            'Max Days': max_days,
-            'Std Dev Days': std_dev_days,
-            'Expected Date': expected_date
+            'Average Days': None if not date_differences else sum(date_differences) / len(date_differences),
+            'Min Days': None if not date_differences else min(date_differences),
+            'Max Days': None if not date_differences else max(date_differences),
+            'Std Dev Days': None if not date_differences else pd.Series(date_differences).std(),
+            'Expected Date': None if last_date is None or not date_differences else last_date + timedelta(days=round(sum(date_differences) / len(date_differences)))
         })
     return pd.DataFrame(summary_data)
 
-
-# Assuming 'draws_data' is your DataFrame of lottery data
+# Data processing
 draws_data = pd.read_csv('exported_data/final-2023.csv')
-draws_data['Date'] = pd.to_datetime(draws_data['Date'], format='%d/%m/%Y')
-draws_data['FirstFive'] = draws_data['Ball'].apply(extract_first_five)
-draws_data['Last'] = draws_data['Ball'].apply(extract_last)
+draws_data['Date'] = pd.to_datetime(draws_data['Date'], format=DATE_FORMAT)
+draws_data['FirstFive'] = draws_data['Ball'].apply(lambda x: extract_numbers(x, 'first'))
+draws_data['Last'] = draws_data['Ball'].apply(lambda x: extract_numbers(x, 'last'))
 
-# Create the summary DataFrame for the first five balls and for the last ball
+# Generate summary data
 summary_df_first_five = create_summary_dataframe(draws_data, 'FirstFive')
-csv_file_path_first_five = 'summary/lottery_ball_summary_first_five.csv'
-summary_df_first_five.to_csv(csv_file_path_first_five, index=False)
-
 summary_df_last = create_summary_dataframe(draws_data, 'Last')
-csv_file_path_last = 'summary/lottery_ball_summary_last.csv'
-summary_df_last.to_csv(csv_file_path_last, index=False)
 
+# Save to CSV
+csv_file_path_first_five = 'summary/lottery_ball_summary_first_five.csv'
+csv_file_path_last = 'summary/lottery_ball_summary_last.csv'
+summary_df_first_five.to_csv(csv_file_path_first_five, index=False)
+summary_df_last.to_csv(csv_file_path_last, index=False)
 print(f"CSV file for the first five balls saved: {csv_file_path_first_five}")
 print(f"CSV file for the last ball saved: {csv_file_path_last}")
 
-# Análisis de Frecuencia (Bar Chart) para el último número
-plt.figure(figsize=(14, 8))
-plt.title('Frequency of First Five Balls', fontsize=18)
-sns.barplot(data=summary_df_first_five, x='Number', y='Repetitions', palette='Blues', hue='Number', legend=False)
-plt.xlabel('Number', fontsize=15)
-plt.ylabel('Repetitions', fontsize=15)
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.show()
+
+def plot_frequency_side_by_side(summary_df_first_five, summary_df_last, title1, title2, x_label, y_label, fig_size=(28, 8)):
+    """Plot frequency of first five and last lottery numbers side by side with solid colors."""
+    fig, axes = plt.subplots(1, 2, figsize=fig_size)  # 1 fila, 2 columnas
+    
+    # Asignar una columna constante para usar en 'hue'
+    summary_df_first_five['Color'] = 'FirstFive'
+    summary_df_last['Color'] = 'Last'
+
+    # Gráfico para los primeros cinco números
+    sns.barplot(ax=axes[0], data=summary_df_first_five, x='Number', y='Repetitions', hue='Color', dodge=False, palette=['royalblue'])
+    axes[0].set_title(title1, fontsize=18)
+    axes[0].set_xlabel(x_label, fontsize=15)
+    axes[0].set_ylabel(y_label, fontsize=15)
+    axes[0].tick_params(labelsize=12)
+    axes[0].grid(axis='y', linestyle='--', alpha=0.7)
+    axes[0].legend([],[], frameon=False)  # Ocultar leyenda
+
+    # Gráfico para el último número
+    sns.barplot(ax=axes[1], data=summary_df_last, x='Number', y='Repetitions', hue='Color', dodge=False, palette=['royalblue'])
+    axes[1].set_title(title2, fontsize=18)
+    axes[1].set_xlabel(x_label, fontsize=15)
+    axes[1].set_ylabel(y_label, fontsize=15)
+    axes[1].tick_params(labelsize=12)
+    axes[1].grid(axis='y', linestyle='--', alpha=0.7)
+    axes[1].legend([],[], frameon=False)  # Ocultar leyenda
+
+    plt.tight_layout()
+    plt.show()
+
+# Llamar a la función para crear los gráficos lado a lado
+plot_frequency_side_by_side(summary_df_first_five, summary_df_last, 'Frequency of First Five Balls', 'Frequency of Last Ball', 'Number', 'Repetitions')
 
 # Análisis de Intervalos (Histogram) para el último número
 plt.figure(figsize=(12, 6))
