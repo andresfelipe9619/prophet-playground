@@ -60,183 +60,116 @@ print(f"CSV file for the first five balls saved: {csv_file_path_first_five}")
 print(f"CSV file for the last ball saved: {csv_file_path_last}")
 
 
-def plot_frequency_side_by_side(summary_df_first_five, summary_df_last, title1, title2, x_label, y_label, fig_size=(28, 8)):
-    """Plot frequency of first five and last lottery numbers side by side with solid colors."""
+# Función general para graficar las distribuciones y frecuencias
+def plot_data_side_by_side(df1, df2, title1, title2, x_label, y_label, kind, fig_size=(28, 8), bins=None, palette=['royalblue']):
+    """Plot side by side plots for given data."""
     fig, axes = plt.subplots(1, 2, figsize=fig_size)  # 1 fila, 2 columnas
     
     # Asignar una columna constante para usar en 'hue'
-    summary_df_first_five['Color'] = 'FirstFive'
-    summary_df_last['Color'] = 'Last'
+    df1['Set'] = 'First Set'
+    df2['Set'] = 'Second Set'
 
-    # Gráfico para los primeros cinco números
-    sns.barplot(ax=axes[0], data=summary_df_first_five, x='Number', y='Repetitions', hue='Color', dodge=False, palette=['royalblue'])
+    # Configurar el gráfico dependiendo del tipo
+    if kind == 'bar':
+        sns.barplot(ax=axes[0], data=df1, x='Number', y='Repetitions', hue='Set', dodge=False, palette=palette)
+        sns.barplot(ax=axes[1], data=df2, x='Number', y='Repetitions', hue='Set', dodge=False, palette=palette)
+    elif kind == 'hist':
+        sns.histplot(ax=axes[0], data=df1, x=x_label, bins=bins, kde=True, color=palette[0])
+        sns.histplot(ax=axes[1], data=df2, x=x_label, bins=bins, kde=True, color=palette[0])
+    elif kind == 'box':
+        sns.boxplot(ax=axes[0], data=df1, x='Number', y=y_label, palette=palette)
+        sns.boxplot(ax=axes[1], data=df2, x='Number', y=y_label, palette=palette)
+    elif kind == 'violin':
+        sns.violinplot(ax=axes[0], data=df1, x='Number', y=y_label, palette=palette)
+        sns.violinplot(ax=axes[1], data=df2, x='Number', y=y_label, palette=palette)
+
+    # Configurar títulos y etiquetas para ambos gráficos
     axes[0].set_title(title1, fontsize=18)
     axes[0].set_xlabel(x_label, fontsize=15)
     axes[0].set_ylabel(y_label, fontsize=15)
     axes[0].tick_params(labelsize=12)
     axes[0].grid(axis='y', linestyle='--', alpha=0.7)
-    axes[0].legend([],[], frameon=False)  # Ocultar leyenda
+    axes[0].legend([],[], frameon=False)  # Ocultar leyenda para gráficos de barras
 
-    # Gráfico para el último número
-    sns.barplot(ax=axes[1], data=summary_df_last, x='Number', y='Repetitions', hue='Color', dodge=False, palette=['royalblue'])
     axes[1].set_title(title2, fontsize=18)
     axes[1].set_xlabel(x_label, fontsize=15)
     axes[1].set_ylabel(y_label, fontsize=15)
     axes[1].tick_params(labelsize=12)
     axes[1].grid(axis='y', linestyle='--', alpha=0.7)
-    axes[1].legend([],[], frameon=False)  # Ocultar leyenda
+    axes[1].legend([],[], frameon=False)  # Ocultar leyenda para gráficos de barras
 
     plt.tight_layout()
     plt.show()
 
-# Llamar a la función para crear los gráficos lado a lado
-plot_frequency_side_by_side(summary_df_first_five, summary_df_last, 'Frequency of First Five Balls', 'Frequency of Last Ball', 'Number', 'Repetitions')
+def format_heatmap_dates(ax, dates):
+    """Format the dates on the heatmap axis."""
+    # Intentar convertir las etiquetas de fecha de string a datetime, luego formatear a string de nuevo
+    date_format = "%d-%m-%Y"
+    try:
+        new_labels = [pd.to_datetime(date).strftime(date_format) for date in dates]
+        ax.set_xticklabels(new_labels, rotation=45)  # Rota las etiquetas para mejor legibilidad
+    except ValueError:
+        # Si la conversión falla, mantén las etiquetas originales pero aún rota para mejor legibilidad
+        ax.set_xticklabels(dates, rotation=45)
 
-# Análisis de Intervalos (Histogram) para el último número
-plt.figure(figsize=(12, 6))
-plt.title('Gap Analysis for the Last Ball')
-sns.histplot(data=summary_df_last, x='Average Days', bins=15, kde=True)  # Menos bins si hay menos datos
-plt.show()
+def plot_heatmaps_side_by_side(df1, df2, title1, title2, fig_size=(28, 10), cmap='YlGnBu'):
+    """Plot side by side heatmaps for given data."""
+    fig, axes = plt.subplots(1, 2, figsize=fig_size)  # 1 fila, 2 columnas
+    
+    # Preparar los datos para los heatmaps
+    data1 = df1.pivot('Number', 'Last Date', 'Average Days')
+    data2 = df2.pivot('Number', 'Last Date', 'Average Days')
+    
+    # Heatmap para el primer conjunto de datos
+    sns.heatmap(data=data1, ax=axes[0], cmap=cmap, annot=True, fmt=".0f")
+    axes[0].set_title(title1, fontsize=18)
+    format_heatmap_dates(axes[0], data1.columns)  # Formatear fechas
+    
+    # Heatmap para el segundo conjunto de datos
+    sns.heatmap(data=data2, ax=axes[1], cmap=cmap, annot=True, fmt=".0f")
+    axes[1].set_title(title2, fontsize=18)
+    format_heatmap_dates(axes[1], data2.columns)  # Formatear fechas
+    
+    plt.tight_layout()
+    plt.show()
+
+# Función para graficar Histogramas de frecuencia mejorados con densidad
+def plot_density_histograms_side_by_side(df1, df2, title1, title2, x_label, y_label, fig_size=(28, 8), bins=None, color1='blue', color2='red'):
+    """Plot side by side density and frequency histograms."""
+    fig, axes = plt.subplots(1, 2, figsize=fig_size)  # 1 fila, 2 columnas
+
+    # Histograma para el primer conjunto de datos
+    sns.histplot(ax=axes[0], data=df1, x=x_label, weights=y_label, bins=bins, kde=True, color=color1)
+    axes[0].set_title(title1, fontsize=18)
+    axes[0].set_xlabel('Number', fontsize=15)
+    axes[0].set_ylabel('Frequency', fontsize=15)
+    axes[0].tick_params(labelsize=12)
+    
+    # Histograma para el segundo conjunto de datos
+    sns.histplot(ax=axes[1], data=df2, x=x_label, weights=y_label, bins=bins, kde=True, color=color2)
+    axes[1].set_title(title2, fontsize=18)
+    axes[1].set_xlabel('Number', fontsize=15)
+    axes[1].set_ylabel('Frequency', fontsize=15)
+    axes[1].tick_params(labelsize=12)
+
+    plt.tight_layout()
+    plt.show()
+
+
+# Frecuencias
+plot_data_side_by_side(summary_df_first_five, summary_df_last, 'Frequency of First Five Balls', 'Frequency of Last Ball', 'Number', 'Repetitions', kind='bar')
+
+# Análisis de intervalos
+plot_data_side_by_side(summary_df_first_five, summary_df_last, 'Gap Analysis for First Five Balls', 'Gap Analysis for Last Ball', 'Average Days', 'Count', kind='hist', bins=15)
 
 # Boxplots para Análisis de Intervalos
-plt.figure(figsize=(14, 8))
-plt.title('Gap Analysis for the First Five Balls with Boxplots', fontsize=18)
-sns.boxplot(data=summary_df_first_five, x='Number', y='Average Days', palette='Spectral', hue='Number', legend=False)
-plt.xlabel('Number', fontsize=15)
-plt.ylabel('Average Days Between Draws', fontsize=15)
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.show()
+plot_data_side_by_side(summary_df_first_five, summary_df_last, 'Boxplot Analysis for First Five Balls', 'Boxplot Analysis for Last Ball', 'Number', 'Average Days', kind='box')
 
-# Gráficos de Distribución Combinados
-plt.figure(figsize=(14, 8))
-plt.title('Combined Distribution Analysis for First Five Balls', fontsize=18)
-sns.histplot(data=summary_df_first_five, x='Average Days', bins=30, kde=True, color='skyblue', edgecolor='black')
-plt.xlabel('Average Days Between Draws', fontsize=15)
-plt.ylabel('Count', fontsize=15)
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.show()
+# Gráficos de violín
+plot_data_side_by_side(summary_df_first_five, summary_df_last, 'Violin Plot for First Five Balls', 'Violin Plot for Last Ball', 'Number', 'Average Days', kind='violin')
 
-# Gráficos de barras para Min Days, Max Days y Average Days para los primeros cinco números
-plt.figure(figsize=(18, 12))
+# Gráficos de Heatmap
+plot_heatmaps_side_by_side(summary_df_first_five, summary_df_last, 'Heatmap for First Five Balls', 'Heatmap for Last Ball')
 
-# Min Days Between Draws for First Five
-plt.subplot(3, 1, 1)  # 3 filas, 1 columna, posición 1
-sns.barplot(data=summary_df_first_five, x='Number', y='Min Days', palette='Blues', hue='Number', legend=False)
-plt.title('Minimum Days Between Draws for First Five Balls', fontsize=16)
-plt.xlabel('Number', fontsize=14)
-plt.ylabel('Min Days', fontsize=14)
-
-# Max Days Between Draws for First Five
-plt.subplot(3, 1, 2)  # 3 filas, 1 columna, posición 2
-sns.barplot(data=summary_df_first_five, x='Number', y='Max Days', hue='Number', legend=False, palette='Reds')
-plt.title('Maximum Days Between Draws for First Five Balls', fontsize=16)
-plt.xlabel('Number', fontsize=14)
-plt.ylabel('Max Days', fontsize=14)
-
-# Std Dev Days Between Draws for First Five
-plt.subplot(3, 1, 3)  # 3 filas, 1 columna, posición 3
-sns.barplot(data=summary_df_first_five, x='Number', y='Std Dev Days', hue='Number', palette='Purples', legend=False)
-plt.title('Standard Deviation of Days Between Draws for First Five Balls', fontsize=16)
-plt.xlabel('Number', fontsize=14)
-plt.ylabel('Std Dev Days', fontsize=14)
-
-plt.tight_layout()
-plt.legend([], [], frameon=False)
-plt.show()
-
-# Gráficos combinados de días entre sorteos
-plt.figure(figsize=(18, 6))
-plt.subplot(1, 2, 1)  # subplot para los primeros cinco números
-sns.violinplot(data=summary_df_first_five, x='Number', y='Average Days', palette='viridis', hue='Number', legend=False)
-plt.title('Distribution of Average Days Between Draws for First Five Balls')
-plt.xlabel('Number')
-plt.ylabel('Average Days Between Draws')
-
-plt.subplot(1, 2, 2)  # subplot para el último número
-sns.violinplot(data=summary_df_last, x='Number', y='Average Days', palette='viridis', hue='Number', legend=False)
-plt.title('Distribution of Average Days Between Draws for Last Ball')
-plt.xlabel('Number')
-plt.ylabel('Average Days Between Draws')
-
-plt.tight_layout()
-plt.show()
-
-# Visualización de datos mejorada
-plt.figure(figsize=(18, 6))
-
-# Histogramas de frecuencia mejorados con densidad
-plt.subplot(1, 2, 1)
-sns.histplot(summary_df_first_five, x="Number", weights="Repetitions", bins=44, kde=True, color='blue')
-plt.title('Density and Frequency of First Five Numbers')
-plt.xlabel('Number')
-plt.ylabel('Frequency')
-
-plt.subplot(1, 2, 2)
-sns.histplot(summary_df_last, x="Number", weights="Repetitions", bins=16, kde=True, color='red')
-plt.title('Density and Frequency of Last Number')
-plt.xlabel('Number')
-plt.ylabel('Frequency')
-
-plt.tight_layout()
-plt.show()
-
-# Mapa de calor para la variación en días entre sorteos (Ejemplo)
-# Deberías calcular esto con datos reales
-plt.figure(figsize=(12, 9))
-sns.heatmap(summary_df_first_five.pivot("Number", "Last Date", "Average Days"), cmap="YlGnBu", annot=True, fmt=".0f")
-plt.title('Heatmap of Average Days Between Draws for First Five Numbers')
-plt.xlabel('Last Date of Draw')
-plt.ylabel('Number')
-plt.show()
-
-# Asumiendo que 'draws_data' tiene una columna 'Date' con las fechas de los sorteos
-plt.figure(figsize=(15, 5))
-# Solo mostramos los 50 sorteos más recientes para evitar sobrecargar el gráfico
-last_draws = draws_data.sort_values('Date', ascending=False).head(50)
-plt.plot_date(last_draws['Date'], last_draws.index, linestyle='solid', fmt="o")  # Cambiado para evitar la advertencia
-plt.title('Timeline of the Last 50 Lottery Draws')
-plt.xlabel('Date')
-plt.ylabel('Draw Number')
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-plt.gcf().autofmt_xdate()  # Rotación de fechas para mejor lectura
-plt.grid(True)
-plt.show()
-
-# Agrupando los datos por mes y año para visualización
-draws_data['Year'] = draws_data['Date'].dt.year
-draws_data['Month'] = draws_data['Date'].dt.month_name()
-monthly_counts = draws_data.groupby(['Year', 'Month']).size().unstack(fill_value=0)
-
-# Visualización de los sorteos por mes en cada año
-plt.figure(figsize=(15, 8))
-monthly_counts.plot(kind='bar', stacked=True, colormap='viridis')
-plt.title('Monthly Lottery Draws Over the Years')
-plt.xlabel('Year')
-plt.ylabel('Number of Draws')
-plt.legend(title='Month', bbox_to_anchor=(1.05, 1), loc='upper left')
-plt.tight_layout()
-plt.show()
-
-# Creación de nuevas columnas para día de la semana y mes
-draws_data['Weekday'] = draws_data['Date'].dt.day_name()
-draws_data['Month'] = draws_data['Date'].dt.month
-
-# Creando una tabla pivot para visualizar los conteos de sorteos
-pivot_table = draws_data.pivot_table(index='Weekday', columns='Month', aggfunc='size', fill_value=0)
-
-# Ordenar los días de la semana de lunes a domingo
-weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-pivot_table = pivot_table.reindex(weekday_order)
-
-# Heatmap de sorteos
-plt.figure(figsize=(12, 7))
-sns.heatmap(summary_df_first_five.pivot(index="Number", columns="Last Date", values="Average Days"), cmap="YlGnBu", annot=True, fmt=".0f")
-plt.title('Lottery Draws Heatmap by Weekday and Month')
-plt.xlabel('Month')
-plt.ylabel('Day of the Week')
-plt.show()
+# Gráficos de Histograma
+plot_density_histograms_side_by_side(summary_df_first_five, summary_df_last, 'Density and Frequency of First Five Numbers', 'Density and Frequency of Last Number', 'Number', 'Repetitions', bins=44)
