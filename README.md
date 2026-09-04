@@ -8,33 +8,38 @@ and Saturday.
 
 ---
 
-## What this is, and what it is not
+## What this is
 
-A fair lottery draw is **independent and identically distributed**. There is no
-trend to extrapolate, no season to fit, and no number that is "due". It follows
-that **no model in this repository can beat chance**, and none of them do.
-
-So the project is built around that fact rather than against it:
+A measurement instrument for number-picking strategies. It **generates tickets,
+checks them against real draws, and measures whether any way of choosing them
+does better than picking at random.**
 
 | It does | It does not |
 | --- | --- |
-| Compute **exact** prize probabilities and the expected value of a ticket | Predict winning numbers |
-| Test whether your draw data is statistically consistent with a fair lottery | Claim to have found a pattern |
-| Run forecasting models **and report the chance level beside every result** | Report accuracy without its baseline |
-| Show hot/cold and "overdue" views, labelled as the gambler's fallacy they are | Endorse those heuristics |
+| **Generate tickets** — random, hot, cold, model-driven, or a spread portfolio | Claim any ticket is more likely to win than another |
+| **Check tickets** against every historical draw, by prize category | Report accuracy without its chance baseline |
+| **Measure strategies** against the exact hypergeometric baseline | Claim to have found a pattern that isn't there |
+| Compute **exact** prize probabilities and the expected value of a ticket | Endorse hot/cold heuristics (it labels them and measures them) |
 
-The one question here with an exact answer is **what a ticket is worth**. Which
-numbers come up is unknowable; the expected return of a 5,700 COP ticket is
-arithmetic, and the dashboard computes it to the peso.
+Generating numbers is perfectly legitimate, and so is checking them. What no
+strategy can do is make one ticket *more likely* to win than another, because all
+15,401,568 combinations are equally probable. **That claim is not asked for on
+faith — it is the thing the project measures**, on your own data, with a
+significance test.
 
-The forecasting half is a genuine engineering exercise — walk-forward backtesting,
-leakage avoidance, multi-series fitting — in a domain where the correct answer is
-known in advance. A pipeline that correctly reports "no signal" on data that
-provably has none is one you can trust elsewhere.
+That is the science here: a null result you can reproduce is a real result. A
+pipeline that correctly reports "no signal" on data that provably has none is one
+you can trust when the answer is not known in advance — which is why the
+forecasting half (walk-forward backtesting, leakage avoidance, multi-series
+fitting) is built to the standard it is.
 
-> **The governing rule:** every model output is paired with the chance baseline it
-> must beat. If a change makes a model look better on history without beating that
+> **The governing rule:** every result is paired with the chance baseline it must
+> beat. If a change makes a strategy look better on history without beating that
 > baseline, it made the project worse.
+
+The one question with an exact, non-statistical answer is **what a ticket is
+worth**: the expected return of a 5,700 COP ticket is arithmetic, and the
+dashboard computes it to the peso.
 
 ## Quickstart
 
@@ -53,15 +58,29 @@ python -m utils.scraper --years 2024 --dry-run    # inspect what it parses
 python -m utils.scraper --years 2020-2025          # write exported_data/final-final.csv
 ```
 
-Then, the question that matters:
+Then, the question that matters — generate tickets and measure whether the way
+you chose them beat chance:
 
 ```bash
-python backtest.py --n-windows 20 --min-train 100  # does any model beat chance?
+python backtest.py --n-windows 20 --min-train 100   # do the models beat chance?
+```
+
+```python
+from utils.sample_data import load_sample_and_preprocess
+from analysis.tickets import generate_portfolio, check_against_history, compare_strategies
+
+df, balls = load_sample_and_preprocess(n_draws=800)   # or load_and_preprocess(your_csv)
+
+tickets = generate_portfolio(5)                        # five spread tickets
+print(tickets[0])                                      # 8 - 19 - 23 - 34 - 41  +  12
+
+print(check_against_history(tickets[0], df, balls))    # how it would have done, draw by draw
+print(compare_strategies(df, balls))                   # random vs hot vs cold, vs chance
 ```
 
 ## The dashboard
 
-Seven tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**.
+Eight tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**.
 
 | Tab | Purpose |
 | --- | --- |
@@ -71,6 +90,7 @@ Seven tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**
 | **Hot / Cold** | Recent vs all-time share |
 | **Aleatoriedad** | chi-square, runs test, Ljung–Box, ACF — is there any signal? |
 | **Forecast** | Next-draw suggestion from any model |
+| **Jugadas** | Generate tickets, check one against your whole history, and measure strategies against chance |
 | **Backtest vs. Azar** | Walk-forward accuracy against the hypergeometric baseline |
 
 ## Command reference
@@ -100,6 +120,7 @@ models/
 analysis/
   randomness.py            Frequency, gaps, hot/cold, chi-square, runs, ACF
   prizes.py                Exact prize probabilities, EV, RTP, breakeven jackpot
+  tickets.py               Generate tickets, check them, measure strategies vs chance
 utils/
   processor.py             ★ The data contract
   scraper.py               loterias.com → project CSV
@@ -128,7 +149,8 @@ adding models or tests are documented in
 
 ## Disclaimer
 
-This is an analysis tool, not a betting system. The expected value of a Baloto
-ticket is materially negative, and this project will tell you exactly how negative.
-Nothing here improves the odds of any ticket over any other — all 15,401,568
-combinations are equally likely.
+This is a research and analysis tool, not a betting system. The expected value of a
+Baloto ticket is materially negative, and this project will tell you exactly how
+negative. Nothing here improves the odds of any ticket over any other — all
+15,401,568 combinations are equally likely, and the **Jugadas** tab exists to
+demonstrate that rather than assert it.

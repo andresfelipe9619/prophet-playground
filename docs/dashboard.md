@@ -2,7 +2,7 @@
 
 `streamlit run dashboard/app.py` — the primary surface of the project.
 
-The UI text is in **Spanish** (it is the end-user-facing product); this guide and
+Eight tabs. The UI text is in **Spanish** (it is the end-user-facing product); this guide and
 all other documentation are in English.
 
 ## 1. Layout
@@ -14,14 +14,15 @@ flowchart TD
     BANNER -->|"yes"| INFO["Blue banner:<br/>synthetic demo data"]
     LOAD --> T
 
-    subgraph T["Seven tabs"]
+    subgraph T["Eight tabs"]
         T0["0 · Resumen"]
         T1["1 · Probabilidades y Valor Esperado"]
         T2["2 · Frecuencia y Gaps"]
         T3["3 · Hot / Cold"]
         T4["4 · Aleatoriedad"]
         T5["5 · Forecast"]
-        T6["6 · Backtest vs. Azar"]
+        T6["6 · Jugadas"]
+        T7["7 · Backtest vs. Azar"]
     end
 ```
 
@@ -115,7 +116,47 @@ back, two positions predicted the same value. That is characteristic of a model 
 no real signal — with nothing to differentiate the slots, each converges to the same
 central estimate.
 
-### 6 · Backtest vs. Azar — the verdict
+### 6 · Jugadas — generate, check, measure
+
+Three sub-tabs, and the only place the project turns its own central claim into an
+experiment you run rather than a statement you read. Full module reference in
+[Tickets](tickets.md).
+
+**Generar.** Pick how many plays, a strategy (`random`, `hot`, `cold`) and whether
+the tickets should avoid repeating numbers between them. Shows the portfolio's
+distinct-number coverage and jackpot odds.
+
+> Read the coverage figures correctly: buying N tickets divides the jackpot odds by
+> N and costs N times as much. That is arithmetic, not a strategy. Spreading over
+> more of the pool changes how outcomes are distributed across the set, not the
+> expected value of anything.
+
+**Verificar.** Type a play and see how it would have done in every draw in your
+history: the last draw's category, the full distribution by prize category, and its
+best-ever result. Invalid plays (repeated numbers, out of range) are rejected with
+the reason.
+
+The distribution will closely track the exact probabilities in tab 1. Any other
+play would give a statistically equivalent one — which is the finding.
+
+**Medir estrategias.** The experiment: for each historical draw, generate plays
+using **only** the draws before it, then compare hits against the exact
+hypergeometric expectation.
+
+Two guards are built into how the verdict is reported, and both matter:
+
+- The verdict column uses a **Bonferroni-corrected** threshold, because testing
+  three strategies at once means three chances at a false positive (~14% at a naive
+  α = 0.05).
+- **¿El resultado se sostiene?** repeats the whole experiment across many seeds and
+  reports how often each strategy flagged. `random` cannot have an edge, so its
+  flag rate is your measured false-positive floor — typically near 5%. A strategy
+  that does not flag clearly more often than `random` has shown nothing.
+
+If you only read one thing on this tab, read the stability table. A single positive
+run is the most common way people convince themselves a lottery system works.
+
+### 7 · Backtest vs. Azar — the verdict
 
 Walk-forward evaluation with adjustable windows and minimum training size, plus an
 optional (slow) Prophet run.

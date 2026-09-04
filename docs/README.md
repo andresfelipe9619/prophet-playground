@@ -11,9 +11,10 @@ several design decisions look wrong until you have read it.
 | 2 | **[Architecture](architecture.md)** | Layers, data flow, the central data structures, position semantics, the two time axes, cross-cutting invariants. |
 | 3 | **[Data Pipeline](data-pipeline.md)** | The data contract, the scraper and its state machine, source resolution, synthetic data. |
 | 4 | **[Models](models.md)** | Every predictor: Prophet, the statsforecast trio, XGBoost, the frequency baseline. |
-| 5 | **[Evaluation](evaluation.md)** | Walk-forward backtesting, the hypergeometric chance baseline, randomness tests, expected value, how to read results. |
-| 6 | **[Dashboard](dashboard.md)** | Guide to each of the seven tabs and how to read them. |
-| 7 | **[Development](development.md)** | Setup, the verification workflow, conventions, how to extend, gotchas. |
+| 5 | **[Tickets](tickets.md)** | Generating plays, checking them against real draws, and measuring whether a strategy beats picking at random. |
+| 6 | **[Evaluation](evaluation.md)** | Walk-forward backtesting, the hypergeometric chance baseline, randomness tests, expected value, how to read results. |
+| 7 | **[Dashboard](dashboard.md)** | Guide to each of the eight tabs and how to read them. |
+| 8 | **[Development](development.md)** | Setup, the verification workflow, conventions, how to extend, gotchas. |
 
 ## Quick answers
 
@@ -25,6 +26,8 @@ several design decisions look wrong until you have read it.
 | How do I read a backtest table? | [Evaluation §7](evaluation.md#7-how-to-read-a-backtest-result) |
 | Why isn't there a `freq=` anywhere? | [Architecture §5](architecture.md#5-two-time-axes) |
 | How do I add a model? | [Models §7](models.md#7-adding-a-model) |
+| How do I generate and check tickets? | [Tickets](tickets.md) |
+| My strategy beat chance once — is it real? | [Tickets §5](tickets.md#5-measuring-the-accuracy-system) |
 | How is anything verified without tests? | [Development §3](development.md#3-verification) |
 | What broke before, so I don't repeat it? | [Evaluation §8](evaluation.md#8-known-failure-modes-we-have-already-hit) |
 

@@ -17,6 +17,7 @@ flowchart TD
     subgraph L3["Analysis and evaluation"]
         RAND["analysis/randomness.py<br/><i>is there signal?</i>"]
         PRIZE["analysis/prizes.py<br/><i>what is a ticket worth?</i>"]
+        TICK["analysis/tickets.py<br/><i>generate · check · measure</i>"]
         BT["backtest.py<br/><i>does a model beat chance?</i>"]
     end
     subgraph L2["Models"]
@@ -31,11 +32,12 @@ flowchart TD
         SAMPLE["utils/sample_data.py"]
     end
 
-    DASH --> RAND & PRIZE & BT & SF & XGB & BASE
+    DASH --> RAND & PRIZE & TICK & BT & SF & XGB & BASE
     CLI --> BT & SF & XGB
     BT --> SF & XGB & BASE
     RAND --> COMMON
     PRIZE --> COMMON
+    TICK --> COMMON & BASE & PRIZE
     BASE --> COMMON
     SF --> COMMON
     XGB --> COMMON
@@ -231,7 +233,8 @@ makes it true by construction regardless.
 │
 ├── analysis/
 │   ├── randomness.py             Frequency, gaps, hot/cold, chi2, runs, ACF
-│   └── prizes.py                 Exact prize probabilities, EV, RTP, breakeven
+│   ├── prizes.py                 Exact prize probabilities, EV, RTP, breakeven
+│   └── tickets.py                Generate, check and measure ticket strategies
 │
 ├── utils/
 │   ├── processor.py              ★ Data contract + forecast comparison
