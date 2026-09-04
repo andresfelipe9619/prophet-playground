@@ -183,6 +183,11 @@ already happened. Its **Modo** radio maps to the two experiments in
 (`expanding`, how you would really play) and *Entrenar una vez en el corte*
 (`frozen`, the literal "fit in July, predict August blind").
 
+`expanding` refits every model once per held-out draw, so its cost grows with the
+horizon while `frozen` stays flat — a two-month cutoff in expanding mode is minutes,
+the same cutoff frozen is seconds. The panel warns before the click rather than
+after: an unannounced five-minute spinner reads as a hung app.
+
 Both paths write into the same `st.session_state["backtest_summary"]`, so the
 grouped bar chart and summary table below are shared. Switching back to the window
 mode clears the per-draw table rather than leaving a stale one under a new run.
@@ -198,7 +203,31 @@ In the per-draw table, a row with 3 hits is not a finding: three or more of five
 from 43 comes up about 1% of the time by luck, so one such row across several
 models and a dozen draws is expected. The caption under the chart says so.
 
-## 3. Performance notes
+## 3. Explain-on-hover
+
+Every section header, chart, metric and control carries a small ⓘ that explains
+what you are looking at on hover. The copy lives in one place — the `HELP` dict at
+the top of `dashboard/app.py` — rather than inline at each call site, and two
+helpers consume it:
+
+```python
+section("Sorteo por sorteo", "holdout_detail")   # st.subheader + its ⓘ
+chart(fig, "Aciertos por sorteo", "holdout_chart")  # titled line + ⓘ + the figure
+```
+
+`chart()` moves the title **out of the Plotly figure** and into Streamlit. Plotly's
+own title has nowhere to hang a help icon, so every chart in the dashboard gets the
+same typography and the same affordance this way. Note that clearing the figure
+title needs `title={"text": ""}` — passing `title=None` leaves Plotly rendering the
+literal string `undefined` above the plot.
+
+Keeping the texts together is what makes them reviewable as a set. The house rule
+is that no chart or table appears without saying what it does *not* mean, and that
+is only checkable when the copy sits in one block. When adding a surface, add its
+key to `HELP` and route it through `section()` or `chart()`; a plain
+`st.plotly_chart` call is the signal that one was missed.
+
+## 4. Performance notes
 
 Streamlit re-executes every tab on every interaction. The design keeps that cheap:
 
@@ -213,14 +242,15 @@ Streamlit re-executes every tab on every interaction. The design keeps that chea
 Consequence: moving a slider in tab 6 does not re-fit anything. Only pressing
 **Ejecutar backtest** does.
 
-## 4. Extending the UI
+## 5. Extending the UI
 
 - Tabs are positional (`tabs[0]` … `tabs[6]`). **Inserting a tab shifts every index
   after it** — update them all.
 - `label_to_pos` is built once near the top and used by several tabs. Streamlit runs
   top to bottom and `with` does not create scope, so ordering matters.
 - Follow the house rule: any surface showing a model output or a heuristic also
-  shows the chance level or a note on what it does not mean.
+  shows the chance level or a note on what it does not mean — in the visible caption
+  for what a reader must not miss, and in the `HELP` tooltip for the rest.
 
 ---
 
