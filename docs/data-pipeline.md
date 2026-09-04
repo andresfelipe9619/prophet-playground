@@ -72,9 +72,29 @@ frames on every rerun.
 
 `utils/scraper.py` builds the CSV from `loterias.com`.
 
+### First run, step by step
+
 ```bash
-python -m utils.scraper --years 2024 --dry-run     # parse and print, write nothing
-python -m utils.scraper --years 2020-2025           # merge into the project CSV
+# 1. Inspect one year without writing anything. Compare the printed rows
+#    against the website before trusting the parser.
+python -m utils.scraper --years 2024 --dry-run
+
+# 2. If those rows look right, scrape the range you want.
+python -m utils.scraper --years 2020-2025
+
+# 3. Confirm the pipeline accepts the result.
+python -c "from utils.processor import load_and_preprocess; \
+df, balls = load_and_preprocess('exported_data/final-final.csv'); \
+print(len(df), 'draws,', balls.shape[1], 'columns'); print(df.head())"
+
+# 4. Keeping it current — re-run any time. Merging is idempotent, so
+#    overlapping ranges are safe.
+python -m utils.scraper --years 2026
+```
+
+Other invocations:
+
+```bash
 python -m utils.scraper --years 2021,2024 --out other.csv --delay 3
 ```
 
@@ -164,6 +184,42 @@ feeds `preprocess_draws` with the superbalota in the last column.
 > loterias.com still emits that markup. **Always run `--dry-run` first** and compare
 > the first rows against the website. If ball counts come back as 5 instead of 6,
 > the superbalota likely sits in a separate element and the selector needs work.
+
+### 3.6 Troubleshooting
+
+Every failure exits with status 1 and a message naming what to check. The scraper
+never writes a partial or empty file.
+
+| Message | What happened | What to do |
+| --- | --- | --- |
+| `Could not fetch … after 3 attempts` | Network, DNS, proxy, or the site returned 5xx three times. Retries already ran with exponential backoff. | Check connectivity, then retry. Behind a corporate proxy or a sandbox with an egress policy, the host may simply be blocked — the underlying error is included in the message. |
+| `Parsed 0 draws for <year>` | The page loaded but no row matched the selectors. | Most likely the markup changed. Save the HTML and run `parse_results_page()` against it to iterate. Also possible: that year genuinely has no published results. |
+| `Draw on <date> has N balls (…), expected 6` | A row parsed, but not into 5 main + superbalota. | If N is 5, the superbalota probably moved into its own element — the `ul.balls` selector in `parse_results_page` needs updating. The message prints the numbers found, which usually makes it obvious. |
+| `Unknown month '<x>' in date '<text>'` | A month name outside the twelve Spanish months. | Check `MONTHS` in the module. Matching is on the first three letters, so this means genuinely different wording (or a different language on the page). |
+| `Could not read a date from '<text>'` | The date cell did not match `DD <month> YYYY`. | The date format on the page changed; adjust `DATE_PATTERN`. |
+| Runs fine, but numbers look wrong | The selectors matched something else that is shaped like a draw. | This is exactly what `--dry-run` is for. Nothing automatic can catch it. |
+
+When the markup has changed, the fastest loop is offline:
+
+```python
+from utils.scraper import parse_results_page
+html = open("saved_page.html").read()      # save the page from your browser
+rows = parse_results_page(html)            # iterate here — no network, no rate limit
+```
+
+### 3.7 Module API
+
+Importable, so the pieces can be reused or tested independently:
+
+| Function | Signature | Notes |
+| --- | --- | --- |
+| `parse_results_page` | `(html, year=None) -> list[dict]` | **No I/O.** The testable seam. Returns `{Date, Ball, Revancha}` rows. |
+| `fetch_year` | `(year, session=None, timeout=30, retries=3, backoff=2.0) -> str` | Sends a browser `User-Agent`; retries 5xx and network errors with exponential backoff. |
+| `scrape_years` | `(years, delay=1.5, session=None) -> DataFrame` | Reuses one session; sleeps between years. |
+| `merge_into` | `(new_draws, path) -> DataFrame` | Dedup by date, existing rows win, chronological sort, creates the directory. |
+| `parse_spanish_date` | `(text) -> str` | `'12 oct 2024'` → `'12/10/2024'`. |
+| `parse_years` | `(spec) -> list[int]` | `'2020-2023'`, `'2021,2024'`, `'2024'`. |
+| `ScrapeError` | — | Raised for every failure above. |
 
 ## 4. Synthetic data
 
