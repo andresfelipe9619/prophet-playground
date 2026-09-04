@@ -8,7 +8,7 @@ final "combined" prediction via --model (default AutoARIMA).
 
 import sys
 
-from models.common import build_position_series, next_draw_dates
+from models.common import build_position_series, infer_draw_weekdays, next_draw_dates
 from models.statsforecast_model import adjusted_predictions, fit_predict_all
 from utils.processor import load_and_preprocess, process_and_compare_forecasts
 
@@ -27,7 +27,7 @@ if __name__ == "__main__":
         clipped = adjusted_predictions(raw_forecast, n_columns, model_name=model_name)
 
         last_date = df["ds"].max()
-        future_dates = next_draw_dates(last_date, h)
+        future_dates = next_draw_dates(last_date, h, weekdays=infer_draw_weekdays(df["ds"]))
 
         all_predictions = []
         for position in range(n_columns):

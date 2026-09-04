@@ -14,8 +14,14 @@ import pandas as pd
 from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 
-from contants import COLOMBIA_HOLIDAYS
-from models.common import build_position_series, clip_to_range, series_label
+from contants import COLOMBIA_HOLIDAYS  # noqa: F401 — opt-in regressor, see forecast_position(holidays=...)
+from models.common import (
+    build_position_series,
+    clip_to_range,
+    infer_draw_weekdays,
+    next_draw_dates,
+    series_label,
+)
 from utils.processor import load_and_preprocess, process_and_compare_forecasts
 
 
@@ -32,8 +38,20 @@ def define_and_fit_model(series, holidays=None, weekly_seasonality=False, yearly
     return m
 
 
-def make_predictions(model, position, n_columns, periods):
-    future = model.make_future_dataframe(periods=periods, freq="3D")
+def make_predictions(model, position, n_columns, periods, history=None):
+    """Forecast the next `periods` draws.
+
+    Future rows land on the real draw calendar (Mon/Wed/Sat, inferred from
+    the history when available) instead of an evenly spaced frequency —
+    draw days are 2 and 3 days apart, so no single `freq` fits them.
+    """
+    history = model.history if history is None else history
+    weekdays = infer_draw_weekdays(history["ds"])
+    future_dates = next_draw_dates(history["ds"].max(), periods, weekdays=weekdays)
+    future = pd.concat([
+        history[["ds"]],
+        pd.DataFrame({"ds": pd.to_datetime(future_dates)}),
+    ], ignore_index=True)
     forecast = model.predict(future)
     forecast["yhat_adjusted"] = forecast["yhat"].apply(lambda x: clip_to_range(x, position, n_columns))
     return forecast
@@ -78,9 +96,10 @@ if __name__ == "__main__":
 
         all_predictions = []
         for position, temp_df in position_series.items():
+            # holidays=COLOMBIA_HOLIDAYS is available but off by default: a public
+            # holiday has no causal effect on which ball comes out of the machine.
             result = forecast_position(
-                temp_df, position, n_columns, periods=120,
-                holidays=COLOMBIA_HOLIDAYS, run_cross_validation=True,
+                temp_df, position, n_columns, periods=120, run_cross_validation=True,
             )
             print(f"{result['label']} performance metrics:")
             print(result["performance"].head())

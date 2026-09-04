@@ -1,6 +1,8 @@
 # Baloto Analytics
 
-Herramientas de análisis y forecasting sobre resultados históricos del Baloto (Colombia): 5 balotas principales (1-43) + superbalota (1-16), sorteos cada miércoles y sábado.
+Herramientas de análisis y forecasting sobre resultados históricos del Baloto (Colombia).
+
+**Reglas del juego que asume el código:** eliges 5 números del 1 al 43 sin repetir, más 1 superbalota del 1 al 16. Los sorteos son lunes, miércoles y sábado. Hay C(43,5) × 16 = **15.401.568** combinaciones igualmente probables, así que el premio mayor (5 aciertos + superbalota) es 1 en 15.401.568.
 
 ## Antes de usar esto: un descargo honesto
 
@@ -10,13 +12,15 @@ Los sorteos de Baloto son, por diseño, **independientes y uniformes**: no hay t
 - El heurístico de "número atrasado" (overdue) es la falacia del jugador: el tiempo desde la última vez que salió un número no cambia la probabilidad de que salga en el próximo sorteo. Se incluye en el dashboard porque es una vista popular, no porque funcione.
 - Antes de mirar cualquier predicción, revisa la pestaña **Aleatoriedad** del dashboard: si tus datos pasan las pruebas de aleatoriedad (que es lo esperable), cualquier "patrón" que un modelo muestre es ruido sobreajustado.
 
-Dicho esto, el proyecto sigue siendo útil como: (1) ejercicio serio de forecasting/backtesting con librerías modernas, y (2) panel de estadística descriptiva (frecuencias, gaps, hot/cold) para explorar tus propios datos.
+Dicho esto, el proyecto sigue siendo útil como: (1) ejercicio serio de forecasting/backtesting con librerías modernas, (2) panel de estadística descriptiva (frecuencias, gaps, hot/cold) para explorar tus propios datos, y (3) — lo único que sí responde una decisión con certeza — el cálculo exacto de probabilidades por categoría y del **valor esperado por tiquete** (`analysis/prizes.py`): qué números salen es incognoscible, pero cuánto vale una boleta es combinatoria pura.
 
 ## Qué cambió en esta actualización
 
 - **Prophet** actualizado a 1.4.x, sin las estacionalidades semanales/quincenales/anuales inventadas de la versión anterior (no tenían sentido sobre datos que solo existen los miércoles y sábados).
 - **StatsForecast.py** (Nixtla `statsforecast`) reemplaza al viejo `ARIMA.py`: en vez de un SARIMAX con orden fijo a mano, ajusta AutoARIMA + AutoETS + AutoTheta con búsqueda automática de orden, para las 6 posiciones a la vez.
 - **XGBoost.py** corregido: la versión anterior usaba `train_test_split` con `shuffle=True` sobre una serie de tiempo, lo cual mezclaba sorteos futuros en el entrenamiento (data leakage) e inflaba la precisión reportada. Ahora el split es cronológico y se agregan features de lags/frecuencia móvil.
+- **`analysis/prizes.py`**: probabilidades exactas de cada categoría de premio (combinatoria, no simulación), valor esperado y retorno al jugador (RTP) dado el precio del tiquete, y el premio mayor que haría que el valor esperado sea cero. Los montos de premio se pasan como parámetro — varias categorías son variables y el acumulado cambia, así que no hay cifras quemadas en el código.
+- **Calendario de sorteos** corregido a lunes/miércoles/sábado, y se infiere de tus propios datos (`infer_draw_weekdays`) para que un histórico viejo de solo miércoles/sábado no genere fechas futuras equivocadas.
 - **`analysis/randomness.py`**: frecuencias, gaps, hot/cold, y pruebas estadísticas reales (chi-cuadrado de uniformidad — por posición y agrupada, runs test, ACF/Ljung-Box) para saber si hay algo que modelar antes de modelarlo.
 - **`backtest.py`**: backtest walk-forward que compara cada modelo contra la expectativa exacta de aciertos por azar (distribución hipergeométrica), con test de significancia.
 - **`dashboard/app.py`**: dashboard interactivo en Streamlit con las piezas anteriores, pensado para decisión informada, no para "el número ganador".
@@ -32,6 +36,7 @@ summary_charts.py      # gráficas estáticas originales (matplotlib/seaborn)
 contants.py             # festivos de Colombia (para Prophet, opcional) y utilidades de fecha
 analysis/
   randomness.py        # frecuencias, gaps, hot/cold, pruebas de aleatoriedad
+  prizes.py             # probabilidades por categoría, valor esperado, RTP
 models/
   common.py             # rangos de balotas, helpers compartidos
   baseline.py            # baseline de frecuencia + expectativa por azar (hipergeométrica)
@@ -65,7 +70,9 @@ pip install -r requirements.txt
 ```bash
 streamlit run dashboard/app.py
 ```
-Sube tu CSV en la barra lateral, o déjalo vacío para explorar con datos demo.
+Sube tu CSV en la barra lateral, o déjalo vacío para explorar con datos demo. Pestañas: Resumen, **Probabilidades y Valor Esperado** (edita ahí la tabla de premios con los montos oficiales vigentes), Frecuencia y Gaps, Hot/Cold, Aleatoriedad, Forecast y Backtest vs. Azar.
+
+Nota: la pestaña de probabilidades es la única que no necesita datos históricos — funciona con pura combinatoria.
 
 **Scripts individuales:**
 ```bash

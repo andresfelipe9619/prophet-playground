@@ -30,7 +30,12 @@ from analysis.randomness import (
     pooled_uniformity_test,
     randomness_report,
 )
-from contants import COLOMBIA_HOLIDAYS
+from analysis.prizes import (
+    breakeven_jackpot,
+    category_probabilities,
+    expected_value,
+    total_combinations,
+)
 from models.baseline import beats_chance_test, empirical_frequency_pick, expected_super_match_rate
 from models.common import build_position_series, series_label
 from models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
@@ -95,7 +100,10 @@ if is_demo:
         "explorar el panel. Sube tu CSV real en la barra lateral para analizar tus datos."
     )
 
-tabs = st.tabs(["Resumen", "Frecuencia y Gaps", "Hot / Cold", "Aleatoriedad", "Forecast", "Backtest vs. Azar"])
+tabs = st.tabs([
+    "Resumen", "Probabilidades y Valor Esperado", "Frecuencia y Gaps", "Hot / Cold",
+    "Aleatoriedad", "Forecast", "Backtest vs. Azar",
+])
 
 # ---------------------------------------------------------------- Resumen
 with tabs[0]:
@@ -130,8 +138,101 @@ with tabs[0]:
         "revisar la fuente de datos si eso pasa."
     )
 
-# ---------------------------------------------------------- Frecuencia y Gaps
+# ------------------------------------------- Probabilidades y Valor Esperado
 with tabs[1]:
+    st.markdown(
+        "Aquí no hay nada que predecir: las probabilidades de cada categoría son **combinatoria exacta**. "
+        "Un tiquete son 5 números de 1-43 más una superbalota de 1-16, así que hay "
+        f"**{total_combinations():,}** tiquetes igualmente probables. Lo único que hace falta para saber "
+        "cuánto vale jugar es la tabla de premios vigente."
+    )
+
+    prob_table = category_probabilities()
+    jackpot_odds = prob_table.loc[
+        (prob_table["main_matches"] == 5) & (prob_table["super_match"]), "odds_one_in"
+    ].iloc[0]
+
+    c1, c2 = st.columns(2)
+    c1.metric("Probabilidad del premio mayor", f"1 en {jackpot_odds:,.0f}")
+    c2.metric("Combinaciones posibles", f"{total_combinations():,}")
+
+    st.subheader("Tabla de premios")
+    st.caption(
+        "Los montos de abajo son **valores de ejemplo que debes reemplazar** con la tabla oficial vigente "
+        "(varias categorías son variables y el premio mayor se acumula). Pon 0 en las categorías que no "
+        "pagan premio. Las probabilidades sí son exactas y no dependen de lo que escribas aquí."
+    )
+
+    ticket_price = st.number_input("Precio del tiquete (COP)", min_value=0, value=5700, step=100)
+
+    default_payouts = {
+        (5, True): 5_000_000_000, (5, False): 80_000_000,
+        (4, True): 8_000_000, (4, False): 400_000,
+        (3, True): 100_000, (3, False): 20_000,
+        (2, True): 10_000, (2, False): 0,
+        (1, True): 5_700, (1, False): 0,
+        (0, True): 5_700, (0, False): 0,
+    }
+    editor_df = prob_table[["category", "main_matches", "super_match", "probability", "odds_one_in"]].copy()
+    editor_df["payout"] = [
+        default_payouts.get((int(r.main_matches), bool(r.super_match)), 0) for r in editor_df.itertuples()
+    ]
+
+    edited = st.data_editor(
+        editor_df,
+        column_config={
+            "category": st.column_config.TextColumn("Categoría", disabled=True),
+            "main_matches": None,
+            "super_match": None,
+            "probability": st.column_config.NumberColumn("Probabilidad", format="%.8f", disabled=True),
+            "odds_one_in": st.column_config.NumberColumn("1 en...", format="%.0f", disabled=True),
+            "payout": st.column_config.NumberColumn("Premio (COP)", min_value=0, step=1000),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    payouts = {
+        (int(r.main_matches), bool(r.super_match)): float(r.payout) for r in edited.itertuples()
+    }
+    ev = expected_value(prob_table, payouts, ticket_price)
+
+    st.subheader("Valor esperado por tiquete")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Retorno esperado", f"${ev['expected_return']:,.0f}")
+    m2.metric("Valor esperado", f"${ev['expected_value']:,.0f}",
+              delta=f"{ev['expected_value']:,.0f} por tiquete")
+    m3.metric("Retorno al jugador (RTP)", f"{ev['return_to_player'] * 100:.1f}%")
+    m4.metric("Prob. de ganar algo", f"1 en {ev['odds_any_prize_one_in']:,.1f}")
+
+    if ev["expected_value"] < 0:
+        st.error(
+            f"Con esta tabla de premios, cada tiquete pierde en promedio **${abs(ev['expected_value']):,.0f}**. "
+            "Esto no es opinión ni un modelo: es el valor esperado exacto. Ninguna estrategia de selección de "
+            "números lo cambia, porque todas las combinaciones son igual de probables."
+        )
+    else:
+        st.warning(
+            "El valor esperado sale positivo con estos montos — revisa que los premios sean los reales. "
+            "Aun cuando un acumulado grande lo vuelve positivo en el papel, el premio mayor se reparte entre "
+            "todos los ganadores (y hay retención en la fuente), así que el retorno real suele ser menor."
+        )
+
+    breakeven = breakeven_jackpot(prob_table, payouts, ticket_price)
+    st.metric("Premio mayor necesario para que el valor esperado sea cero", f"${breakeven:,.0f}")
+
+    st.subheader("Probabilidad por categoría")
+    plot_df = prob_table[prob_table["probability"] > 0].copy()
+    fig = go.Figure()
+    fig.add_bar(x=plot_df["category"], y=plot_df["probability"])
+    fig.update_layout(
+        yaxis_type="log", yaxis_title="Probabilidad (escala log)", xaxis_title="Categoría",
+        title="Probabilidad exacta de cada categoría de premio",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------------------------------------- Frecuencia y Gaps
+with tabs[2]:
     label_to_pos = {series_label(p, n_columns): p for p in range(n_columns)}
     chosen_label = st.selectbox("Posición", list(label_to_pos.keys()), key="freq_pos")
     pos = label_to_pos[chosen_label]
@@ -158,7 +259,7 @@ with tabs[1]:
     )
 
 # ---------------------------------------------------------------- Hot/Cold
-with tabs[2]:
+with tabs[3]:
     chosen_label_hc = st.selectbox("Posición", list(label_to_pos.keys()), key="hc_pos")
     pos_hc = label_to_pos[chosen_label_hc]
     window = st.slider("Ventana reciente (# sorteos)", 5, 60, 20)
@@ -178,7 +279,7 @@ with tabs[2]:
     )
 
 # ------------------------------------------------------------ Aleatoriedad
-with tabs[3]:
+with tabs[4]:
     st.subheader("Veredicto por posición")
     rows = []
     for p in range(n_columns):
@@ -219,7 +320,7 @@ with tabs[3]:
                   "Autocorrelación detectada — esto sí justificaría probar un modelo de series de tiempo")
 
 # ------------------------------------------------------------------ Forecast
-with tabs[4]:
+with tabs[5]:
     st.warning(
         "Estos son ejercicios de forecasting, no predicciones confiables: para un sorteo justo, ningún modelo "
         "puede superar de forma sostenida la probabilidad teórica. Revisa la pestaña Backtest antes de confiar "
@@ -236,7 +337,7 @@ with tabs[4]:
             elif model_choice == "Prophet":
                 from Prophet import define_and_fit_model, make_predictions
                 for p in range(n_columns):
-                    m = define_and_fit_model(position_series[p], holidays=COLOMBIA_HOLIDAYS)
+                    m = define_and_fit_model(position_series[p])  # sin festivos: no afectan una balota
                     fc = make_predictions(m, p, n_columns, periods=1)
                     preds[p] = int(fc["yhat_adjusted"].iloc[-1])
             elif model_choice in MODEL_NAMES:
@@ -259,7 +360,7 @@ with tabs[4]:
                        "que diferencie una posición de otra.")
 
 # --------------------------------------------------------------- Backtest
-with tabs[5]:
+with tabs[6]:
     st.markdown(
         "Backtest *walk-forward*: en cada sorteo histórico reciente, cada modelo se entrena solo con datos "
         "anteriores a ese sorteo y se compara contra lo que realmente salió. El número que importa no es "
