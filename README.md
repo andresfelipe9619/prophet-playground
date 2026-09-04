@@ -1,35 +1,93 @@
-## Notes
-**Data Preparation:** Make sure your actual dataset is formatted similarly to the data dictionary, with ds and y columns for dates and values, respectively.
+# Baloto Analytics
 
-**Model Fitting:** This script fits the model to your historical data.
+Herramientas de análisis y forecasting sobre resultados históricos del Baloto (Colombia).
 
-**Future Predictions:** The script forecasts the next 365 days based on the model.
+**Reglas del juego que asume el código:** eliges 5 números del 1 al 43 sin repetir, más 1 superbalota del 1 al 16. Los sorteos son lunes, miércoles y sábado. Hay C(43,5) × 16 = **15.401.568** combinaciones igualmente probables, así que el premio mayor (5 aciertos + superbalota) es 1 en 15.401.568.
 
-**Visualization:** It plots the forecast and its components.
+## Antes de usar esto: un descargo honesto
 
-**Cross-validation:** This is optional and useful for evaluating your model's performance. Adjust the parameters (initial, period, horizon) based on the size of your dataset. You need a substantial amount of historical data to use this feature effectively.
+Los sorteos de Baloto son, por diseño, **independientes y uniformes**: no hay tendencia, estacionalidad ni "memoria" real entre sorteos que un modelo pueda aprender. Eso significa:
 
-**Performance Metrics:** The script prints the head of the performance metrics DataFrame, showing errors like MAE and RMSE, which help in evaluating the forecast's accuracy.
+- Ningún modelo de este repo (Prophet, AutoARIMA/AutoETS/AutoTheta, XGBoost) puede superar de forma sostenida la probabilidad teórica. Si en un backtest puntual un modelo "gana", lo más probable es que sea varianza, no señal — por eso `backtest.py` reporta siempre el resultado junto a lo que el azar puro esperaría, con su p-valor.
+- El heurístico de "número atrasado" (overdue) es la falacia del jugador: el tiempo desde la última vez que salió un número no cambia la probabilidad de que salga en el próximo sorteo. Se incluye en el dashboard porque es una vista popular, no porque funcione.
+- Antes de mirar cualquier predicción, revisa la pestaña **Aleatoriedad** del dashboard: si tus datos pasan las pruebas de aleatoriedad (que es lo esperable), cualquier "patrón" que un modelo muestre es ruido sobreajustado.
 
-This code is a comprehensive start for forecasting with Prophet. Depending on your specific needs or data characteristics, you might want to explore additional features of Prophet, such as incorporating holidays, adjusting seasonality, or adding regressors.
+Dicho esto, el proyecto sigue siendo útil como: (1) ejercicio serio de forecasting/backtesting con librerías modernas, (2) panel de estadística descriptiva (frecuencias, gaps, hot/cold) para explorar tus propios datos, y (3) — lo único que sí responde una decisión con certeza — el cálculo exacto de probabilidades por categoría y del **valor esperado por tiquete** (`analysis/prizes.py`): qué números salen es incognoscible, pero cuánto vale una boleta es combinatoria pura.
 
-## Retraining From Scratch
-The straightforward method is to retrain your model including the new data. This approach ensures that your model is up-to-date and incorporates all available information. Here's how you can approach it:
+## Qué cambió en esta actualización
 
-**Combine Your Data:** Each day (or at whatever frequency new data becomes available), you append the new observations to your existing dataset.
+- **Prophet** actualizado a 1.4.x, sin las estacionalidades semanales/quincenales/anuales inventadas de la versión anterior (no tenían sentido sobre datos que solo existen los miércoles y sábados).
+- **StatsForecast.py** (Nixtla `statsforecast`) reemplaza al viejo `ARIMA.py`: en vez de un SARIMAX con orden fijo a mano, ajusta AutoARIMA + AutoETS + AutoTheta con búsqueda automática de orden, para las 6 posiciones a la vez.
+- **XGBoost.py** corregido: la versión anterior usaba `train_test_split` con `shuffle=True` sobre una serie de tiempo, lo cual mezclaba sorteos futuros en el entrenamiento (data leakage) e inflaba la precisión reportada. Ahora el split es cronológico y se agregan features de lags/frecuencia móvil.
+- **`analysis/prizes.py`**: probabilidades exactas de cada categoría de premio (combinatoria, no simulación), valor esperado y retorno al jugador (RTP) dado el precio del tiquete, y el premio mayor que haría que el valor esperado sea cero. Los montos de premio se pasan como parámetro — varias categorías son variables y el acumulado cambia, así que no hay cifras quemadas en el código.
+- **Calendario de sorteos** corregido a lunes/miércoles/sábado, y se infiere de tus propios datos (`infer_draw_weekdays`) para que un histórico viejo de solo miércoles/sábado no genere fechas futuras equivocadas.
+- **`analysis/randomness.py`**: frecuencias, gaps, hot/cold, y pruebas estadísticas reales (chi-cuadrado de uniformidad — por posición y agrupada, runs test, ACF/Ljung-Box) para saber si hay algo que modelar antes de modelarlo.
+- **`backtest.py`**: backtest walk-forward que compara cada modelo contra la expectativa exacta de aciertos por azar (distribución hipergeométrica), con test de significancia.
+- **`dashboard/app.py`**: dashboard interactivo en Streamlit con las piezas anteriores, pensado para decisión informada, no para "el número ganador".
 
-**Retrain the Model:** Use the updated dataset to fit a new Prophet model. This involves running the same code you used initially to fit the model, but on the updated dataset.
+## Estructura
 
-**Forecast:** Make new forecasts using the retrained model.
-This method is simple and effective, ensuring your model's forecasts are as accurate as possible with the latest data. However, it might be computationally expensive for very large datasets or if you need to update your forecasts very frequently.
+```
+Prophet.py            # forecasting por posición con Prophet
+StatsForecast.py       # AutoARIMA / AutoETS / AutoTheta (Nixtla statsforecast)
+XGBoost.py             # XGBoost con split cronológico
+backtest.py            # backtest walk-forward vs. azar (CLI)
+summary_charts.py      # gráficas estáticas originales (matplotlib/seaborn)
+contants.py             # festivos de Colombia (para Prophet, opcional) y utilidades de fecha
+analysis/
+  randomness.py        # frecuencias, gaps, hot/cold, pruebas de aleatoriedad
+  prizes.py             # probabilidades por categoría, valor esperado, RTP
+models/
+  common.py             # rangos de balotas, helpers compartidos
+  baseline.py            # baseline de frecuencia + expectativa por azar (hipergeométrica)
+  statsforecast_model.py # wrapper de Nixtla statsforecast
+  xgboost_model.py        # features + entrenamiento XGBoost
+dashboard/
+  app.py                # dashboard Streamlit
+utils/
+  processor.py           # carga/preprocesamiento de CSVs y comparación de predicciones
+  sample_data.py          # generador de datos sintéticos de demo
+  scraper.py               # scraper de resultados (loterias.com)
+  csv_merger.py            # combina CSVs anuales exportados
+```
 
-### Incremental Updating (Not Directly Supported)
-While incremental learning is a concept where models update themselves with new data without needing to be retrained from scratch, Prophet does not support this directly due to its underlying statistical methodologies. However, for some models, especially those dealing with large datasets or requiring frequent updates, exploring models or systems designed with incremental learning in mind might be beneficial.
+## Datos
 
-### Best Practices for Retraining
-**Automate the Process:** Automate the data appending, model retraining, and forecasting processes as much as possible to save time and reduce errors. This can be done using scheduled scripts or workflows.
-**Monitor Performance:** Regularly evaluate the performance of your model against recent historical data to ensure its predictions remain accurate over time. Adjust your model as needed based on these performance metrics.
-**Consider Data Changes:** Be mindful of any significant changes in your data or in the external environment that could impact your model's assumptions. This might include changes in trends, seasonality, or the impact of external events. In such cases, you may need to adjust your model beyond simply retraining with new data.
+Los scripts esperan `exported_data/final-final.csv` con columnas `Date` (dd/mm/yyyy) y `Ball` (6 números separados por guion: 5 principales + superbalota, ej. `3-12-19-27-41-8`). Esa carpeta está en `.gitignore` — no viene en el repo.
 
-### Conclusion
-In summary, while Prophet does not learn incrementally in a strict sense, retraining the model periodically with the full dataset is a practical and effective way to keep your forecasts up-to-date. Depending on the frequency at which your data updates and the computational resources available, you can determine the best retraining schedule for your needs, whether that's daily, weekly, or at another regular interval.
+Si no tienes ese archivo, `utils/sample_data.py` genera datos sintéticos (sorteos uniformes independientes reales, no una simulación de "patrón") para que puedas explorar el dashboard y los scripts sin tus datos privados. El dashboard cae a este modo demo automáticamente y lo avisa en pantalla.
+
+## Instalación
+
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Uso
+
+**Dashboard (recomendado):**
+```bash
+streamlit run dashboard/app.py
+```
+Sube tu CSV en la barra lateral, o déjalo vacío para explorar con datos demo. Pestañas: Resumen, **Probabilidades y Valor Esperado** (edita ahí la tabla de premios con los montos oficiales vigentes), Frecuencia y Gaps, Hot/Cold, Aleatoriedad, Forecast y Backtest vs. Azar.
+
+Nota: la pestaña de probabilidades es la única que no necesita datos históricos — funciona con pura combinatoria.
+
+**Scripts individuales:**
+```bash
+python Prophet.py
+python StatsForecast.py AutoARIMA   # o AutoETS / AutoTheta
+python XGBoost.py
+```
+
+**Backtest vs. azar (línea de comandos):**
+```bash
+python backtest.py --n-windows 20 --min-train 100          # sin Prophet (más rápido)
+python backtest.py --n-windows 20 --include-prophet          # con Prophet (más lento)
+```
+Guarda un resumen en `backtest_summary.csv` con, por modelo: aciertos promedio, aciertos esperados por azar, y el p-valor de si la diferencia es real.
+
+## Métricas
+
+Ver `README_METRICS.md` para el detalle de las métricas de cross-validation de Prophet (MAE, RMSE, MAPE, coverage, etc.). La pregunta que de verdad importa para decidir si vale la pena confiar en un modelo — ¿le gana al azar? — la responde `backtest.py`, no esas métricas por sí solas.

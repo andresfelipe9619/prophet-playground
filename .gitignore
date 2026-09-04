@@ -1,3 +1,10 @@
 exported_data
 .idea
 codealike.json
+__pycache__/
+*.pyc
+venv/
+backtest_summary.csv
+prophet_results/
+statsforecast_*_results/
+xgboost_results/
