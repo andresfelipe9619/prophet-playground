@@ -14,19 +14,34 @@ import pandas as pd
 MAIN_BALL_RANGE = (1, 43)
 MAIN_BALLS_DRAWN = 5
 SUPER_BALL_RANGE = (1, 16)
+MAIN_POOL = MAIN_BALL_RANGE[1]
+SUPER_POOL = SUPER_BALL_RANGE[1]
 DRAW_WEEKDAYS = (0, 2, 5)  # Monday, Wednesday, Saturday
+DEFAULT_DATA_PATH = "exported_data/final-final.csv"
+
+
+def super_position(n_columns):
+    return n_columns - 1
+
+
+def main_positions(n_columns):
+    return range(n_columns - 1)
 
 
 def series_label(position, n_columns):
-    return "Superbalota" if position == n_columns - 1 else f"Balota {position + 1}"
+    return "Superbalota" if position == super_position(n_columns) else f"Balota {position + 1}"
+
+
+def range_for_position(position, n_columns):
+    return SUPER_BALL_RANGE if position == super_position(n_columns) else MAIN_BALL_RANGE
 
 
 def max_for_position(position, n_columns):
-    return SUPER_BALL_RANGE[1] if position == n_columns - 1 else MAIN_BALL_RANGE[1]
+    return range_for_position(position, n_columns)[1]
 
 
 def min_for_position(position, n_columns):
-    return SUPER_BALL_RANGE[0] if position == n_columns - 1 else MAIN_BALL_RANGE[0]
+    return range_for_position(position, n_columns)[0]
 
 
 def clip_to_range(value, position, n_columns):

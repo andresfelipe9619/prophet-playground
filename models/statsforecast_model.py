@@ -14,7 +14,9 @@ no real daily frequency to align to.
 from statsforecast import StatsForecast
 from statsforecast.models import AutoARIMA, AutoETS, AutoTheta
 
-from models.common import clip_to_range, to_long_format
+import numpy as np
+
+from models.common import max_for_position, min_for_position, to_long_format
 
 MODEL_NAMES = ("AutoARIMA", "AutoETS", "AutoTheta")
 
@@ -27,18 +29,25 @@ def build_models(season_length=1):
     ]
 
 
-def fit_predict_all(position_series, h=8, season_length=1, n_jobs=1):
-    """Fit AutoARIMA/AutoETS/AutoTheta on every position at once, return the raw forecast frame."""
+def fit_predict_all(position_series, h=8, season_length=1, n_jobs=1, level=None):
+    """Fit AutoARIMA/AutoETS/AutoTheta on every position at once, return the raw forecast frame.
+
+    `unique_id` is normalized to a column: statsforecast returns it as the
+    index before 2.0, and every caller here indexes it as a column.
+    Prediction intervals cost real time per window, so `level` is opt-in.
+    """
     long_df = to_long_format(position_series)
     sf = StatsForecast(models=build_models(season_length), freq=1, n_jobs=n_jobs)
     sf.fit(long_df)
-    return sf.predict(h=h, level=[80, 95])
+    forecast = sf.predict(h=h, level=level)
+    return forecast if "unique_id" in forecast.columns else forecast.reset_index()
 
 
 def adjusted_predictions(forecast_df, n_columns, model_name="AutoARIMA"):
     """Clip one model's raw predictions to each position's valid ball range."""
     out = forecast_df[["unique_id", "ds", model_name]].copy()
-    out["yhat_adjusted"] = out.apply(
-        lambda row: clip_to_range(row[model_name], int(row["unique_id"]), n_columns), axis=1
-    )
+    positions = out["unique_id"].to_numpy(dtype=int)
+    lows = np.array([min_for_position(p, n_columns) for p in positions])
+    highs = np.array([max_for_position(p, n_columns) for p in positions])
+    out["yhat_adjusted"] = np.clip(np.round(out[model_name].to_numpy()), lows, highs).astype(int)
     return out

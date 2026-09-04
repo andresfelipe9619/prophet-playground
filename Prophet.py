@@ -14,8 +14,8 @@ import pandas as pd
 from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 
-from contants import COLOMBIA_HOLIDAYS  # noqa: F401 — opt-in regressor, see forecast_position(holidays=...)
 from models.common import (
+    DEFAULT_DATA_PATH,
     build_position_series,
     clip_to_range,
     infer_draw_weekdays,
@@ -86,30 +86,25 @@ def forecast_position(position_series, position, n_columns, periods=8, holidays=
 
 
 if __name__ == "__main__":
-    file_path = "exported_data/final-final.csv"
     actual_2024_file_path = "exported_data/exported_data_2024.csv"
 
-    try:
-        df, balls_expanded = load_and_preprocess(file_path)
-        position_series = build_position_series(df, balls_expanded)
-        n_columns = balls_expanded.shape[1]
+    df, balls_expanded = load_and_preprocess(DEFAULT_DATA_PATH)
+    position_series = build_position_series(df, balls_expanded)
+    n_columns = balls_expanded.shape[1]
 
-        all_predictions = []
-        for position, temp_df in position_series.items():
-            # holidays=COLOMBIA_HOLIDAYS is available but off by default: a public
-            # holiday has no causal effect on which ball comes out of the machine.
-            result = forecast_position(
-                temp_df, position, n_columns, periods=120, run_cross_validation=True,
-            )
-            print(f"{result['label']} performance metrics:")
-            print(result["performance"].head())
+    all_predictions = []
+    for position, temp_df in position_series.items():
+        # holidays are opt-in (forecast_position(holidays=contants.COLOMBIA_HOLIDAYS)) and
+        # off here: a public holiday has no causal effect on which ball comes out.
+        result = forecast_position(
+            temp_df, position, n_columns, periods=120, run_cross_validation=True,
+        )
+        print(f"{result['label']} performance metrics:")
+        print(result["performance"].head())
 
-            forecast = result["forecast"]
-            all_predictions.append(
-                forecast[["ds", "yhat_adjusted"]].rename(columns={"yhat_adjusted": f"yhat_adjusted_{position}"})
-            )
+        forecast = result["forecast"]
+        all_predictions.append(
+            forecast[["ds", "yhat_adjusted"]].rename(columns={"yhat_adjusted": f"yhat_adjusted_{position}"})
+        )
 
-        process_and_compare_forecasts(all_predictions, actual_2024_file_path, "prophet_results/")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    process_and_compare_forecasts(all_predictions, actual_2024_file_path, "prophet_results")

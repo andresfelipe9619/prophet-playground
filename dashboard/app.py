@@ -11,6 +11,7 @@ come back negative — the dashboard is built to show that clearly instead of
 hiding it.
 """
 
+import io
 import os
 import sys
 
@@ -36,37 +37,67 @@ from analysis.prizes import (
     expected_value,
     total_combinations,
 )
-from models.baseline import beats_chance_test, empirical_frequency_pick, expected_super_match_rate
-from models.common import build_position_series, series_label
+from models.baseline import most_frequent_pick
+from models.common import (
+    DEFAULT_DATA_PATH,
+    MAIN_BALLS_DRAWN,
+    MAIN_BALL_RANGE,
+    SUPER_BALL_RANGE,
+    build_position_series,
+    infer_draw_weekdays,
+    main_positions,
+    next_draw_dates,
+    series_label,
+    super_position,
+)
 from models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
-from models.xgboost_model import train_predict
-from utils.processor import load_and_preprocess
+from models.xgboost_model import forecast_next
+from utils.processor import load_and_preprocess, preprocess_draws
 from utils.sample_data import load_sample_and_preprocess
 
 st.set_page_config(page_title="Baloto Analytics", layout="wide")
 
-DEFAULT_DATA_PATH = "exported_data/final-final.csv"
-MAIN_POSITIONS = 5
+MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 
 
 @st.cache_data(show_spinner=False)
 def load_data(path, uploaded_bytes):
+    """Load draws and derive everything downstream needs, in one cached step.
+
+    position_series comes back from here rather than from a second cached
+    function so Streamlit never has to hash the full frames as arguments on
+    every rerun.
+    """
     if uploaded_bytes is not None:
-        import io
-        df = pd.read_csv(io.BytesIO(uploaded_bytes))
-        df["ds"] = pd.to_datetime(df["Date"], dayfirst=True)
-        balls_expanded = df["Ball"].str.split("-", expand=True).apply(pd.to_numeric)
-        return df, balls_expanded, False
-    if os.path.exists(path):
+        df, balls_expanded = preprocess_draws(pd.read_csv(io.BytesIO(uploaded_bytes)))
+        is_demo = False
+    elif os.path.exists(path):
         df, balls_expanded = load_and_preprocess(path)
-        return df, balls_expanded, False
-    df, balls_expanded = load_sample_and_preprocess(n_draws=400)
-    return df, balls_expanded, True
+        is_demo = False
+    else:
+        df, balls_expanded = load_sample_and_preprocess(n_draws=400)
+        is_demo = True
+    return df, balls_expanded, build_position_series(df, balls_expanded), is_demo
 
 
 @st.cache_data(show_spinner=False)
-def compute_position_series(df, balls_expanded):
-    return build_position_series(df, balls_expanded)
+def randomness_reports(position_series, n_columns):
+    """All six per-position reports at once — recomputed only when the data changes."""
+    return {p: randomness_report(position_series[p], p, n_columns) for p in range(n_columns)}
+
+
+@st.cache_data(show_spinner=False)
+def cached_gap_table(position_series, position, n_columns):
+    return gap_table(position_series[position], position, n_columns)
+
+
+@st.cache_data(show_spinner=False)
+def cached_pooled_tests(balls_expanded, n_columns):
+    return (
+        pooled_uniformity_test(balls_expanded, main_positions(n_columns)),
+        pooled_uniformity_test(balls_expanded, [super_position(n_columns)]),
+        is_sorted_ascending(balls_expanded),
+    )
 
 
 def verdict_badge(looks_random, positive_text="Sin evidencia de patrón explotable", negative_text="Posible señal — revisar"):
@@ -88,10 +119,12 @@ with st.sidebar:
     uploaded = st.file_uploader("CSV propio (columnas Date, Ball)", type="csv")
     data_path = st.text_input("Ruta local (si no subes archivo)", value=DEFAULT_DATA_PATH)
 
-df, balls_expanded, is_demo = load_data(data_path, uploaded.getvalue() if uploaded else None)
+df, balls_expanded, position_series, is_demo = load_data(
+    data_path, uploaded.getvalue() if uploaded else None
+)
 n_columns = balls_expanded.shape[1]
-position_series = compute_position_series(df, balls_expanded)
 n_draws = len(df)
+label_to_pos = {series_label(p, n_columns): p for p in range(n_columns)}
 
 if is_demo:
     st.info(
@@ -111,7 +144,7 @@ with tabs[0]:
     col1.metric("Sorteos", n_draws)
     col2.metric("Desde", df["ds"].min().strftime("%Y-%m-%d"))
     col3.metric("Hasta", df["ds"].max().strftime("%Y-%m-%d"))
-    sorted_flag = is_sorted_ascending(balls_expanded, main_positions=MAIN_POSITIONS)
+    pooled_main, pooled_super, sorted_flag = cached_pooled_tests(balls_expanded, n_columns)
     col4.metric("Balotas guardadas ordenadas asc.", "Sí" if sorted_flag else "No")
 
     if sorted_flag:
@@ -122,9 +155,9 @@ with tabs[0]:
             "haya un patrón real. Usa la prueba agrupada (pooled) de abajo, que es inmune a esto."
         )
 
-    st.subheader("¿Los números principales (1-43) se reparten uniformemente?")
-    pooled_main = pooled_uniformity_test(balls_expanded, 1, 43, positions=list(range(MAIN_POSITIONS)))
-    pooled_super = pooled_uniformity_test(balls_expanded, 1, 16, positions=[n_columns - 1])
+    st.subheader(
+        f"¿Los números principales ({MAIN_BALL_RANGE[0]}-{MAIN_BALL_RANGE[1]}) se reparten uniformemente?"
+    )
     c1, c2 = st.columns(2)
     with c1:
         st.metric("p-valor (balotas principales, agrupadas)", f"{pooled_main['p_value']:.3f}")
@@ -142,7 +175,8 @@ with tabs[0]:
 with tabs[1]:
     st.markdown(
         "Aquí no hay nada que predecir: las probabilidades de cada categoría son **combinatoria exacta**. "
-        "Un tiquete son 5 números de 1-43 más una superbalota de 1-16, así que hay "
+        f"Un tiquete son {MAIN_BALLS_DRAWN} números de {MAIN_BALL_RANGE[0]}-{MAIN_BALL_RANGE[1]} más una "
+        f"superbalota de {SUPER_BALL_RANGE[0]}-{SUPER_BALL_RANGE[1]}, así que hay "
         f"**{total_combinations():,}** tiquetes igualmente probables. Lo único que hace falta para saber "
         "cuánto vale jugar es la tabla de premios vigente."
     )
@@ -233,7 +267,6 @@ with tabs[1]:
 
 # ---------------------------------------------------------- Frecuencia y Gaps
 with tabs[2]:
-    label_to_pos = {series_label(p, n_columns): p for p in range(n_columns)}
     chosen_label = st.selectbox("Posición", list(label_to_pos.keys()), key="freq_pos")
     pos = label_to_pos[chosen_label]
 
@@ -251,7 +284,7 @@ with tabs[2]:
         "independientes no tiene poder predictivo real — es la falacia del jugador — pero se incluye porque es "
         "una vista que mucha gente busca. Interprétalo como curiosidad, no como señal."
     )
-    gaps = gap_table(position_series[pos], pos, n_columns)
+    gaps = cached_gap_table(position_series, pos, n_columns)
     st.dataframe(
         gaps.sort_values("overdue_score", ascending=False)
         .style.format({"avg_gap_days": "{:.1f}", "std_gap_days": "{:.1f}", "overdue_score": "{:.2f}"}),
@@ -281,9 +314,9 @@ with tabs[3]:
 # ------------------------------------------------------------ Aleatoriedad
 with tabs[4]:
     st.subheader("Veredicto por posición")
+    reports = randomness_reports(position_series, n_columns)
     rows = []
-    for p in range(n_columns):
-        rep = randomness_report(position_series[p], p, n_columns)
+    for p, rep in reports.items():
         rows.append({
             "Posición": rep["label"],
             "Sorteos": rep["n_draws"],
@@ -305,7 +338,7 @@ with tabs[4]:
     st.subheader("Autocorrelación (ACF)")
     acf_label = st.selectbox("Posición", list(label_to_pos.keys()), key="acf_pos")
     acf_pos = label_to_pos[acf_label]
-    autocorr = autocorrelation_check(position_series[acf_pos]["y"].to_numpy())
+    autocorr = reports[acf_pos]["autocorrelation"]  # already computed above
     n = len(position_series[acf_pos])
     band = 1.96 / (n ** 0.5)
     fig = go.Figure()
@@ -330,34 +363,39 @@ with tabs[5]:
 
     if st.button("Generar predicción del próximo sorteo"):
         with st.spinner("Entrenando..."):
+            history = position_series[0]["ds"]
+            next_date = next_draw_dates(history.max(), 1, weekdays=infer_draw_weekdays(history))[0]
+
             preds = {}
             if model_choice == "FrequencyBaseline":
-                for p in range(n_columns):
-                    preds[p] = int(position_series[p]["y"].mode().iloc[0])
+                preds = most_frequent_pick(position_series)
             elif model_choice == "Prophet":
-                from Prophet import define_and_fit_model, make_predictions
+                from Prophet import define_and_fit_model, predict_at_dates
                 for p in range(n_columns):
                     m = define_and_fit_model(position_series[p])  # sin festivos: no afectan una balota
-                    fc = make_predictions(m, p, n_columns, periods=1)
-                    preds[p] = int(fc["yhat_adjusted"].iloc[-1])
+                    # predict_at_dates evalúa solo la fecha pedida; make_predictions
+                    # re-predeciría toda la historia para usar una sola fila.
+                    fc = predict_at_dates(m, p, n_columns, [next_date])
+                    preds[p] = int(fc["yhat_adjusted"].iloc[0])
             elif model_choice in MODEL_NAMES:
                 raw = fit_predict_all(position_series, h=1)
                 clipped = adjusted_predictions(raw, n_columns, model_name=model_choice)
-                for p in range(n_columns):
-                    preds[p] = int(clipped.loc[clipped["unique_id"] == p, "yhat_adjusted"].iloc[0])
+                preds = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"].astype(int)))
             elif model_choice == "XGBoost":
                 for p in range(n_columns):
-                    result = train_predict(position_series[p], p, n_columns, test_size=0.05)
-                    preds[p] = int(result["test"]["yhat_adjusted"].iloc[-1])
+                    preds[p] = forecast_next(position_series[p], p, n_columns, next_date)
 
-        main_numbers = sorted({preds[p] for p in range(MAIN_POSITIONS)})
-        super_number = preds[n_columns - 1]
-        st.success(f"Balotas principales sugeridas: **{' - '.join(str(n) for n in main_numbers)}**  |  "
-                   f"Superbalota: **{super_number}**")
-        if len(main_numbers) < MAIN_POSITIONS:
-            st.caption(f"Nota: hubo {MAIN_POSITIONS - len(main_numbers)} coincidencia(s) entre posiciones, "
-                       "por eso hay menos de 5 números distintos — típico cuando el modelo no tiene señal real "
-                       "que diferencie una posición de otra.")
+        if any(preds.get(p) is None for p in range(n_columns)):
+            st.error("No hay suficiente historia para entrenar este modelo. Carga un CSV con más sorteos.")
+        else:
+            main_numbers = sorted({preds[p] for p in main_positions(n_columns)})
+            super_number = preds[n_columns - 1]
+            st.success(f"Balotas principales sugeridas: **{' - '.join(str(n) for n in main_numbers)}**  |  "
+                       f"Superbalota: **{super_number}**")
+            if len(main_numbers) < MAIN_BALLS_DRAWN:
+                st.caption(f"Nota: hubo {MAIN_BALLS_DRAWN - len(main_numbers)} coincidencia(s) entre posiciones, "
+                           "por eso hay menos de 5 números distintos — típico cuando el modelo no tiene señal real "
+                           "que diferencie una posición de otra.")
 
 # --------------------------------------------------------------- Backtest
 with tabs[6]:
@@ -368,16 +406,28 @@ with tabs[6]:
         "hipergeométrica, sin simulación)."
     )
     c1, c2, c3 = st.columns(3)
-    n_windows = c1.slider("Ventanas (sorteos a evaluar)", 5, 40, 15)
-    min_train = c2.slider("Mínimo de sorteos para entrenar", 20, max(21, n_draws - n_windows - 1), 60)
+    max_windows = max(5, min(40, n_draws - MIN_TRAIN_FLOOR))
+    n_windows = c1.slider("Ventanas (sorteos a evaluar)", 5, max_windows, min(15, max_windows))
+    max_train = max(MIN_TRAIN_FLOOR, n_draws - 1)
+    min_train = c2.slider("Mínimo de sorteos para entrenar", MIN_TRAIN_FLOOR, max_train,
+                          min(60, max_train))
     include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False)
+
+    start, total = bt.window_bounds(n_draws, n_windows, min_train)
+    if start >= total:
+        st.warning(
+            f"Con {n_draws} sorteos y un mínimo de {min_train} para entrenar no queda ninguna ventana "
+            "por evaluar. Baja el mínimo de entrenamiento o usa un histórico más largo."
+        )
 
     if st.button("Ejecutar backtest"):
         with st.spinner("Corriendo backtest walk-forward..."):
-            results = bt.run_all(position_series, n_columns, n_windows=n_windows,
-                                  min_train=min_train, include_prophet=include_prophet)
-            summary = bt.summarize(results)
-        st.session_state["backtest_summary"] = summary
+            try:
+                results = bt.run_all(position_series, n_columns, n_windows=n_windows,
+                                      min_train=min_train, include_prophet=include_prophet)
+                st.session_state["backtest_summary"] = bt.summarize(results)
+            except ValueError as exc:
+                st.error(str(exc))
 
     if "backtest_summary" in st.session_state:
         summary = st.session_state["backtest_summary"]
@@ -391,16 +441,18 @@ with tabs[6]:
         display = summary.copy()
         display["¿Le gana al azar? (p<0.05)"] = display["beats_chance_p<0.05"].map({True: "Sí", False: "No"})
         st.dataframe(
-            display[["model", "n_windows", "avg_main_hits", "chance_avg_main_hits", "p_value_vs_chance",
-                     "¿Le gana al azar? (p<0.05)", "super_hit_rate", "chance_super_hit_rate"]]
+            display[["model", "n_windows", "avg_main_hits", "chance_avg_main_hits",
+                     "p_value_better_than_chance", "¿Le gana al azar? (p<0.05)", "super_hit_rate",
+                     "chance_super_hit_rate"]]
             .style.format({
-                "avg_main_hits": "{:.2f}", "chance_avg_main_hits": "{:.2f}", "p_value_vs_chance": "{:.3f}",
+                "avg_main_hits": "{:.2f}", "chance_avg_main_hits": "{:.2f}",
+                "p_value_better_than_chance": "{:.3f}",
                 "super_hit_rate": "{:.3f}", "chance_super_hit_rate": "{:.3f}",
             }),
             use_container_width=True,
         )
         st.caption(
-            "Con pocas ventanas, incluso un modelo sin ninguna señal real puede parecer mejor o peor que el "
-            "azar por pura varianza — usa el p-valor, no solo el promedio, y desconfía de una sola corrida con "
-            "pocas ventanas."
+            "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto (un modelo "
+            "peor que el azar no cuenta como que le gana). Con pocas ventanas, incluso un modelo sin señal real "
+            "puede parecer mejor o peor por pura varianza — desconfía de una sola corrida con pocas ventanas."
         )

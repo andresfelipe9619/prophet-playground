@@ -10,6 +10,7 @@ number gets drawn.
 """
 
 import numpy as np
+import pandas as pd
 import xgboost as xgb
 
 from models.common import clip_to_range
@@ -17,7 +18,16 @@ from models.common import clip_to_range
 DEFAULT_PARAMS = {"max_depth": 4, "eta": 0.1, "objective": "reg:squarederror"}
 
 
-def create_features(df, n_lags=3, rolling_window=20):
+FEATURE_LAGS = 3
+ROLLING_WINDOW = 20
+
+
+def create_features(df, n_lags=FEATURE_LAGS, rolling_window=ROLLING_WINDOW):
+    """Build the feature matrix. Every feature is backward-looking.
+
+    Rows are dropped on missing *features* only, never on a missing `y`, so a
+    future row with no target survives and can be predicted (see forecast_next).
+    """
     df = df.copy()
     df["dayofweek"] = df["ds"].dt.dayofweek
     df["month"] = df["ds"].dt.month
@@ -26,9 +36,18 @@ def create_features(df, n_lags=3, rolling_window=20):
     df["rolling_mean"] = df["y"].shift(1).rolling(rolling_window, min_periods=1).mean()
     df["rolling_freq_of_last_value"] = (
         df["y"].shift(1).rolling(rolling_window, min_periods=1)
-        .apply(lambda w: (w == w.iloc[-1]).sum() if len(w) else np.nan, raw=False)
+        .apply(lambda w: (w == w[-1]).sum() if len(w) else np.nan, raw=True)
     )
-    return df.dropna().reset_index(drop=True)
+    return df.dropna(subset=feature_columns(df)).reset_index(drop=True)
+
+
+def feature_columns(df):
+    return [c for c in df.columns if c not in ("ds", "y")]
+
+
+def min_history_required(n_lags=FEATURE_LAGS, min_training_rows=10):
+    """Draws needed before this model can predict: lag rows dropped, plus rows to train on."""
+    return n_lags + min_training_rows
 
 
 def chronological_split(df, test_size=0.2):
@@ -40,7 +59,7 @@ def train_predict(df, position, n_columns, test_size=0.2, params=None, num_round
     features = create_features(df)
     train, test = chronological_split(features, test_size=test_size)
 
-    feature_cols = [c for c in features.columns if c not in ("ds", "y")]
+    feature_cols = feature_columns(features)
     dtrain = xgb.DMatrix(train[feature_cols], label=train["y"])
     dtest = xgb.DMatrix(test[feature_cols])
 
@@ -52,14 +71,28 @@ def train_predict(df, position, n_columns, test_size=0.2, params=None, num_round
     return {"model": booster, "train": train, "test": test, "feature_cols": feature_cols}
 
 
+def forecast_next(df, position, n_columns, next_date, params=None, num_round=100):
+    """Predict the next, not-yet-drawn result — a real forecast, not a fitted value.
+
+    The appended row carries no target at all (`y = NaN`): create_features
+    drops rows on missing features only, and every feature is built from
+    `shift(1)` or from `ds`. If a future change ever added a feature reading
+    the row's own y, this would produce NaN rather than silently turning the
+    forecast into a function of the last drawn number.
+    """
+    future_row = pd.DataFrame({"ds": [pd.Timestamp(next_date)], "y": [np.nan]})
+    extended = pd.concat([df[["ds", "y"]], future_row], ignore_index=True)
+    return train_predict_one_step(extended, position, n_columns, params=params, num_round=num_round)
+
+
 def train_predict_one_step(df_upto_t, position, n_columns, params=None, num_round=100):
     """Train on every row except the last, predict that last row (1-step walk-forward)."""
-    features = create_features(df_upto_t, n_lags=3, rolling_window=20)
-    if len(features) < 10:
+    features = create_features(df_upto_t)
+    train, predict_row = features.iloc[:-1], features.iloc[[-1]]
+    if train["y"].notna().sum() < min_history_required() - FEATURE_LAGS:
         return None
 
-    train, predict_row = features.iloc[:-1], features.iloc[[-1]]
-    feature_cols = [c for c in features.columns if c not in ("ds", "y")]
+    feature_cols = feature_columns(features)
     dtrain = xgb.DMatrix(train[feature_cols], label=train["y"])
     dpredict = xgb.DMatrix(predict_row[feature_cols])
 

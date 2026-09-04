@@ -12,7 +12,13 @@ from scipy import stats
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tsa.stattools import acf
 
-from models.common import max_for_position, min_for_position, series_label
+from models.common import (
+    MAIN_BALLS_DRAWN,
+    max_for_position,
+    min_for_position,
+    range_for_position,
+    series_label,
+)
 
 
 def frequency_table(position_series, position, n_columns):
@@ -94,34 +100,29 @@ def gap_table(position_series, position, n_columns):
     low = min_for_position(position, n_columns)
     high = max_for_position(position, n_columns)
     last_ds = position_series["ds"].max()
-    rows = []
-    for number in range(low, high + 1):
-        dates = position_series.loc[position_series["y"] == number, "ds"].sort_values()
-        if len(dates) == 0:
-            rows.append({
-                "number": number, "times_seen": 0, "last_date": pd.NaT,
-                "avg_gap_days": np.nan, "std_gap_days": np.nan,
-                "days_since_last": np.nan, "overdue_score": np.nan,
-            })
-            continue
-        gaps = dates.diff().dropna().dt.days
-        last_date = dates.max()
-        days_since_last = (last_ds - last_date).days
-        avg_gap = gaps.mean() if len(gaps) else np.nan
-        std_gap = gaps.std() if len(gaps) > 1 else np.nan
-        overdue = (days_since_last - avg_gap) / std_gap if std_gap and std_gap > 0 else np.nan
-        rows.append({
-            "number": number, "times_seen": len(dates), "last_date": last_date,
-            "avg_gap_days": avg_gap, "std_gap_days": std_gap,
-            "days_since_last": days_since_last, "overdue_score": overdue,
-        })
-    return pd.DataFrame(rows).sort_values("number").reset_index(drop=True)
+    numbers = pd.Index(range(low, high + 1), name="number")
+
+    # build_position_series already sorts by ds, so one groupby covers every number
+    grouped = position_series.groupby("y")["ds"]
+    gap_days = grouped.apply(lambda s: s.diff().dropna().dt.days)
+
+    table = pd.DataFrame({
+        "times_seen": grouped.size().reindex(numbers, fill_value=0),
+        "last_date": grouped.max().reindex(numbers),
+        "avg_gap_days": gap_days.groupby(level=0).mean().reindex(numbers),
+        "std_gap_days": gap_days.groupby(level=0).std().reindex(numbers),
+    })
+    table["days_since_last"] = (last_ds - table["last_date"]).dt.days
+    table["overdue_score"] = (
+        (table["days_since_last"] - table["avg_gap_days"]) / table["std_gap_days"].replace(0, np.nan)
+    )
+    return table.reset_index()
 
 
 def hot_cold_numbers(position_series, position, n_columns, recent_draws=20):
     """Compare each number's share of the most recent draws vs. its all-time share."""
     freq_all = frequency_table(position_series, position, n_columns).set_index("number")["count"]
-    recent = position_series.sort_values("ds").tail(recent_draws)
+    recent = position_series.tail(recent_draws)  # already sorted by build_position_series
     freq_recent = recent["y"].value_counts().reindex(freq_all.index, fill_value=0)
 
     total_all = freq_all.sum()
@@ -139,7 +140,7 @@ def hot_cold_numbers(position_series, position, n_columns, recent_draws=20):
     return table.sort_values("delta_pct", ascending=False).reset_index(drop=True)
 
 
-def is_sorted_ascending(balls_expanded, main_positions=5, tolerance=0.95):
+def is_sorted_ascending(balls_expanded, main_positions=MAIN_BALLS_DRAWN, tolerance=0.95):
     """Heuristic: are the main balls stored sorted ascending within each draw?
 
     Official results are often published this way. If so, each column is an
@@ -153,20 +154,35 @@ def is_sorted_ascending(balls_expanded, main_positions=5, tolerance=0.95):
     return float(is_sorted_row.mean()) >= tolerance
 
 
-def pooled_uniformity_test(balls_expanded, low, high, positions=None):
+def pooled_uniformity_test(balls_expanded, positions):
     """Chi-square uniformity test pooling several columns together (e.g. all 5 main balls).
 
     This is the position-agnostic, sort-order-proof version of
-    chi_square_uniformity: it only asks "does every number in [low, high]
-    show up equally often across all draws and slots combined?", which is
-    the real question when individual positions may be order statistics.
+    chi_square_uniformity: it only asks "does every number show up equally
+    often across all draws and slots combined?", which is the real question
+    when individual positions may be order statistics.
+
+    The range is derived from the positions rather than passed in, so
+    pooling the 1-16 superbalota with the 1-43 main balls is not expressible
+    — a mistake that value range-checking cannot catch anyway, since 1-16 is
+    a subset of 1-43, and that silently skews the counts toward low numbers.
     """
-    columns = balls_expanded.iloc[:, positions] if positions is not None else balls_expanded
-    pooled = columns.to_numpy().ravel()
+    positions = list(positions)
+    n_columns = balls_expanded.shape[1]
+    ranges = {range_for_position(p, n_columns) for p in positions}
+    if len(ranges) != 1:
+        raise ValueError(
+            f"Positions {positions} span different ball ranges {sorted(ranges)} and cannot be pooled "
+            "into one uniformity test."
+        )
+
+    low, high = ranges.pop()
+    pooled = balls_expanded.iloc[:, positions].to_numpy().ravel()
     numbers = np.arange(low, high + 1)
     counts = pd.Series(pooled).value_counts().reindex(numbers, fill_value=0)
     stat, p_value = stats.chisquare(counts.to_numpy())
-    return {"chi2": float(stat), "p_value": float(p_value), "n_categories": len(numbers), "n_observations": len(pooled)}
+    return {"chi2": float(stat), "p_value": float(p_value), "n_categories": len(numbers),
+            "n_observations": int(counts.sum())}
 
 
 def randomness_report(position_series, position, n_columns):
