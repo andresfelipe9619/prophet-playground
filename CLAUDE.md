@@ -2,11 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+It is the condensed version. Full documentation lives in [`docs/`](docs/README.md) — start with [`docs/domain-and-premise.md`](docs/domain-and-premise.md), which explains why several decisions here look wrong until you know the premise. When you change behaviour that these notes describe, update the matching page in `docs/` too.
+
 ## What this project is
 
 Analysis and forecasting over historical Colombian Baloto lottery results. A ticket is 5 distinct numbers from 1-43 plus one "superbalota" from 1-16; draws run Monday, Wednesday and Saturday.
 
-**The domain constraint that shapes the whole architecture:** lottery draws are i.i.d. uniform by design, so no model can beat chance. The codebase was deliberately refactored around this. Every model output is paired with the chance baseline it must beat, and every heuristic (hot/cold, "overdue" numbers) carries an explicit note that it has no predictive value. Do not "improve" a model by adding seasonalities, holiday regressors, or tuned hyperparameters that fit historical noise — that is the anti-pattern this repo was moved away from, and `README_ACCURACY.md` explains why. If a change makes a model look better on history without beating the chance baseline in `backtest.py`, it made the project worse.
+**The domain constraint that shapes the whole architecture:** lottery draws are i.i.d. uniform by design, so no model can beat chance. The codebase was deliberately refactored around this. Every model output is paired with the chance baseline it must beat, and every heuristic (hot/cold, "overdue" numbers) carries an explicit note that it has no predictive value. Do not "improve" a model by adding seasonalities, holiday regressors, or tuned hyperparameters that fit historical noise — that is the anti-pattern this repo was moved away from, and [`docs/domain-and-premise.md`](docs/domain-and-premise.md#6-anti-patterns) explains why. If a change makes a model look better on history without beating the chance baseline in `backtest.py`, it made the project worse.
 
 ## Setup and commands
 
@@ -66,4 +68,18 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 
 ## Language
 
-User-facing dashboard strings and README prose are in Spanish. Code identifiers, docstrings and commit messages are in English.
+**English** for code identifiers, docstrings, comments, all documentation (`README.md`, `docs/`, this file) and commit messages. **Spanish** only for user-facing dashboard strings, since the dashboard is the end-user product.
+
+## Documentation map
+
+Keep these in sync when behaviour changes:
+
+| Page | Covers |
+| --- | --- |
+| [`docs/domain-and-premise.md`](docs/domain-and-premise.md) | The i.i.d. premise, the sorted-data trap, anti-patterns |
+| [`docs/architecture.md`](docs/architecture.md) | Layers, data flow, position semantics, two time axes, invariants |
+| [`docs/data-pipeline.md`](docs/data-pipeline.md) | Data contract, scraper state machine, source resolution |
+| [`docs/models.md`](docs/models.md) | Every predictor and how to add one |
+| [`docs/evaluation.md`](docs/evaluation.md) | Backtest, chance baseline, randomness tests, known past bugs |
+| [`docs/dashboard.md`](docs/dashboard.md) | The seven tabs and how to read them |
+| [`docs/development.md`](docs/development.md) | Setup, verification workflow, conventions, gotchas |
