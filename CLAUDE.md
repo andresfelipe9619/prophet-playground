@@ -31,7 +31,9 @@ There is no test suite, linter, or CI configured. Changes are verified by:
 
 ## Data contract
 
-Scripts read `exported_data/final-final.csv` — gitignored, not in the repo. Columns: `Date` (dd/mm/yyyy) and `Ball`, six dash-separated numbers where the **last one is the superbalota** (e.g. `3-12-19-27-41-8`). `utils/processor.py:load_and_preprocess` splits `Ball` into `balls_expanded`, a DataFrame with one column per position.
+Scripts read `exported_data/final-final.csv` — gitignored, not in the repo. Columns: `Date` (dd/mm/yyyy) and `Ball`, six dash-separated numbers where the **last one is the superbalota** (e.g. `3-12-19-27-41-8`). `utils/processor.py:preprocess_draws` is the single owner of that contract; `load_and_preprocess` (CSV), the dashboard's upload path and `utils/sample_data.py` all go through it.
+
+`python -m utils.scraper --years 2020-2025` builds that file from loterias.com, merging into whatever is already there. Its parser raises rather than skipping on anything unexpected (no rows, wrong ball count, unknown month) — a scraper that silently writes an empty CSV when the markup changes is the failure mode this module is shaped to avoid. `parse_results_page(html)` takes HTML and does no I/O, so it can be tested against saved pages; nothing in the repo can verify it against the live site, so `--dry-run` exists to eyeball a scrape before writing.
 
 When no real CSV is present the dashboard falls back to synthetic data and says so on screen.
 

@@ -1,77 +1,216 @@
+"""Scrape historical Baloto results from loterias.com into the project's data contract.
+
+Usage:
+    python -m utils.scraper --years 2020-2025                 # merge into exported_data/final-final.csv
+    python -m utils.scraper --years 2024 --dry-run            # print what was parsed, write nothing
+
+The parser is deliberately loud. A scraper that silently writes an empty file
+when the site's markup changes is worse than one that crashes: you only find
+out months later, when the analysis is already running on stale data. So a
+page that yields no rows, or a draw whose ball count doesn't match the game,
+raises instead of being skipped.
+
+`--dry-run` prints the parsed rows without writing anything — use it to eyeball
+the first few draws against the website before trusting a scrape.
+"""
+
+import argparse
+import csv
+import os
+import re
+import sys
+import time
+
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import csv
-import re
 
-year = 2024
-# The URL of the webpage you want to scrape
-url = 'https://www.loterias.com/baloto/resultados/' + str(year)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Fetch the content of the URL
-response = requests.get(url)
-soup = BeautifulSoup(response.text, 'html.parser')
+from models.common import DEFAULT_DATA_PATH, MAIN_BALLS_DRAWN
 
-# Initialize an empty list to store the data
-data = []
+BASE_URL = "https://www.loterias.com/baloto/resultados/{year}"
+BALLS_PER_DRAW = MAIN_BALLS_DRAWN + 1  # 5 main + superbalota, in that order
 
-month_map = {
+# Keyed by the first three letters so "may"/"mayo" and "sep"/"set"/"septiembre"
+# all resolve; an unknown month raises rather than silently becoming "00".
+MONTHS = {
     "ene": "01", "feb": "02", "mar": "03", "abr": "04",
-    "mayo": "05", "jun": "06", "jul": "07", "ago": "08",
-    "sep": "09", "oct": "10", "nov": "11", "dic": "12"
+    "may": "05", "jun": "06", "jul": "07", "ago": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dic": "12",
 }
 
-# Use a correct selector to get all 'tr' elements. The example you provided seems like a mix of CSS class and structure.
-# Let's assume you're looking for 'tr' elements within a specific table. Adjust the selector accordingly.
-for tr in soup.find_all('tr'):
-    date_td = tr.find('td', class_='centred')
-    if date_td:
-        date_link = date_td.find('a')
-        if date_link:
-            date_text = date_link.get_text()
-            date_match = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', date_text)
-            if date_match:
-                day, month_name, year = date_match.groups()
-                day_padded = day.zfill(2)
-                month_numeric = month_map.get(month_name.lower(), "00")  # Default to "00" if month name not found
-                date = f"{day_padded}/{month_numeric}/{year}"
-            else:
-                date = 'Invalid date'
+DATE_PATTERN = re.compile(r"(\d{1,2})\s+([a-zA-ZáéíóúÁÉÍÓÚ]+)\.?\s+(\d{4})")
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0 Safari/537.36"
+    ),
+    "Accept-Language": "es-CO,es;q=0.9",
+}
+
+
+class ScrapeError(RuntimeError):
+    """The page could not be fetched, or did not look like a results page."""
+
+
+def parse_spanish_date(text):
+    """'12 oct 2024' -> '12/10/2024' (the dd/mm/yyyy the data contract expects)."""
+    match = DATE_PATTERN.search(text)
+    if not match:
+        raise ScrapeError(f"Could not read a date from {text!r}")
+
+    day, month_name, year = match.groups()
+    month = MONTHS.get(month_name[:3].lower())
+    if month is None:
+        raise ScrapeError(f"Unknown month {month_name!r} in date {text!r}")
+    return f"{day.zfill(2)}/{month}/{year}"
+
+
+def parse_results_page(html, year=None):
+    """Extract [{Date, Ball, Revancha}] from one year's results page.
+
+    `Ball` is the dash-separated draw in the order the site lists it, which the
+    rest of the project reads as 5 main balls followed by the superbalota.
+    Kept free of any network access so it can be tested against saved HTML.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    rows = []
+
+    for tr in soup.find_all("tr"):
+        date_cell = tr.find("td", class_="centred")
+        numbers_cell = tr.find("td", class_="baloto")
+        if not date_cell or not numbers_cell:
+            continue
+
+        date_link = date_cell.find("a")
+        date = parse_spanish_date(date_link.get_text() if date_link else date_cell.get_text())
+
+        ball_lists = numbers_cell.find_all("ul", class_="balls")
+        if not ball_lists:
+            raise ScrapeError(f"No <ul class='balls'> found for the draw on {date}")
+
+        draws = [
+            [li.get_text(strip=True) for li in ul.find_all("li", class_="ball")]
+            for ul in ball_lists
+        ]
+        main_draw = draws[0]
+        if len(main_draw) != BALLS_PER_DRAW:
+            raise ScrapeError(
+                f"Draw on {date} has {len(main_draw)} balls ({main_draw}), expected "
+                f"{BALLS_PER_DRAW} ({MAIN_BALLS_DRAWN} main + superbalota). The site's markup "
+                "likely changed — check parse_results_page against the page before trusting it."
+            )
+
+        rows.append({
+            "Date": date,
+            "Ball": "-".join(main_draw),
+            "Revancha": "-".join(draws[1]) if len(draws) > 1 else "",
+        })
+
+    if not rows:
+        raise ScrapeError(
+            f"Parsed 0 draws{f' for {year}' if year else ''}. Either the year has no results "
+            "or the page structure changed; re-run with --dry-run and inspect the HTML."
+        )
+    return rows
+
+
+def fetch_year(year, session=None, timeout=30, retries=3, backoff=2.0):
+    """Fetch one year's results page, retrying transient network/5xx failures."""
+    session = session or requests.Session()
+    url = BASE_URL.format(year=year)
+
+    last_error = None
+    for attempt in range(retries):
+        try:
+            response = session.get(url, headers=HEADERS, timeout=timeout)
+            if response.status_code >= 500:
+                raise ScrapeError(f"{url} returned {response.status_code}")
+            response.raise_for_status()
+            return response.text
+        except (requests.RequestException, ScrapeError) as exc:
+            last_error = exc
+            if attempt < retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+
+    raise ScrapeError(f"Could not fetch {url} after {retries} attempts: {last_error}")
+
+
+def scrape_years(years, delay=1.5, session=None):
+    """Scrape several years, pausing between requests to stay a polite client."""
+    session = session or requests.Session()
+    rows = []
+    for i, year in enumerate(years):
+        if i:
+            time.sleep(delay)
+        print(f"Fetching {year}...", flush=True)
+        year_rows = parse_results_page(fetch_year(year, session=session), year=year)
+        print(f"  {len(year_rows)} draws", flush=True)
+        rows.extend(year_rows)
+    return pd.DataFrame(rows)
+
+
+def merge_into(new_draws, path):
+    """Merge scraped draws into `path`, de-duplicating by date and sorting chronologically.
+
+    Existing rows win on conflict: a hand-corrected local file is not silently
+    overwritten by a re-scrape.
+    """
+    frames = []
+    if os.path.exists(path):
+        existing = pd.read_csv(path)
+        frames.append(existing)
+        print(f"{len(existing)} existing draws in {path}")
+    frames.append(new_draws)
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined["_sort"] = pd.to_datetime(combined["Date"], dayfirst=True)
+    combined = (
+        combined.drop_duplicates(subset="Date", keep="first")
+        .sort_values("_sort")
+        .drop(columns="_sort")
+        .reset_index(drop=True)
+    )
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    combined.to_csv(path, index=False, quoting=csv.QUOTE_MINIMAL)
+    return combined
+
+
+def parse_years(spec):
+    """'2020-2023' or '2021,2024' or '2024' -> [2020, 2021, 2022, 2023] etc."""
+    years = []
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            start, end = (int(x) for x in part.split("-", 1))
+            years.extend(range(start, end + 1))
         else:
-            date = 'Date not found'
+            years.append(int(part))
+    return years
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__,
+                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--years", required=True, help="e.g. 2024, 2020-2025, or 2021,2024")
+    parser.add_argument("--out", default=DEFAULT_DATA_PATH)
+    parser.add_argument("--delay", type=float, default=1.5, help="seconds between requests")
+    parser.add_argument("--dry-run", action="store_true", help="print results, write nothing")
+    args = parser.parse_args()
+
+    try:
+        draws = scrape_years(parse_years(args.years), delay=args.delay)
+    except ScrapeError as exc:
+        print(f"\nScrape failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
+    if args.dry_run:
+        print(f"\n{len(draws)} draws parsed (nothing written):")
+        print(draws.head(10).to_string(index=False))
+        print("\nCheck these against the website before running without --dry-run.")
     else:
-        continue  # Skip this 'tr' if the date 'td' is not found
-
-    numbers_td = tr.find('td', class_='baloto')
-    if numbers_td:
-        uls = numbers_td.find_all('ul', class_='balls')
-        ball_numbers = []
-        revenge_numbers = []
-
-        if len(uls) == 2:
-            for li in uls[0].find_all('li', class_='ball'):
-                ball_numbers.append(li.get_text())
-            for li in uls[1].find_all('li', class_='ball'):
-                revenge_numbers.append(li.get_text())
-        else:
-            continue  # Skip if not exactly 2 'ul' elements for Baloto and Revancha
-    else:
-        continue  # Skip this 'tr' if the numbers 'td' is not found
-
-    ball_numbers_str = '-'.join(ball_numbers)
-    revenge_numbers_str = '-'.join(revenge_numbers)
-
-    data.append([date, ball_numbers_str, revenge_numbers_str])
-
-# Specify the filename for the CSV
-filename = 'exported_data_' + str(year) + '.csv'
-
-# Write the data to a CSV file
-with open(filename, 'w', newline='') as csvfile:
-    writer = csv.writer(csvfile)
-    # Write the header row
-    writer.writerow(['Date', 'Ball Number', 'Revenge'])
-    # Write the data rows
-    for row in data:
-        writer.writerow(row)
-
-print(f'Data successfully exported to {filename}')
+        combined = merge_into(draws, args.out)
+        print(f"\n{len(combined)} total draws written to {args.out}")

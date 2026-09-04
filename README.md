@@ -47,15 +47,24 @@ dashboard/
 utils/
   processor.py           # carga/preprocesamiento de CSVs y comparación de predicciones
   sample_data.py          # generador de datos sintéticos de demo
-  scraper.py               # scraper de resultados (loterias.com)
-  csv_merger.py            # combina CSVs anuales exportados
+  scraper.py               # scraper de resultados (loterias.com), escribe el CSV del proyecto
+  csv_merger.py            # combina CSVs anuales exportados a mano (legacy)
 ```
 
 ## Datos
 
 Los scripts esperan `exported_data/final-final.csv` con columnas `Date` (dd/mm/yyyy) y `Ball` (6 números separados por guion: 5 principales + superbalota, ej. `3-12-19-27-41-8`). Esa carpeta está en `.gitignore` — no viene en el repo.
 
-Si no tienes ese archivo, `utils/sample_data.py` genera datos sintéticos (sorteos uniformes independientes reales, no una simulación de "patrón") para que puedas explorar el dashboard y los scripts sin tus datos privados. El dashboard cae a este modo demo automáticamente y lo avisa en pantalla.
+Para construir o actualizar ese archivo:
+
+```bash
+python -m utils.scraper --years 2024 --dry-run      # revisa lo que parsea, no escribe nada
+python -m utils.scraper --years 2020-2025            # mezcla en exported_data/final-final.csv
+```
+
+Escribe directamente el formato que espera el pipeline y hace merge con lo que ya tengas (deduplica por fecha, ordena cronológicamente, y las filas existentes ganan para no pisar correcciones manuales). **Corre siempre `--dry-run` primero** y compara las primeras filas contra la web: si loterias.com cambia su HTML el parser falla con un error explícito, pero solo tú puedes confirmar que los números que extrae son los correctos.
+
+Si no tienes datos reales, `utils/sample_data.py` genera datos sintéticos (sorteos uniformes independientes reales, no una simulación de "patrón") para que puedas explorar el dashboard y los scripts sin tus datos privados. El dashboard cae a este modo demo automáticamente y lo avisa en pantalla.
 
 ## Instalación
 
