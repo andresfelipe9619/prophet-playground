@@ -69,22 +69,31 @@ it would be a scandal, not a side project.
 
 ## 3. So why does this repository exist?
 
-Because "you cannot predict it" and "there is nothing to compute" are different
-claims. The project does four things, and only one of them is forecasting.
+Because "you cannot predict it" and "there is nothing to build" are very different
+claims. Generating tickets is legitimate; checking them is legitimate; **measuring
+whether a way of choosing them works is the whole point.** The project does five
+things, and only one of them is forecasting.
 
 | # | What we do | Can it produce a true answer? |
 | --- | --- | --- |
 | 1 | **Prize probability and expected value** — what a ticket is worth | **Yes, exactly.** Pure combinatorics. |
-| 2 | **Randomness testing** — is this data consistent with a fair draw? | **Yes**, up to statistical power. |
-| 3 | **Descriptive statistics** — frequencies, gaps, hot/cold | Yes, as description. No predictive content. |
-| 4 | **Forecasting** — Prophet, ARIMA, XGBoost on each ball position | Runs, but must not beat chance. |
+| 2 | **Ticket generation and checking** — produce plays, score them against real draws | **Yes.** Generating and scoring are exact. |
+| 3 | **Strategy measurement** — does a way of picking beat random picking? | **Yes**, up to statistical power. This is the experiment. |
+| 4 | **Randomness testing** — is this data consistent with a fair draw? | **Yes**, up to statistical power. |
+| 5 | **Forecasting** — Prophet, ARIMA, XGBoost on each ball position | Runs, but must not beat chance. |
 
-Item 1 is the one that answers a real decision. Which numbers will come up is
-unknowable; **what a ticket returns on average is exact arithmetic**. See
+Item 1 answers a real decision exactly. Which numbers will come up is unknowable;
+**what a ticket returns on average is arithmetic**. See
 [`analysis/prizes.py`](../analysis/prizes.py) and
 [evaluation](evaluation.md#5-expected-value-the-one-exact-answer).
 
-Item 4 exists as a **forecasting exercise and a negative control**. It is a real,
+Items 2 and 3 are the experimental core. The claim "no strategy beats random" is
+not something this project asks you to accept on authority — it is the thing it
+**measures**, on your own data, with a significance test and a stability check
+across seeds. See [tickets](tickets.md). A null result you can reproduce is a real
+result, and reproducing it is how you learn to tell a real effect from a lucky run.
+
+Item 5 exists as a **forecasting exercise and a negative control**. It is a real,
 non-trivial engineering problem — walk-forward backtesting, leakage avoidance,
 multi-series model fitting — and the lottery is an unusually clean domain in which
 to practise it, precisely *because* the correct answer is known in advance: the
@@ -93,7 +102,7 @@ has none is a pipeline you can trust on data where the answer is unknown.
 
 ### The design rule that follows
 
-> **Every model output is paired with the chance baseline it must beat.**
+> **Every result is paired with the chance baseline it must beat.**
 
 There is no screen, no CSV, and no function in this repository that reports model
 accuracy without the corresponding chance level next to it. That is the single

@@ -37,6 +37,19 @@ from analysis.prizes import (
     expected_value,
     total_combinations,
 )
+from analysis.tickets import (
+    STRATEGIES,
+    Ticket,
+    check_against_history,
+    check_ticket,
+    compare_strategies,
+    draw_from_row,
+    generate_portfolio,
+    history_summary,
+    portfolio_coverage,
+    stability_check,
+    ticket_from_predictions,
+)
 from models.baseline import most_frequent_pick
 from models.common import (
     DEFAULT_DATA_PATH,
@@ -135,7 +148,7 @@ if is_demo:
 
 tabs = st.tabs([
     "Resumen", "Probabilidades y Valor Esperado", "Frecuencia y Gaps", "Hot / Cold",
-    "Aleatoriedad", "Forecast", "Backtest vs. Azar",
+    "Aleatoriedad", "Forecast", "Jugadas", "Backtest vs. Azar",
 ])
 
 # ---------------------------------------------------------------- Resumen
@@ -397,8 +410,171 @@ with tabs[5]:
                            "por eso hay menos de 5 números distintos — típico cuando el modelo no tiene señal real "
                            "que diferencie una posición de otra.")
 
-# --------------------------------------------------------------- Backtest
+# ---------------------------------------------------------------- Jugadas
 with tabs[6]:
+    st.markdown(
+        "Genera jugadas, verifícalas contra los sorteos reales y mide si tu forma de generarlas le gana "
+        "al azar. **Generar números es perfectamente válido** — lo que ninguna estrategia puede hacer es "
+        "producir una jugada *más probable* que otra, porque las "
+        f"{total_combinations():,} combinaciones son igual de probables. Esa afirmación no te pedimos que "
+        "la creas: la pestaña la mide sobre tus propios datos."
+    )
+
+    gen_tab, check_tab, exp_tab = st.tabs(["Generar", "Verificar", "Medir estrategias"])
+
+    # ------------------------------------------------------------- generar
+    with gen_tab:
+        c1, c2, c3 = st.columns(3)
+        n_tickets = c1.slider("Cuántas jugadas", 1, 20, 5)
+        strategy = c2.selectbox("Estrategia", list(STRATEGIES),
+                                help="'random' es la honesta: todas las combinaciones son igual de probables.")
+        disjoint = c3.checkbox("Sin números repetidos entre jugadas", value=True,
+                               help="Reparte las jugadas sobre más números del pool.")
+
+        if st.button("Generar jugadas"):
+            tickets = generate_portfolio(n_tickets, strategy=strategy,
+                                          balls_expanded=balls_expanded, disjoint=disjoint)
+            st.session_state["tickets"] = tickets
+
+        if "tickets" in st.session_state:
+            tickets = st.session_state["tickets"]
+            st.dataframe(pd.DataFrame([
+                {"#": i + 1, "Balotas": " - ".join(str(n) for n in sorted(t.main)), "Superbalota": t.super_ball}
+                for i, t in enumerate(tickets)
+            ]), use_container_width=True, hide_index=True)
+
+            cov = portfolio_coverage(tickets)
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Números distintos cubiertos", f"{cov['distinct_main_numbers']} de {MAIN_BALL_RANGE[1]}")
+            m2.metric("Cobertura del pool", f"{cov['pool_coverage_pct']:.0f}%")
+            m3.metric("Prob. de premio mayor", f"1 en {cov['jackpot_odds_one_in']:,.0f}")
+            st.caption(
+                "Lo único que cambia al jugar varias combinaciones distintas es **cuántas** posibilidades "
+                "compras, no la calidad de ninguna. Comprar N jugadas divide las probabilidades del premio "
+                "mayor entre N — eso es aritmética, no una estrategia."
+            )
+
+    # ----------------------------------------------------------- verificar
+    with check_tab:
+        st.caption("Escribe una jugada y mira cómo le habría ido en todos los sorteos de tu histórico.")
+        c1, c2 = st.columns([3, 1])
+        main_text = c1.text_input(
+            f"5 balotas ({MAIN_BALL_RANGE[0]}-{MAIN_BALL_RANGE[1]}), separadas por coma o guion", "3, 12, 19, 27, 41")
+        super_text = c2.number_input("Superbalota", min_value=SUPER_BALL_RANGE[0],
+                                      max_value=SUPER_BALL_RANGE[1], value=8)
+
+        if st.button("Verificar jugada"):
+            try:
+                numbers = tuple(int(x) for x in main_text.replace("-", ",").split(",") if x.strip())
+                ticket = Ticket(main=numbers, super_ball=int(super_text))
+            except (ValueError, TypeError) as exc:
+                st.error(f"Jugada inválida: {exc}")
+            else:
+                last_main, last_super = draw_from_row(balls_expanded.iloc[-1])
+                last = check_ticket(ticket, last_main, last_super)
+                st.metric(f"Último sorteo ({df['ds'].max():%Y-%m-%d})", last["category"])
+                if last["matched_numbers"]:
+                    st.write("Números acertados:", ", ".join(str(n) for n in last["matched_numbers"]))
+
+                results = check_against_history(ticket, df, balls_expanded)
+                st.subheader(f"Historial completo — {len(results)} sorteos")
+                summary = history_summary(results)
+                fig = go.Figure()
+                fig.add_bar(x=summary["category"], y=summary["times"])
+                fig.update_layout(title="En cuántos sorteos habría caído cada categoría",
+                                   xaxis_title="Categoría", yaxis_title="Sorteos")
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(summary.style.format({"share_pct": "{:.2f}"}),
+                             use_container_width=True, hide_index=True)
+                st.caption(
+                    f"Mejor resultado histórico de esta jugada: **{int(results['main_matches'].max())} aciertos**. "
+                    "Cualquier otra jugada habría dado una distribución estadísticamente equivalente."
+                )
+
+    # ------------------------------------------------------ medir estrategias
+    with exp_tab:
+        st.markdown(
+            "El experimento: para cada sorteo histórico se generan jugadas usando **solo** los sorteos "
+            "anteriores, y se comparan los aciertos contra la expectativa exacta del azar "
+            "(hipergeométrica). Si una estrategia tuviera ventaja real, el p-valor sería pequeño."
+        )
+        c1, c2 = st.columns(2)
+        max_back = max(10, n_draws - MIN_TRAIN_FLOOR - 1)
+        draws_back = c1.slider("Sorteos a evaluar", 10, max_back, min(200, max_back))
+        per_draw = c2.slider("Jugadas por sorteo", 1, 50, 10)
+
+        if st.button("Ejecutar experimento"):
+            with st.spinner("Generando y puntuando jugadas..."):
+                try:
+                    st.session_state["strategy_table"] = compare_strategies(
+                        df, balls_expanded, n_draws_back=draws_back,
+                        tickets_per_draw=per_draw, min_history=MIN_TRAIN_FLOOR, seed=42)
+                except ValueError as exc:
+                    st.error(str(exc))
+
+        if "strategy_table" in st.session_state:
+            table = st.session_state["strategy_table"]
+            fig = go.Figure()
+            fig.add_bar(x=table["strategy"], y=table["avg_main_matches"], name="Estrategia")
+            fig.add_bar(x=table["strategy"], y=table["chance_avg_main_matches"], name="Azar (esperado)")
+            fig.update_layout(barmode="group", title="Aciertos promedio por jugada vs. azar",
+                               yaxis_title="Aciertos promedio")
+            st.plotly_chart(fig, use_container_width=True)
+
+            display = table.copy()
+            display["¿Le gana al azar?"] = display["beats_chance_corrected"].map({True: "Sí", False: "No"})
+            st.dataframe(
+                display[["strategy", "n_tickets_evaluated", "avg_main_matches", "chance_avg_main_matches",
+                         "p_value_better_than_chance", "¿Le gana al azar?", "best_result"]]
+                .style.format({"avg_main_matches": "{:.4f}", "chance_avg_main_matches": "{:.4f}",
+                                "p_value_better_than_chance": "{:.4f}"}),
+                use_container_width=True, hide_index=True)
+            st.caption(
+                f"La columna de veredicto usa un umbral corregido por comparaciones múltiples "
+                f"(Bonferroni, {table['bonferroni_threshold'].iloc[0]:.4f}): al probar varias estrategias a la "
+                "vez, alguna parecerá ganadora por puro azar con más frecuencia de lo que sugiere un 0.05 "
+                "suelto."
+            )
+
+        st.divider()
+        st.subheader("¿El resultado se sostiene?")
+        st.markdown(
+            "Una sola corrida es **un** sorteo de un proceso ruidoso: con α = 0.05, una estrategia sin "
+            "ninguna ventaja igual parece ganadora ~1 de cada 20 veces. Así es como la mayoría de la gente "
+            "se convence de que su sistema funciona. Esto repite el experimento con varias semillas y cuenta "
+            "cuántas veces marcó ganador."
+        )
+        seeds = st.slider("Semillas a probar", 5, 50, 20)
+        if st.button("Comprobar estabilidad"):
+            with st.spinner(f"Repitiendo el experimento {seeds} veces por estrategia..."):
+                try:
+                    st.session_state["stability"] = pd.DataFrame([
+                        stability_check(df, balls_expanded, strategy=s, n_seeds=seeds,
+                                        n_draws_back=draws_back, tickets_per_draw=per_draw,
+                                        min_history=MIN_TRAIN_FLOOR)
+                        for s in STRATEGIES
+                    ])
+                except ValueError as exc:
+                    st.error(str(exc))
+
+        if "stability" in st.session_state:
+            stab = st.session_state["stability"].copy()
+            stab["Marcada ganadora"] = stab.apply(
+                lambda r: f"{r['times_flagged']} de {r['n_seeds']} ({r['flag_rate']:.0%})", axis=1)
+            st.dataframe(
+                stab[["strategy", "Marcada ganadora", "expected_flag_rate_if_no_edge", "median_p_value"]]
+                .rename(columns={"strategy": "Estrategia",
+                                  "expected_flag_rate_if_no_edge": "Esperado sin ventaja",
+                                  "median_p_value": "p mediano"})
+                .style.format({"Esperado sin ventaja": "{:.0%}", "p mediano": "{:.3f}"}),
+                use_container_width=True, hide_index=True)
+            st.caption(
+                "`random` no puede tener ventaja: es la referencia. Si otra estrategia no marca ganador "
+                "claramente más seguido que ella, no ha demostrado nada."
+            )
+
+# --------------------------------------------------------------- Backtest
+with tabs[7]:
     st.markdown(
         "Backtest *walk-forward*: en cada sorteo histórico reciente, cada modelo se entrena solo con datos "
         "anteriores a ese sorteo y se compara contra lo que realmente salió. El número que importa no es "

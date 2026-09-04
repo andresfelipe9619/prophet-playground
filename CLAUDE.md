@@ -60,6 +60,7 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 - `models/statsforecast_model.py` — AutoARIMA/AutoETS/AutoTheta via Nixtla. `fit_predict_all` fits **every position and all three models in one call**; don't loop per position for these.
 - `models/xgboost_model.py` — chronological splits only. The original code used a shuffled `train_test_split`, leaking future draws into training; keep splits time-ordered.
 - `analysis/randomness.py` — frequency, gaps, hot/cold, chi-square (per-position and pooled), runs test, ACF/Ljung-Box.
+- `analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
 - `analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
 - `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import the root-level model scripts.
 - `summary_charts.py` — the original static matplotlib/seaborn charts, superseded by the dashboard for exploratory use.
@@ -80,6 +81,7 @@ Keep these in sync when behaviour changes:
 | [`docs/architecture.md`](docs/architecture.md) | Layers, data flow, position semantics, two time axes, invariants |
 | [`docs/data-pipeline.md`](docs/data-pipeline.md) | Data contract, scraper state machine, source resolution |
 | [`docs/models.md`](docs/models.md) | Every predictor and how to add one |
+| [`docs/tickets.md`](docs/tickets.md) | Generating, checking and measuring ticket strategies |
 | [`docs/evaluation.md`](docs/evaluation.md) | Backtest, chance baseline, randomness tests, known past bugs |
 | [`docs/dashboard.md`](docs/dashboard.md) | The seven tabs and how to read them |
 | [`docs/development.md`](docs/development.md) | Setup, verification workflow, conventions, gotchas |
