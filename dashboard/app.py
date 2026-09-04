@@ -50,7 +50,7 @@ from analysis.tickets import (
     stability_check,
     ticket_from_predictions,
 )
-from models.baseline import most_frequent_pick
+from models.baseline import expected_main_matches, most_frequent_pick
 from models.common import (
     DEFAULT_DATA_PATH,
     MAIN_BALLS_DRAWN,
@@ -65,7 +65,12 @@ from models.common import (
 )
 from models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
 from models.xgboost_model import forecast_next
-from utils.processor import load_and_preprocess, preprocess_draws
+from utils.processor import (
+    check_draw_format,
+    current_format_mask,
+    load_and_preprocess,
+    preprocess_draws,
+)
 from utils.sample_data import load_sample_and_preprocess
 
 st.set_page_config(page_title="Baloto Analytics", layout="wide")
@@ -74,23 +79,31 @@ MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 
 
 @st.cache_data(show_spinner=False)
-def load_data(path, uploaded_bytes):
+def load_data(path, uploaded_bytes, current_format_only):
     """Load draws and derive everything downstream needs, in one cached step.
 
     position_series comes back from here rather than from a second cached
     function so Streamlit never has to hash the full frames as arguments on
-    every rerun.
+    every rerun. `format_report` travels with the data so the UI can say what
+    was dropped and why — the filtering is invisible in the frames themselves.
     """
     if uploaded_bytes is not None:
-        df, balls_expanded = preprocess_draws(pd.read_csv(io.BytesIO(uploaded_bytes)))
+        df, balls_expanded = preprocess_draws(pd.read_csv(io.BytesIO(uploaded_bytes)), validate=False)
         is_demo = False
     elif os.path.exists(path):
-        df, balls_expanded = load_and_preprocess(path)
+        df, balls_expanded = load_and_preprocess(path, validate=False)
         is_demo = False
     else:
         df, balls_expanded = load_sample_and_preprocess(n_draws=400)
         is_demo = True
-    return df, balls_expanded, build_position_series(df, balls_expanded), is_demo
+
+    format_report = check_draw_format(df, balls_expanded)
+    if current_format_only and format_report:
+        keep = current_format_mask(df, balls_expanded)
+        df = df[keep].reset_index(drop=True)
+        balls_expanded = balls_expanded[keep].reset_index(drop=True)
+
+    return df, balls_expanded, build_position_series(df, balls_expanded), is_demo, format_report
 
 
 @st.cache_data(show_spinner=False)
@@ -131,13 +144,38 @@ with st.sidebar:
     st.header("Datos")
     uploaded = st.file_uploader("CSV propio (columnas Date, Ball)", type="csv")
     data_path = st.text_input("Ruta local (si no subes archivo)", value=DEFAULT_DATA_PATH)
+    current_format_only = st.checkbox(
+        "Solo sorteos del formato actual", value=True,
+        help="Baloto cambió de reglas en abril de 2017 (antes: 6 balotas del 1 al 45, sin "
+             "superbalota). Los dos formatos se publican igual, así que un histórico largo suele "
+             "mezclarlos. Desmarca solo si sabes lo que estás haciendo.",
+    )
 
-df, balls_expanded, position_series, is_demo = load_data(
-    data_path, uploaded.getvalue() if uploaded else None
+df, balls_expanded, position_series, is_demo, format_report = load_data(
+    data_path, uploaded.getvalue() if uploaded else None, current_format_only
 )
 n_columns = balls_expanded.shape[1]
 n_draws = len(df)
 label_to_pos = {series_label(p, n_columns): p for p in range(n_columns)}
+
+if format_report:
+    if current_format_only:
+        st.info(
+            f"Se descartaron **{format_report['n_dropped_by_cutoff']} de {format_report['n_draws']} "
+            f"sorteos** anteriores al cambio de reglas de 2017 (el juego antiguo sacaba 6 balotas del "
+            f"1 al 45, sin superbalota). Se analizan los **{format_report['n_current_format']} sorteos "
+            f"del formato actual**, desde {format_report['current_era_starts']:%Y-%m-%d}. "
+            "Puedes desactivar el filtro en la barra lateral."
+        )
+    else:
+        st.error(
+            f"**Tus datos mezclan dos juegos distintos.** {format_report['n_violations']} de "
+            f"{format_report['n_draws']} sorteos (entre {format_report['first_violation']:%Y-%m-%d} y "
+            f"{format_report['last_violation']:%Y-%m-%d}) contienen números que el juego actual no "
+            f"puede producir. Todo lo que sigue — frecuencias, hot/cold, pruebas de aleatoriedad, "
+            "backtest — está calculado sobre esa mezcla y no es interpretable. Marca **Solo sorteos "
+            "del formato actual** en la barra lateral."
+        )
 
 if is_demo:
     st.info(
@@ -576,37 +614,116 @@ with tabs[6]:
 # --------------------------------------------------------------- Backtest
 with tabs[7]:
     st.markdown(
-        "Backtest *walk-forward*: en cada sorteo histórico reciente, cada modelo se entrena solo con datos "
-        "anteriores a ese sorteo y se compara contra lo que realmente salió. El número que importa no es "
-        "'cuántos aciertos' sino **cuántos más que el azar puro** (calculado exactamente con la distribución "
-        "hipergeométrica, sin simulación)."
+        "Backtest *walk-forward*: cada modelo se entrena solo con datos anteriores al sorteo que "
+        "intenta predecir y se compara contra lo que realmente salió. El número que importa no es "
+        "'cuántos aciertos' sino **cuántos más que el azar puro** (calculado exactamente con la "
+        "distribución hipergeométrica, sin simulación)."
     )
-    c1, c2, c3 = st.columns(3)
-    max_windows = max(5, min(40, n_draws - MIN_TRAIN_FLOOR))
-    n_windows = c1.slider("Ventanas (sorteos a evaluar)", 5, max_windows, min(15, max_windows))
-    max_train = max(MIN_TRAIN_FLOOR, n_draws - 1)
-    min_train = c2.slider("Mínimo de sorteos para entrenar", MIN_TRAIN_FLOOR, max_train,
-                          min(60, max_train))
-    include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False)
 
-    start, total = bt.window_bounds(n_draws, n_windows, min_train)
-    if start >= total:
-        st.warning(
-            f"Con {n_draws} sorteos y un mínimo de {min_train} para entrenar no queda ninguna ventana "
-            "por evaluar. Baja el mínimo de entrenamiento o usa un histórico más largo."
+    experiment = st.radio(
+        "¿Qué sorteos dejar fuera del entrenamiento?",
+        ["Últimos N sorteos", "Corte por fecha (holdout)"],
+        horizontal=True,
+        help="El corte por fecha responde a la pregunta concreta: entreno con todo hasta julio, "
+             "¿qué habría predicho para agosto y septiembre, que ya sabemos cómo salieron?",
+    )
+
+    if experiment == "Últimos N sorteos":
+        c1, c2, c3 = st.columns(3)
+        max_windows = max(5, min(40, n_draws - MIN_TRAIN_FLOOR))
+        n_windows = c1.slider("Ventanas (sorteos a evaluar)", 5, max_windows, min(15, max_windows))
+        max_train = max(MIN_TRAIN_FLOOR, n_draws - 1)
+        min_train = c2.slider("Mínimo de sorteos para entrenar", MIN_TRAIN_FLOOR, max_train,
+                              min(60, max_train))
+        include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False)
+
+        start_idx, total = bt.window_bounds(n_draws, n_windows, min_train)
+        if start_idx >= total:
+            st.warning(
+                f"Con {n_draws} sorteos y un mínimo de {min_train} para entrenar no queda ninguna "
+                "ventana por evaluar. Baja el mínimo de entrenamiento o usa un histórico más largo."
+            )
+
+        if st.button("Ejecutar backtest"):
+            with st.spinner("Corriendo backtest walk-forward..."):
+                try:
+                    results = bt.run_all(position_series, n_columns, n_windows=n_windows,
+                                          min_train=min_train, include_prophet=include_prophet)
+                    st.session_state["backtest_summary"] = bt.summarize(results)
+                    st.session_state.pop("holdout", None)
+                except ValueError as exc:
+                    st.error(str(exc))
+    else:
+        st.caption(
+            "Entrena con todos los sorteos hasta la fecha de corte y predice los que vinieron "
+            "después, que ya sabemos cómo salieron. Es el mismo experimento de arriba, pero el "
+            "resultado es un sorteo concreto con una fecha, no un promedio."
+        )
+        first_date, last_date = df["ds"].min().date(), df["ds"].max().date()
+        default_cutoff = (df["ds"].max() - pd.Timedelta(days=60)).date()
+        c1, c2, c3 = st.columns(3)
+        cutoff = c1.date_input(
+            "Entrenar con datos hasta (inclusive)", value=max(default_cutoff, first_date),
+            min_value=first_date, max_value=last_date,
+        )
+        mode_label = c2.radio(
+            "Modo", ["Reentrenar en cada sorteo", "Entrenar una vez en el corte"],
+            help="Reentrenar en cada sorteo es lo que harías jugando de verdad: antes de cada "
+                 "sorteo vuelves a ajustar el modelo con todo lo conocido. Entrenar una vez es la "
+                 "prueba literal 'ajusto en julio y proyecto agosto y septiembre a ciegas'.",
+        )
+        mode = "expanding" if mode_label.startswith("Reentrenar") else "frozen"
+        include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False, key="holdout_prophet")
+
+        n_train_preview, n_holdout_preview = bt.cutoff_bounds(df["ds"], pd.Timestamp(cutoff))
+        st.caption(
+            f"Entrenaría con **{n_train_preview}** sorteos y predeciría **{n_holdout_preview}**."
         )
 
-    if st.button("Ejecutar backtest"):
-        with st.spinner("Corriendo backtest walk-forward..."):
-            try:
-                results = bt.run_all(position_series, n_columns, n_windows=n_windows,
-                                      min_train=min_train, include_prophet=include_prophet)
-                st.session_state["backtest_summary"] = bt.summarize(results)
-            except ValueError as exc:
-                st.error(str(exc))
+        if st.button("Ejecutar holdout"):
+            with st.spinner("Entrenando hasta el corte y prediciendo lo que ya pasó..."):
+                try:
+                    results, info = bt.run_holdout(position_series, n_columns, pd.Timestamp(cutoff),
+                                                    mode=mode, include_prophet=include_prophet)
+                    st.session_state["backtest_summary"] = bt.summarize(results)
+                    st.session_state["holdout"] = (
+                        bt.holdout_detail(results, position_series, n_columns), info
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+
+    if "holdout" in st.session_state:
+        detail, info = st.session_state["holdout"]
+        st.subheader("Sorteo por sorteo")
+        st.caption(
+            f"Entrenado con {info['n_train']} sorteos hasta {info['cutoff']:%Y-%m-%d}; "
+            f"prediciendo {info['n_holdout']} sorteos entre {info['holdout_start']:%Y-%m-%d} y "
+            f"{info['holdout_end']:%Y-%m-%d} "
+            f"({'reentrenando en cada sorteo' if info['mode'] == 'expanding' else 'con un solo ajuste en el corte'})."
+        )
+        shown = detail.copy()
+        shown["ds"] = shown["ds"].dt.strftime("%Y-%m-%d")
+        st.dataframe(shown, use_container_width=True, hide_index=True)
+        hit_columns = [c for c in detail.columns if c.endswith(" aciertos")]
+        if hit_columns:
+            fig = go.Figure()
+            for column in hit_columns:
+                fig.add_scatter(x=detail["ds"], y=detail[column], mode="lines+markers",
+                                name=column.replace(" aciertos", ""))
+            fig.add_hline(y=expected_main_matches(MAIN_BALLS_DRAWN)["mean"], line_dash="dash",
+                          annotation_text="Azar esperado")
+            fig.update_layout(title="Aciertos por sorteo en el periodo de prueba",
+                              yaxis_title="Aciertos (de 5)")
+            st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            "Un sorteo con 3 aciertos no es una señal: con 5 números elegidos de 43, acertar 3 o más "
+            "pasa alrededor del 1% de las veces por puro azar, así que en una tabla con varios "
+            "modelos y varios sorteos es normal ver alguno. Lo que decide es el promedio de abajo."
+        )
 
     if "backtest_summary" in st.session_state:
         summary = st.session_state["backtest_summary"]
+        st.subheader("Promedio contra el azar")
         fig = go.Figure()
         fig.add_bar(x=summary["model"], y=summary["avg_main_hits"], name="Modelo")
         fig.add_bar(x=summary["model"], y=summary["chance_avg_main_hits"], name="Azar (esperado)")
@@ -615,20 +732,25 @@ with tabs[7]:
         st.plotly_chart(fig, use_container_width=True)
 
         display = summary.copy()
-        display["¿Le gana al azar? (p<0.05)"] = display["beats_chance_p<0.05"].map({True: "Sí", False: "No"})
+        display["¿Le gana al azar? (p<0.05)"] = display["beats_chance"].map({True: "Sí", False: "No"})
+        display["¿Le gana? (corregido)"] = display["beats_chance_corrected"].map({True: "Sí", False: "No"})
         st.dataframe(
             display[["model", "n_windows", "avg_main_hits", "chance_avg_main_hits",
-                     "p_value_better_than_chance", "¿Le gana al azar? (p<0.05)", "super_hit_rate",
+                     "p_value_better_than_chance", "¿Le gana al azar? (p<0.05)",
+                     "bonferroni_threshold", "¿Le gana? (corregido)", "super_hit_rate",
                      "chance_super_hit_rate"]]
             .style.format({
                 "avg_main_hits": "{:.2f}", "chance_avg_main_hits": "{:.2f}",
-                "p_value_better_than_chance": "{:.3f}",
+                "p_value_better_than_chance": "{:.3f}", "bonferroni_threshold": "{:.4f}",
                 "super_hit_rate": "{:.3f}", "chance_super_hit_rate": "{:.3f}",
             }),
             use_container_width=True,
         )
         st.caption(
-            "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto (un modelo "
-            "peor que el azar no cuenta como que le gana). Con pocas ventanas, incluso un modelo sin señal real "
-            "puede parecer mejor o peor por pura varianza — desconfía de una sola corrida con pocas ventanas."
+            "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto "
+            "(un modelo peor que el azar no cuenta como que le gana). **Lee la columna corregida**: "
+            f"se prueban {len(summary)} modelos contra los mismos sorteos, así que hay "
+            f"{len(summary)} oportunidades de que alguno pase el 5% por suerte — la corrección de "
+            "Bonferroni baja el umbral a 0.05 dividido entre el número de modelos. Con pocas "
+            "ventanas, incluso un modelo sin señal real puede parecer mejor o peor por pura varianza."
         )

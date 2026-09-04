@@ -38,6 +38,48 @@ It validates that `Date` and `Ball` exist, parses the date into `ds`, and splits
 > Adding a column to the contract means changing `preprocess_draws` and nothing
 > else. That is the point of routing everything through it.
 
+### 1.2 Two eras of the game
+
+Baloto changed its rules in **April 2017**. The old game drew 6 balls from 1–45
+with no superbalota; the current one draws 5 from 1–43 plus a superbalota from
+1–16. Both eras are published as six dash-separated numbers, so a long history
+downloaded in one go has the same *shape* throughout and nothing about the frames
+gives the mix away. Only the values do.
+
+That matters because every analysis in this project assumes the current rules. A
+mixed file quietly corrupts all of them: frequency tables count balls 44 and 45
+that can no longer be drawn, the superbalota column stops being a 1–16 series, and
+a backtest trains on draws from a different game.
+
+`preprocess_draws` therefore checks the values and **warns** — it does not raise,
+because the rows are real draws and a caller may deliberately want the full
+history. Silence is the only option ruled out.
+
+| Function | Returns |
+| --- | --- |
+| `format_violations(balls_expanded)` | Boolean Series: rows that are *provably* not current-format — a main ball > 43, a last ball > 16, or a repeated main ball |
+| `current_format_mask(df, balls_expanded)` | Boolean Series: rows dated **after the last violation** and themselves well formed |
+| `check_draw_format(df, balls_expanded)` | Counts, the era boundary and a printable message — or `None` when the file is clean |
+
+The two masks are not the same, and the difference is the point.
+`format_violations` can only flag draws whose numbers are impossible today; an
+old-era draw that happens to land inside the current bounds passes it. So
+`current_format_mask` cuts at a **date** instead, discarding everything up to the
+last impossible row. Keeping those would leave a tail of old-game draws mixed into
+the history — precisely the contamination the check exists to remove.
+
+```python
+from utils.processor import load_and_preprocess
+df, balls = load_and_preprocess("exported_data/final-final.csv", current_format_only=True)
+```
+
+The CLI equivalent is `python backtest.py --current-format-only`. The dashboard
+does the filtering by default and says on screen how many draws it dropped; the
+sidebar checkbox turns it off.
+
+> A real 2010–2026 export of 1,742 draws splits 707 / 1,035 across the rule
+> change. Analysed together, 41% of the history is a different game.
+
 ## 2. Data source resolution
 
 The dashboard never fails for lack of data. It resolves a source in priority

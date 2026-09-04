@@ -21,6 +21,7 @@ python Prophet.py                        # per-position Prophet forecast
 python StatsForecast.py AutoARIMA        # or AutoETS / AutoTheta
 python XGBoost.py
 python backtest.py --n-windows 20 --min-train 100 [--include-prophet]
+python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
 ```
 
 There is no test suite, linter, or CI configured. Changes are verified by:
@@ -34,6 +35,8 @@ There is no test suite, linter, or CI configured. Changes are verified by:
 ## Data contract
 
 Scripts read `exported_data/final-final.csv` — gitignored, not in the repo. Columns: `Date` (dd/mm/yyyy) and `Ball`, six dash-separated numbers where the **last one is the superbalota** (e.g. `3-12-19-27-41-8`). `utils/processor.py:preprocess_draws` is the single owner of that contract; `load_and_preprocess` (CSV), the dashboard's upload path and `utils/sample_data.py` all go through it.
+
+**Two eras of the game.** Baloto changed rules in April 2017 (before: 6 balls from 1-45, no superbalota). Both eras publish as six dash-separated numbers, so a long history has the same *shape* throughout and only the values give the mix away — a real 2010-2026 export splits 707/1035 across the change. `preprocess_draws` warns rather than raises (the rows are real draws; a caller may want them), and `format_violations` / `current_format_mask` / `check_draw_format` in the same module do the detection. Note the two masks differ deliberately: `format_violations` can only flag rows that are *provably* impossible today, so `current_format_mask` cuts at the date of the last violation instead — an old-era draw that happens to fit today's bounds would otherwise survive. Use `load_and_preprocess(..., current_format_only=True)`, `--current-format-only`, or the dashboard's sidebar checkbox (on by default).
 
 `python -m utils.scraper --years 2020-2025` builds that file from loterias.com, merging into whatever is already there. Its parser raises rather than skipping on anything unexpected (no rows, wrong ball count, unknown month) — a scraper that silently writes an empty CSV when the markup changes is the failure mode this module is shaped to avoid. `parse_results_page(html)` takes HTML and does no I/O, so it can be tested against saved pages; nothing in the repo can verify it against the live site, so `--dry-run` exists to eyeball a scrape before writing.
 
@@ -51,6 +54,8 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 
 **The sorted-data trap.** Official results are often published with the main balls sorted ascending. When that happens each column is an order statistic (min, 2nd-smallest, ...), not a uniform draw, and a per-position chi-square test will report spurious "non-random" structure. `analysis/randomness.py:is_sorted_ascending` detects this and `pooled_uniformity_test` is the sort-proof alternative (it pools columns and only asks whether every number appears equally often). It takes only the positions to pool and derives the range from them, so pooling the 1-16 superbalota with the 1-43 main balls is not expressible — a mistake that value range-checking cannot catch, since 1-16 is a subset of 1-43. Per-position tests are diagnostics; the pooled test is the verdict. Also note six simultaneous per-position tests produce false positives at the usual rate — the dashboard says so, and any new test surface should too.
 
+**Multiple comparisons are corrected everywhere.** A backtest scores k models against the same draws and `compare_strategies` scores k strategies the same way, so both emit `beats_chance` (naive, α = 0.05) *and* `beats_chance_corrected` (Bonferroni, α/k), and every surface points the reader at the corrected column. With six models the naive bar is cleared by luck ~26% of the time — "one of my six models beat chance" is exactly the sentence a lottery system gets built on. A new evaluation table that reports one uncorrected verdict has reintroduced the bug.
+
 **Chance comparisons are one-sided.** `models/baseline.py:beats_chance_test` returns `p_value` (two-sided, "differs from chance") and `p_value_greater` (one-sided, "better than chance"). Only the one-sided value may back a "beats chance" claim — a model significantly *worse* than chance also gets a small two-sided p-value.
 
 ## Module layout
@@ -62,6 +67,7 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 - `analysis/randomness.py` — frequency, gaps, hot/cold, chi-square (per-position and pooled), runs test, ACF/Ljung-Box.
 - `analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
 - `analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
+- `backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
 - `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import the root-level model scripts.
 - `summary_charts.py` — the original static matplotlib/seaborn charts, superseded by the dashboard for exploratory use.
 

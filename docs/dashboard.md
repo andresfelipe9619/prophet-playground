@@ -9,9 +9,12 @@ all other documentation are in English.
 
 ```mermaid
 flowchart TD
-    SIDE["Sidebar<br/>CSV upload · local path"] --> LOAD["load_data()<br/><i>cached</i>"]
+    SIDE["Sidebar<br/>CSV upload · local path<br/>current-format filter"] --> LOAD["load_data()<br/><i>cached</i>"]
     LOAD --> BANNER{"is_demo?"}
     BANNER -->|"yes"| INFO["Blue banner:<br/>synthetic demo data"]
+    LOAD --> FMT{"format_report?"}
+    FMT -->|"filtered"| DROP["Blue banner:<br/>N pre-2017 draws dropped"]
+    FMT -->|"filter off"| MIX["Red banner:<br/>two games mixed,<br/>nothing below is interpretable"]
     LOAD --> T
 
     subgraph T["Eight tabs"]
@@ -28,6 +31,13 @@ flowchart TD
 
 Streamlit re-runs the whole script on every widget interaction, so the expensive
 work is either cached (`@st.cache_data`) or behind an explicit button.
+
+**Solo sorteos del formato actual** (sidebar, on by default) drops draws from before
+the 2017 rule change — see
+[Data Pipeline §1.2](data-pipeline.md#12-two-eras-of-the-game). The banner says how
+many were dropped and from when. Turning it off on a mixed file swaps that banner
+for a red one: every tab below is then computed over two different games, and the
+warning says so rather than letting the numbers look ordinary.
 
 ## 2. Tab guide
 
@@ -158,16 +168,35 @@ run is the most common way people convince themselves a lottery system works.
 
 ### 7 · Backtest vs. Azar — the verdict
 
-Walk-forward evaluation with adjustable windows and minimum training size, plus an
-optional (slow) Prophet run.
+Walk-forward evaluation, with a radio at the top choosing **which draws to hold
+out**:
 
-Produces a grouped bar chart of model vs chance, and a table with the one-sided
-p-value and a "¿Le gana al azar?" column.
+| Choice | Controls | Produces |
+| --- | --- | --- |
+| **Últimos N sorteos** | window count, minimum training size | The summary table and bar chart |
+| **Corte por fecha (holdout)** | a date picker, and a mode | The same, **plus** a draw-by-draw table and a hits-over-time chart |
 
-**How to read it.** In order: the verdict column, then the gap between the model and
-chance bars, then the p-value, then `n_windows`. A single run at 15 windows is an
-anecdote — a signal-free model clears chance about half the time by luck. Full
-detail in [Evaluation §7](evaluation.md#7-how-to-read-a-backtest-result).
+The date option is the concrete one: pick 31 July, and the panel trains on
+everything up to it and predicts the draws of August and September that have
+already happened. Its **Modo** radio maps to the two experiments in
+[Evaluation §2.2](evaluation.md#22-holdout-by-date) — *Reentrenar en cada sorteo*
+(`expanding`, how you would really play) and *Entrenar una vez en el corte*
+(`frozen`, the literal "fit in July, predict August blind").
+
+Both paths write into the same `st.session_state["backtest_summary"]`, so the
+grouped bar chart and summary table below are shared. Switching back to the window
+mode clears the per-draw table rather than leaving a stale one under a new run.
+
+**How to read it.** In order: the **corrected** verdict column, then the gap
+between the model and chance bars, then the p-value, then `n_windows`. A single run
+at 15 windows is an anecdote, and the naive column is cleared by luck far more
+often than 5% of the time because several models are tested at once — the table
+shows the Bonferroni threshold next to it. Full detail in
+[Evaluation §7](evaluation.md#7-how-to-read-a-backtest-result).
+
+In the per-draw table, a row with 3 hits is not a finding: three or more of five
+from 43 comes up about 1% of the time by luck, so one such row across several
+models and a dozen draws is expected. The caption under the chart says so.
 
 ## 3. Performance notes
 
