@@ -72,6 +72,20 @@ frames on every rerun.
 
 `utils/scraper.py` builds the CSV from `loterias.com`.
 
+### Rebuilding everything from scratch
+
+Lost the CSV? It is gitignored and never committed, so there is nothing to
+recover from the repository — rebuild it from the source:
+
+```bash
+python -m utils.scraper --years 2024 --dry-run     # 1. confirm the parser still works
+python -m utils.scraper --years 2008-2026           # 2. scrape everything available
+```
+
+A wide range is safe. Years that predate the site's archive are **skipped, not
+fatal** — see [§3.3](#33-empty-years-vs-a-broken-parser). Start wider than you
+think you need; the run reports which years had nothing.
+
 ### First run, step by step
 
 ```bash
@@ -123,19 +137,25 @@ stateDiagram-v2
     Fetching --> Retrying: network error / HTTP 5xx
     Retrying --> Fetching: attempt < 3, wait 2^n × backoff
     Retrying --> Failed: attempts exhausted
+    Fetching --> SkippedYear: HTTP 404 — no page for that year
     Fetching --> Parsing: HTTP 200
 
     Parsing --> Validating: rows extracted
-    Parsing --> Failed: 0 rows — markup changed?
+    Parsing --> SkippedYear: 0 rows
 
     Validating --> Failed: ball count ≠ 6
     Validating --> Failed: unknown month name
+    Validating --> Failed: unreadable date
     Validating --> Parsed: all rows well formed
 
     Parsed --> NextYear: more years, sleep(delay)
+    SkippedYear --> NextYear
     NextYear --> Fetching
-    Parsed --> Reporting: --dry-run, nothing written
-    Parsed --> Merging: normal run
+
+    NextYear --> AllDone: no years left
+    AllDone --> Failed: no year yielded any row
+    AllDone --> Reporting: --dry-run, nothing written
+    AllDone --> Merging: normal run
     Merging --> Written
 
     Failed --> [*]: ScrapeError, exit 1
@@ -146,7 +166,29 @@ stateDiagram-v2
 Every `Failed` transition names what to check. There is no path from a broken page
 to a written file.
 
-### 3.3 Validation rules
+### 3.3 Empty years vs. a broken parser
+
+A "give me everything" scrape spans years the site may not cover. Those are not
+errors, but a year yielding nothing is *also* what a broken parser looks like.
+The two are separated by evidence rather than guesswork:
+
+| Situation | Behaviour |
+| --- | --- |
+| Year returns 404 | No page for that year. Skipped, not retried. |
+| Page loads, 0 rows, **other years worked** | That year has no results. Skipped and reported at the end. |
+| Page loads, 0 rows, **no year worked** | The parser is broken. Raises. |
+| Wrong ball count / unknown month / unreadable date, **any year** | The markup changed. Raises immediately. |
+
+The logic: if other years parsed, the parser demonstrably works, so an empty year
+is missing data. If nothing parsed anywhere, the parser is the suspect. Structural
+errors always raise regardless — silently dropping a year would hide exactly the
+failure this module is shaped to catch.
+
+`parse_results_page()` called directly stays strict and raises on an empty page;
+only `scrape_years` passes `allow_empty=True`, because only it can see the other
+years' evidence.
+
+### 3.4 Validation rules
 
 | Check | On failure |
 | --- | --- |
@@ -158,7 +200,7 @@ Month parsing keys on the **first three letters**, so `may`/`mayo` and
 `sep`/`sept.`/`septiembre` all resolve. All twelve Spanish months are unique in
 their first three characters.
 
-### 3.4 Merge semantics
+### 3.5 Merge semantics
 
 `merge_into()` never overwrites blindly:
 
@@ -171,7 +213,7 @@ their first three characters.
 This makes re-running the scraper idempotent and safe to run on overlapping year
 ranges.
 
-### 3.5 Verification and its limit
+### 3.6 Verification and its limit
 
 `parse_results_page(html)` performs **no I/O**, so it can be tested against saved
 HTML. It has been verified offline against a fixture built from the selectors the
@@ -185,7 +227,7 @@ feeds `preprocess_draws` with the superbalota in the last column.
 > the first rows against the website. If ball counts come back as 5 instead of 6,
 > the superbalota likely sits in a separate element and the selector needs work.
 
-### 3.6 Troubleshooting
+### 3.7 Troubleshooting
 
 Every failure exits with status 1 and a message naming what to check. The scraper
 never writes a partial or empty file.
@@ -193,7 +235,8 @@ never writes a partial or empty file.
 | Message | What happened | What to do |
 | --- | --- | --- |
 | `Could not fetch … after 3 attempts` | Network, DNS, proxy, or the site returned 5xx three times. Retries already ran with exponential backoff. | Check connectivity, then retry. Behind a corporate proxy or a sandbox with an egress policy, the host may simply be blocked — the underlying error is included in the message. |
-| `Parsed 0 draws for <year>` | The page loaded but no row matched the selectors. | Most likely the markup changed. Save the HTML and run `parse_results_page()` against it to iterate. Also possible: that year genuinely has no published results. |
+| `No draws parsed from any of [...]` | **No** year in the range yielded rows. | The markup probably changed. Save one page you know has results and iterate with `parse_results_page()` offline. Also possible: the whole range predates the archive. |
+| `No results for: 2001, 2005` (printed, not an error) | Those years had nothing, but others worked. | Nothing to do — that is missing data upstream, not a failure. |
 | `Draw on <date> has N balls (…), expected 6` | A row parsed, but not into 5 main + superbalota. | If N is 5, the superbalota probably moved into its own element — the `ul.balls` selector in `parse_results_page` needs updating. The message prints the numbers found, which usually makes it obvious. |
 | `Unknown month '<x>' in date '<text>'` | A month name outside the twelve Spanish months. | Check `MONTHS` in the module. Matching is on the first three letters, so this means genuinely different wording (or a different language on the page). |
 | `Could not read a date from '<text>'` | The date cell did not match `DD <month> YYYY`. | The date format on the page changed; adjust `DATE_PATTERN`. |
@@ -207,15 +250,15 @@ html = open("saved_page.html").read()      # save the page from your browser
 rows = parse_results_page(html)            # iterate here — no network, no rate limit
 ```
 
-### 3.7 Module API
+### 3.8 Module API
 
 Importable, so the pieces can be reused or tested independently:
 
 | Function | Signature | Notes |
 | --- | --- | --- |
-| `parse_results_page` | `(html, year=None) -> list[dict]` | **No I/O.** The testable seam. Returns `{Date, Ball, Revancha}` rows. |
-| `fetch_year` | `(year, session=None, timeout=30, retries=3, backoff=2.0) -> str` | Sends a browser `User-Agent`; retries 5xx and network errors with exponential backoff. |
-| `scrape_years` | `(years, delay=1.5, session=None) -> DataFrame` | Reuses one session; sleeps between years. |
+| `parse_results_page` | `(html, year=None, allow_empty=False) -> list[dict]` | **No I/O.** The testable seam. Returns `{Date, Ball, Revancha}` rows. |
+| `fetch_year` | `(year, session=None, timeout=30, retries=3, backoff=2.0) -> str \| None` | Browser `User-Agent`; retries 5xx and network errors with backoff. **Returns `None` on 404** — no page for that year. |
+| `scrape_years` | `(years, delay=1.5, session=None) -> DataFrame` | Reuses one session, sleeps between years, tolerates empty years (see §3.3). |
 | `merge_into` | `(new_draws, path) -> DataFrame` | Dedup by date, existing rows win, chronological sort, creates the directory. |
 | `parse_spanish_date` | `(text) -> str` | `'12 oct 2024'` → `'12/10/2024'`. |
 | `parse_years` | `(spec) -> list[int]` | `'2020-2023'`, `'2021,2024'`, `'2024'`. |

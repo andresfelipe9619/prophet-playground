@@ -68,12 +68,16 @@ def parse_spanish_date(text):
     return f"{day.zfill(2)}/{month}/{year}"
 
 
-def parse_results_page(html, year=None):
+def parse_results_page(html, year=None, allow_empty=False):
     """Extract [{Date, Ball, Revancha}] from one year's results page.
 
     `Ball` is the dash-separated draw in the order the site lists it, which the
     rest of the project reads as 5 main balls followed by the superbalota.
     Kept free of any network access so it can be tested against saved HTML.
+
+    A page with no rows raises unless `allow_empty` — only scrape_years sets
+    that, because it can tell "this year has no results" from "the parser is
+    broken" by whether *other* years worked.
     """
     soup = BeautifulSoup(html, "html.parser")
     rows = []
@@ -109,7 +113,7 @@ def parse_results_page(html, year=None):
             "Revancha": "-".join(draws[1]) if len(draws) > 1 else "",
         })
 
-    if not rows:
+    if not rows and not allow_empty:
         raise ScrapeError(
             f"Parsed 0 draws{f' for {year}' if year else ''}. Either the year has no results "
             "or the page structure changed; re-run with --dry-run and inspect the HTML."
@@ -118,7 +122,12 @@ def parse_results_page(html, year=None):
 
 
 def fetch_year(year, session=None, timeout=30, retries=3, backoff=2.0):
-    """Fetch one year's results page, retrying transient network/5xx failures."""
+    """Fetch one year's results page, retrying transient network/5xx failures.
+
+    Returns None for a 404 — that is "no page for this year", not a failure to
+    retry, and a multi-year scrape should move on rather than burn three
+    attempts and abort.
+    """
     session = session or requests.Session()
     url = BASE_URL.format(year=year)
 
@@ -126,6 +135,8 @@ def fetch_year(year, session=None, timeout=30, retries=3, backoff=2.0):
     for attempt in range(retries):
         try:
             response = session.get(url, headers=HEADERS, timeout=timeout)
+            if response.status_code == 404:
+                return None
             if response.status_code >= 500:
                 raise ScrapeError(f"{url} returned {response.status_code}")
             response.raise_for_status()
@@ -139,16 +150,51 @@ def fetch_year(year, session=None, timeout=30, retries=3, backoff=2.0):
 
 
 def scrape_years(years, delay=1.5, session=None):
-    """Scrape several years, pausing between requests to stay a polite client."""
+    """Scrape several years, pausing between requests to stay a polite client.
+
+    Years with no published results are skipped rather than fatal, so a wide
+    range ("give me everything") does not die on the first year that predates
+    the game or the site's archive. The distinction that keeps this honest:
+
+    - A year with **no rows** is only tolerated because other years worked. If
+      *no* year yields anything, the parser is broken and this raises.
+    - A **structural** problem — wrong ball count, unknown month, unreadable
+      date — still raises immediately, from any year. That means the markup
+      changed, and silently dropping the year would hide it.
+    """
     session = session or requests.Session()
-    rows = []
+    rows, empty_years, missing_years = [], [], []
+
     for i, year in enumerate(years):
         if i:
             time.sleep(delay)
         print(f"Fetching {year}...", flush=True)
-        year_rows = parse_results_page(fetch_year(year, session=session), year=year)
+
+        html = fetch_year(year, session=session)
+        if html is None:
+            print("  no page for that year", flush=True)
+            missing_years.append(year)
+            continue
+
+        year_rows = parse_results_page(html, year=year, allow_empty=True)
         print(f"  {len(year_rows)} draws", flush=True)
-        rows.extend(year_rows)
+        if year_rows:
+            rows.extend(year_rows)
+        else:
+            empty_years.append(year)
+
+    if not rows:
+        raise ScrapeError(
+            f"No draws parsed from any of {list(years)}. Either none of those years has published "
+            "results, or the page structure changed — re-run with --dry-run on a single year you "
+            "know has results and inspect the HTML."
+        )
+
+    skipped = empty_years + missing_years
+    if skipped:
+        print(f"\nNo results for: {', '.join(str(y) for y in sorted(skipped))} "
+              "(other years parsed fine, so this is missing data, not a broken parser)", flush=True)
+
     return pd.DataFrame(rows)
 
 
