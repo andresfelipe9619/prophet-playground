@@ -9,3 +9,4 @@ prophet_results/
 statsforecast_*_results/
 xgboost_results/holdout_summary.csv
 holdout_detail.csv
+.pytest_cache/
