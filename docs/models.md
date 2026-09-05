@@ -29,7 +29,7 @@ Skipping `clip_to_range()` produces out-of-range balls. It is not optional.
 | **AutoARIMA** | `models/statsforecast_model.py` | all positions in one call | fast | yes |
 | **AutoETS** | same call | " | fast | yes |
 | **AutoTheta** | same call | " | fast | yes |
-| **XGBoost** | `models/xgboost_model.py` | per position | fast | yes, via `forecast_next` |
+| **XGBoost** | `models/xgboost_model.py` | per position | fast | yes, via `forecast_next` / `forecast_horizon` |
 | **Prophet** | `Prophet.py` | per position | slow | yes |
 
 ## 2. FrequencyBaseline
@@ -112,10 +112,12 @@ Every split here is chronological. `chronological_split()` takes the last fracti
 as the future; `train_predict_one_step()` trains on everything before the target
 row.
 
-### Three entry points
+### Four entry points
 
 ```python
-from models.xgboost_model import train_predict, train_predict_one_step, forecast_next
+from models.xgboost_model import (
+    train_predict, train_predict_one_step, forecast_next, forecast_horizon,
+)
 
 # 1. Held-out evaluation: train on the first 80%, predict the chronological tail
 result = train_predict(df, position, n_columns, test_size=0.2)
@@ -126,7 +128,17 @@ yhat = train_predict_one_step(df_upto_t, position, n_columns)   # None if histor
 
 # 3. Real forecast of a draw that has not happened
 yhat = forecast_next(df, position, n_columns, next_date)
+
+# 4. Many draws ahead from a single fit — the frozen holdout mode
+yhats = forecast_horizon(df_train, position, n_columns, future_dates)
 ```
+
+`forecast_horizon` is the only one that goes past a single step. It has to feed each
+prediction back in as the next step's lag, and with no real signal the model
+regresses toward the pool mean, that mean becomes the lag, and the output settles on
+a fixed point — later steps come out identical. That is a genuine property of a lag
+model with nothing to learn, and it is shown rather than smoothed over. See
+[Evaluation §2.2](evaluation.md#22-holdout-by-date).
 
 **These are not interchangeable.** `train_predict` predicts draws that already
 happened — correct for comparing against known results, wrong to present as "the

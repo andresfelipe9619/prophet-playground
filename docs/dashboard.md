@@ -9,9 +9,12 @@ all other documentation are in English.
 
 ```mermaid
 flowchart TD
-    SIDE["Sidebar<br/>CSV upload · local path"] --> LOAD["load_data()<br/><i>cached</i>"]
+    SIDE["Sidebar<br/>CSV upload · local path<br/>current-format filter"] --> LOAD["load_data()<br/><i>cached</i>"]
     LOAD --> BANNER{"is_demo?"}
     BANNER -->|"yes"| INFO["Blue banner:<br/>synthetic demo data"]
+    LOAD --> FMT{"format_report?"}
+    FMT -->|"filtered"| DROP["Blue banner:<br/>N pre-2017 draws dropped"]
+    FMT -->|"filter off"| MIX["Red banner:<br/>two games mixed,<br/>nothing below is interpretable"]
     LOAD --> T
 
     subgraph T["Eight tabs"]
@@ -28,6 +31,13 @@ flowchart TD
 
 Streamlit re-runs the whole script on every widget interaction, so the expensive
 work is either cached (`@st.cache_data`) or behind an explicit button.
+
+**Solo sorteos del formato actual** (sidebar, on by default) drops draws from before
+the 2017 rule change — see
+[Data Pipeline §1.2](data-pipeline.md#12-two-eras-of-the-game). The banner says how
+many were dropped and from when. Turning it off on a mixed file swaps that banner
+for a red one: every tab below is then computed over two different games, and the
+warning says so rather than letting the numbers look ordinary.
 
 ## 2. Tab guide
 
@@ -158,18 +168,66 @@ run is the most common way people convince themselves a lottery system works.
 
 ### 7 · Backtest vs. Azar — the verdict
 
-Walk-forward evaluation with adjustable windows and minimum training size, plus an
-optional (slow) Prophet run.
+Walk-forward evaluation, with a radio at the top choosing **which draws to hold
+out**:
 
-Produces a grouped bar chart of model vs chance, and a table with the one-sided
-p-value and a "¿Le gana al azar?" column.
+| Choice | Controls | Produces |
+| --- | --- | --- |
+| **Últimos N sorteos** | window count, minimum training size | The summary table and bar chart |
+| **Corte por fecha (holdout)** | a date picker, and a mode | The same, **plus** a draw-by-draw table and a hits-over-time chart |
 
-**How to read it.** In order: the verdict column, then the gap between the model and
-chance bars, then the p-value, then `n_windows`. A single run at 15 windows is an
-anecdote — a signal-free model clears chance about half the time by luck. Full
-detail in [Evaluation §7](evaluation.md#7-how-to-read-a-backtest-result).
+The date option is the concrete one: pick 31 July, and the panel trains on
+everything up to it and predicts the draws of August and September that have
+already happened. Its **Modo** radio maps to the two experiments in
+[Evaluation §2.2](evaluation.md#22-holdout-by-date) — *Reentrenar en cada sorteo*
+(`expanding`, how you would really play) and *Entrenar una vez en el corte*
+(`frozen`, the literal "fit in July, predict August blind").
 
-## 3. Performance notes
+`expanding` refits every model once per held-out draw, so its cost grows with the
+horizon while `frozen` stays flat — a two-month cutoff in expanding mode is minutes,
+the same cutoff frozen is seconds. The panel warns before the click rather than
+after: an unannounced five-minute spinner reads as a hung app.
+
+Both paths write into the same `st.session_state["backtest_summary"]`, so the
+grouped bar chart and summary table below are shared. Switching back to the window
+mode clears the per-draw table rather than leaving a stale one under a new run.
+
+**How to read it.** In order: the **corrected** verdict column, then the gap
+between the model and chance bars, then the p-value, then `n_windows`. A single run
+at 15 windows is an anecdote, and the naive column is cleared by luck far more
+often than 5% of the time because several models are tested at once — the table
+shows the Bonferroni threshold next to it. Full detail in
+[Evaluation §7](evaluation.md#7-how-to-read-a-backtest-result).
+
+In the per-draw table, a row with 3 hits is not a finding: three or more of five
+from 43 comes up about 1% of the time by luck, so one such row across several
+models and a dozen draws is expected. The caption under the chart says so.
+
+## 3. Explain-on-hover
+
+Every section header, chart, metric and control carries a small ⓘ that explains
+what you are looking at on hover. The copy lives in one place — the `HELP` dict at
+the top of `dashboard/app.py` — rather than inline at each call site, and two
+helpers consume it:
+
+```python
+section("Sorteo por sorteo", "holdout_detail")   # st.subheader + its ⓘ
+chart(fig, "Aciertos por sorteo", "holdout_chart")  # titled line + ⓘ + the figure
+```
+
+`chart()` moves the title **out of the Plotly figure** and into Streamlit. Plotly's
+own title has nowhere to hang a help icon, so every chart in the dashboard gets the
+same typography and the same affordance this way. Note that clearing the figure
+title needs `title={"text": ""}` — passing `title=None` leaves Plotly rendering the
+literal string `undefined` above the plot.
+
+Keeping the texts together is what makes them reviewable as a set. The house rule
+is that no chart or table appears without saying what it does *not* mean, and that
+is only checkable when the copy sits in one block. When adding a surface, add its
+key to `HELP` and route it through `section()` or `chart()`; a plain
+`st.plotly_chart` call is the signal that one was missed.
+
+## 4. Performance notes
 
 Streamlit re-executes every tab on every interaction. The design keeps that cheap:
 
@@ -184,14 +242,15 @@ Streamlit re-executes every tab on every interaction. The design keeps that chea
 Consequence: moving a slider in tab 6 does not re-fit anything. Only pressing
 **Ejecutar backtest** does.
 
-## 4. Extending the UI
+## 5. Extending the UI
 
 - Tabs are positional (`tabs[0]` … `tabs[6]`). **Inserting a tab shifts every index
   after it** — update them all.
 - `label_to_pos` is built once near the top and used by several tabs. Streamlit runs
   top to bottom and `with` does not create scope, so ordering matters.
 - Follow the house rule: any surface showing a model output or a heuristic also
-  shows the chance level or a note on what it does not mean.
+  shows the chance level or a note on what it does not mean — in the visible caption
+  for what a reader must not miss, and in the `HELP` tooltip for the rest.
 
 ---
 

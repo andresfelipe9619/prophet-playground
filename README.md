@@ -63,6 +63,10 @@ you chose them beat chance:
 
 ```bash
 python backtest.py --n-windows 20 --min-train 100   # do the models beat chance?
+
+# Or the tangible version: train on everything up to July, then predict the
+# draws of August and September that have already happened.
+python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
 ```
 
 ```python
@@ -91,7 +95,7 @@ Eight tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**
 | **Aleatoriedad** | chi-square, runs test, Ljung–Box, ACF — is there any signal? |
 | **Forecast** | Next-draw suggestion from any model |
 | **Jugadas** | Generate tickets, check one against your whole history, and measure strategies against chance |
-| **Backtest vs. Azar** | Walk-forward accuracy against the hypergeometric baseline |
+| **Backtest vs. Azar** | Walk-forward accuracy against the hypergeometric baseline, over the last N draws or everything after a date you pick |
 
 ## Command reference
 
@@ -100,6 +104,8 @@ streamlit run dashboard/app.py                       # main entry point
 
 python backtest.py --n-windows 20 --min-train 100    # evaluate vs chance
 python backtest.py --n-windows 20 --include-prophet  # include Prophet (slow)
+python backtest.py --cutoff 2026-07-31 --mode frozen # hold out everything after a date
+python backtest.py --current-format-only             # drop pre-2017 draws (rules changed)
 
 python Prophet.py                                     # per-position Prophet forecast
 python StatsForecast.py AutoARIMA                     # or AutoETS / AutoTheta

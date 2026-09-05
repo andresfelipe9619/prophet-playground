@@ -1,11 +1,107 @@
+"""Owner of the data contract: Date (dd/mm/yyyy) + Ball (dash-separated, superbalota last).
+
+Every entry point parses draws through `preprocess_draws` — the CSV loader
+below, the dashboard's upload path, and the synthetic sample data — so the
+format cannot drift between them.
+"""
+
 import os
+import warnings
+
 import pandas as pd
 
+from models.common import (
+    MAIN_BALLS_DRAWN,
+    MAIN_BALL_RANGE,
+    SUPER_BALL_RANGE,
+    main_positions,
+    super_position,
+)
 
-# Single owner of the data contract: Date (dd/mm/yyyy) + Ball (dash-separated,
-# superbalota last). Every entry point parses draws through here — the CSV
-# loader below, the dashboard's upload path, and the synthetic sample data.
-def preprocess_draws(df):
+
+def format_violations(balls_expanded):
+    """Boolean Series: rows whose numbers cannot have come from the current game.
+
+    Baloto changed shape in April 2017 — the old game drew 6 balls from 1-45
+    with no superbalota, and both eras are still published as six
+    dash-separated numbers, so a merged file has the same column count
+    throughout and nothing about its *shape* gives the mix away. Only the
+    values do:
+
+    - a main ball above 43, or the last ball above 16 (impossible now, routine
+      in the old game, where the sixth number ran to 45);
+    - a repeated main ball (the five are drawn without replacement, but the
+      superbalota is independent, so it may legitimately equal one of them).
+
+    This flags rows that are *provably* not current-format. It cannot flag an
+    old-era draw whose numbers happen to fit the current bounds — for that use
+    `current_format_mask`, which cuts at the era boundary instead.
+    """
+    n_columns = balls_expanded.shape[1]
+    if n_columns != MAIN_BALLS_DRAWN + 1:
+        return pd.Series(False, index=balls_expanded.index)
+
+    mains = balls_expanded[list(main_positions(n_columns))]
+    supers = balls_expanded[super_position(n_columns)]
+
+    out_of_range_main = ((mains < MAIN_BALL_RANGE[0]) | (mains > MAIN_BALL_RANGE[1])).any(axis=1)
+    out_of_range_super = (supers < SUPER_BALL_RANGE[0]) | (supers > SUPER_BALL_RANGE[1])
+    repeated_main = mains.nunique(axis=1) < MAIN_BALLS_DRAWN
+
+    return out_of_range_main | out_of_range_super | repeated_main
+
+
+def current_format_mask(df, balls_expanded):
+    """Boolean Series: draws that belong to the current era of the game.
+
+    A row is kept only if it is itself well formed *and* dated after the last
+    provable violation. The second condition is the important one: the era
+    boundary is a date, not a per-row property, so every draw up to the last
+    impossible one is discarded even where its numbers would pass on their own.
+    Keeping those would leave a tail of old-game draws mixed into the history,
+    which is precisely the contamination this exists to remove.
+    """
+    violations = format_violations(balls_expanded)
+    if not violations.any():
+        return pd.Series(True, index=balls_expanded.index)
+
+    last_bad_date = df.loc[violations.reindex(df.index, fill_value=False), "ds"].max()
+    return (df["ds"] > last_bad_date) & ~violations
+
+
+def check_draw_format(df, balls_expanded):
+    """Report on how much of a loaded history is not current-format Baloto.
+
+    Returns counts, the era boundary and a ready-to-print message, or None
+    when everything checks out.
+    """
+    violations = format_violations(balls_expanded)
+    n_bad = int(violations.sum())
+    if not n_bad:
+        return None
+
+    keep = current_format_mask(df, balls_expanded)
+    bad_dates = df.loc[violations.reindex(df.index, fill_value=False), "ds"]
+    return {
+        "n_draws": len(df),
+        "n_violations": n_bad,
+        "n_current_format": int(keep.sum()),
+        "n_dropped_by_cutoff": int((~keep).sum()),
+        "first_violation": bad_dates.min(),
+        "last_violation": bad_dates.max(),
+        "current_era_starts": df.loc[keep, "ds"].min() if keep.any() else None,
+        "message": (
+            f"{n_bad} of {len(df)} draws contain numbers the current game cannot produce "
+            f"(main ball > {MAIN_BALL_RANGE[1]}, superbalota > {SUPER_BALL_RANGE[1]}, or a repeated "
+            f"main ball), between {bad_dates.min():%Y-%m-%d} and {bad_dates.max():%Y-%m-%d}. This "
+            "history most likely mixes the pre-2017 game (6 balls from 1-45, no superbalota) with the "
+            f"current one. Only {int(keep.sum())} draws are current-format; analysing the rest together "
+            "mixes two different games. Filter with utils.processor.current_format_mask()."
+        ),
+    }
+
+
+def preprocess_draws(df, validate=True):
     expected_columns = ['Ball', 'Date']
     if not all(column in df.columns for column in expected_columns):
         missing = list(set(expected_columns) - set(df.columns))
@@ -15,13 +111,34 @@ def preprocess_draws(df):
     df['ds'] = pd.to_datetime(df['Date'], dayfirst=True)
     df.drop(columns=['Date'], inplace=True)
     balls_expanded = df['Ball'].str.split('-', expand=True).apply(pd.to_numeric)
+
+    # Warn rather than raise: the rows are real draws, just from a different
+    # game, and a caller may deliberately want the full history. Silence is the
+    # one option ruled out — mixed eras corrupt every downstream statistic
+    # without changing anything visible about the frames.
+    if validate:
+        report = check_draw_format(df, balls_expanded)
+        if report:
+            warnings.warn(report["message"], stacklevel=2)
+
     return df, balls_expanded
 
 
-def load_and_preprocess(path):
+def load_and_preprocess(path, validate=True, current_format_only=False):
+    """Load the CSV and parse it into (df, balls_expanded).
+
+    `current_format_only=True` drops everything before the current era of the
+    game (see current_format_mask) — use it when the file spans the 2017 rule
+    change and the analysis assumes today's rules, which all of them do.
+    """
     if not os.path.exists(path):
         raise FileNotFoundError(f"The file {path} does not exist.")
-    return preprocess_draws(pd.read_csv(path))
+    df, balls_expanded = preprocess_draws(pd.read_csv(path), validate=validate)
+    if current_format_only:
+        keep = current_format_mask(df, balls_expanded)
+        df = df[keep].reset_index(drop=True)
+        balls_expanded = balls_expanded[keep].reset_index(drop=True)
+    return df, balls_expanded
 
 
 # Function to load the actual 2024 data

@@ -45,9 +45,73 @@ python backtest.py --n-windows 20 --include-prophet     # slower
 | `--n-windows` | 15 | How many recent draws to evaluate |
 | `--min-train` | 60 | Minimum history before the first evaluated window |
 | `--include-prophet` | off | Prophet refits per position per window; far slower |
+| `--cutoff` | off | Hold out every draw after a date instead — see [§2.2](#22-holdout-by-date) |
+| `--mode` | `expanding` | With `--cutoff`: `expanding` or `frozen` |
+| `--current-format-only` | off | Drop pre-2017 draws ([data contract](data-pipeline.md#12-two-eras-of-the-game)) |
 | `--file` | `exported_data/final-final.csv` | Input |
 
 Writes `backtest_summary.csv`.
+
+### 2.1 Multiple comparisons
+
+A run scores k models against the **same** held-out draws, so it gets k chances at
+a false positive. At α = 0.05 with six models there is a ~26% chance that at least
+one signal-free model clears the bar — and "one of my six models beat chance" is
+exactly the sentence a lottery system is built on.
+
+`summarize()` therefore emits two verdicts, matching
+[`compare_strategies`](tickets.md#multiple-comparisons):
+
+| Column | Meaning |
+| --- | --- |
+| `beats_chance` | Naive per-test verdict at α = 0.05. **This is the one that misleads.** |
+| `bonferroni_threshold` | α / k |
+| `beats_chance_corrected` | The verdict to read |
+
+### 2.2 Holdout by date
+
+Picking the last N draws gives an average. Picking a **date** gives something you
+can check against your own memory of what came out:
+
+```bash
+python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
+```
+
+> Train on everything up to 31 July, then predict the draws of August and
+> September — which have already happened, so the answer is known.
+
+Two modes, because they are not the same experiment and the gap between them is
+itself informative:
+
+| Mode | What it does | What it answers |
+| --- | --- | --- |
+| `expanding` | Refits before every held-out draw, on all data preceding it | "How would this do if I retrained before each draw?" — how you would really play |
+| `frozen` | Fits **once** at the cutoff and forecasts the whole remaining horizon | "I fit this in July. What did it say about August?" — the literal test, and the harder one |
+
+Both use the same `_score_window`, so their summaries are directly comparable.
+
+`run_holdout()` returns `(results_by_model, info)`; `info` carries the cutoff, the
+mode and both split sizes so a caller can report the experiment next to its result.
+`holdout_detail()` turns the results into one row per held-out draw — the actual
+numbers, and each model's hits against them. That table is the point of this mode:
+the summary is the verdict, the detail is what makes it concrete.
+
+```
+        ds                 sorteo  superbalota  AutoTheta aciertos  XGBoost aciertos
+2026-08-01    1 - 7 - 8 - 14 - 24            5                   0                 1
+2026-08-15  2 - 10 - 15 - 23 - 30            2                   3                 0
+2026-08-31  1 - 18 - 25 - 31 - 43            8                   0                 0
+```
+
+Three hits on 15 August looks like a hit. It is not: three or more of five from 43
+happens about 1% of the time by luck, so across several models and a dozen draws
+one such row is expected. The average at the bottom of the run is what decides.
+
+**A note on `frozen` + XGBoost.** Projecting a lag model past one step means
+feeding its own predictions back as lags (`xgboost_model.forecast_horizon`). With
+no genuine signal the model regresses toward the pool mean, that mean becomes the
+lag, and the output converges on a fixed point — later steps come out identical.
+That flattening is a real property of the model, shown rather than hidden.
 
 ### Scoring is set-based
 
@@ -221,19 +285,21 @@ own uncertainty.
 ## 7. How to read a backtest result
 
 ```
-            model  n_windows  avg_main_hits  chance_avg_main_hits  p_value_better_than_chance  beats_chance
-        AutoARIMA         15           0.73                  0.46                       0.081         False
-          XGBoost         15           0.60                  0.50                       0.561         False
-FrequencyBaseline         15           0.40                  0.58                       0.894         False
+            model  n_windows  avg_main_hits  chance_avg_main_hits  p_value_better_than_chance  beats_chance  bonferroni_threshold  beats_chance_corrected
+        AutoARIMA         15           0.73                  0.46                       0.081         False                0.0167                   False
+          XGBoost         15           0.60                  0.50                       0.561         False                0.0167                   False
+FrequencyBaseline         15           0.40                  0.58                       0.894         False                0.0167                   False
 ```
 
 Reading order:
 
-1. **`beats_chance`** — the verdict. Expect `False`.
+1. **`beats_chance_corrected`** — the verdict. Expect `False`. Read this column,
+   not `beats_chance`; see [§2.1](#21-multiple-comparisons).
 2. **`avg_main_hits` vs `chance_avg_main_hits`** — the raw gap. AutoARIMA is above
    chance here.
-3. **`p_value_better_than_chance`** — 0.081. Not significant. With 15 windows, a
-   gap that size is ordinary variance.
+3. **`p_value_better_than_chance`** — 0.081. Not significant even naively, and
+   nowhere near the corrected 0.0167. With 15 windows, a gap that size is ordinary
+   variance.
 4. **`n_windows`** — the sample size behind all of the above. Fifteen is small.
    Treat a single run at 15 windows as an anecdote.
 

@@ -99,3 +99,36 @@ def train_predict_one_step(df_upto_t, position, n_columns, params=None, num_roun
     booster = xgb.train(params or DEFAULT_PARAMS, dtrain, num_round)
     yhat = float(booster.predict(dpredict)[0])
     return clip_to_range(yhat, position, n_columns)
+
+
+def forecast_horizon(df_train, position, n_columns, future_dates, params=None, num_round=100):
+    """Fit once on `df_train`, then predict `future_dates` recursively without refitting.
+
+    Each prediction is appended to the working history as if it were the drawn
+    number, so the next step's lags are built from it. That is the honest way
+    to project a lag model past one step when the real values are being held
+    out — but expect the output to flatten after a few draws: with no genuine
+    signal the model regresses to the pool mean, its own output becomes the
+    lag, and it converges on a fixed point. A holdout whose later steps are all
+    the same number is that fixed point, not a bug.
+    """
+    features = create_features(df_train)
+    feature_cols = feature_columns(features)
+    booster = xgb.train(params or DEFAULT_PARAMS,
+                        xgb.DMatrix(features[feature_cols], label=features["y"]), num_round)
+
+    history = df_train[["ds", "y"]].copy()
+    predictions = []
+    for date in future_dates:
+        extended = pd.concat(
+            [history, pd.DataFrame({"ds": [pd.Timestamp(date)], "y": [np.nan]})], ignore_index=True
+        )
+        row = create_features(extended).iloc[[-1]]
+        yhat = clip_to_range(float(booster.predict(xgb.DMatrix(row[feature_cols]))[0]),
+                             position, n_columns)
+        predictions.append(yhat)
+        history = pd.concat(
+            [history, pd.DataFrame({"ds": [pd.Timestamp(date)], "y": [float(yhat)]})],
+            ignore_index=True,
+        )
+    return predictions
