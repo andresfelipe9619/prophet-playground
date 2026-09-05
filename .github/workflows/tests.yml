@@ -1,0 +1,78 @@
+name: Tests
+
+# Pushes to master, plus every pull request. A push to a branch that already
+# has a PR open arrives as `pull_request: synchronize`, so listing both does
+# not double-run the suite on feature branches.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Everything that needs no third-party package, so it reports in seconds
+  # rather than after a dependency install.
+  static:
+    name: Compile and doc links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # pytest imports core/, lottery/ and football/, but never dashboard/app.py
+      # or the entry points under scripts/ — a syntax error in those would
+      # otherwise reach master unnoticed.
+      - name: Byte-compile every module
+        run: python -m py_compile $(find core lottery football scripts dashboard tests -name '*.py')
+
+      # The documentation carries most of this project's reasoning, so a rotted
+      # cross-reference is a real defect. The checker is pure standard library.
+      - name: Verify documentation links
+        run: python -m lottery.utils.check_docs
+
+  tests:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Report every version, not just the first to fail.
+      fail-fast: false
+      matrix:
+        # 3.11 is the developed-on version; 3.12 and 3.13 were confirmed green
+        # before being added here rather than assumed.
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+
+      # requirements-test.txt, not requirements.txt: the suite never imports
+      # prophet, streamlit, plotly, matplotlib, seaborn, requests or
+      # beautifulsoup4. Installing prophet and cmdstanpy here would dominate
+      # the job to exercise code no test touches. A test that ever needs one
+      # fails loudly with an ImportError rather than skipping quietly.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      # The whole suite, `slow` markers included — it runs in under a minute
+      # and the slow tests are the ones that fit real models.
+      - name: Run the test suite
+        run: pytest -q
