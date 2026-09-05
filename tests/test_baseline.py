@@ -86,6 +86,31 @@ def test_zero_variance_is_handled():
     assert result["observed_mean"] == 0.0
 
 
+def test_the_effect_size_travels_with_the_p_value():
+    """core's keys must reach every lottery surface unchanged."""
+    result = beats_chance_test([1, 1, 1, 1], MAIN_BALLS_DRAWN)
+    assert set(result) == {"z", "p_value", "p_value_greater", "observed_mean", "chance_mean",
+                           "effect", "ci_low", "ci_high", "relative_effect", "n_observations"}
+    assert result["effect"] == pytest.approx(1.0 - result["chance_mean"])
+    assert result["relative_effect"] == pytest.approx(result["effect"] / result["chance_mean"])
+    assert result["n_observations"] == 4
+    assert result["ci_low"] < result["effect"] < result["ci_high"]
+
+
+def test_the_domain_renames_the_null_mean_and_keeps_no_alias():
+    """`chance_mean` is this domain's name for it — two names for one number drift apart."""
+    result = beats_chance_test([0, 1], MAIN_BALLS_DRAWN)
+    assert "chance_mean" in result
+    assert "null_mean" not in result
+
+
+def test_a_short_registry_reports_a_wide_interval():
+    """Three predictions cannot resolve anything, and the interval has to say so."""
+    short = beats_chance_test([1, 1, 1], MAIN_BALLS_DRAWN)
+    long = beats_chance_test([1] * 300, MAIN_BALLS_DRAWN)
+    assert (short["ci_high"] - short["ci_low"]) > (long["ci_high"] - long["ci_low"]) * 5
+
+
 def test_most_frequent_pick_returns_one_legal_ball_per_position(position_series, n_columns):
     from lottery.models.common import range_for_position
 

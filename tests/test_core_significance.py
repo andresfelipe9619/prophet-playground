@@ -73,6 +73,64 @@ def test_a_degenerate_null_refuses_to_invent_a_z():
     assert result["observed_mean"] == 1.0 and result["null_mean"] == 1.0
 
 
+# ------------------------------------------------------------- effect sizes
+
+def test_the_effect_is_the_gap_from_the_null():
+    result = z_test_against_null([3.0] * 40, 1.0, 1.0)
+    assert result["effect"] == pytest.approx(2.0)
+    assert result["relative_effect"] == pytest.approx(2.0)
+    assert result["n_observations"] == 40
+
+
+def test_the_interval_brackets_the_effect():
+    result = z_test_against_null([2.0] * 100, 1.0, 1.0)
+    assert result["ci_low"] < result["effect"] < result["ci_high"]
+
+
+def test_more_data_narrows_the_interval_without_moving_the_effect():
+    """The distinction a p-value cannot make: 'no edge' vs 'no edge detectable here'."""
+    few = z_test_against_null([1.0] * 25, 1.0, 1.0)
+    many = z_test_against_null([1.0] * 2500, 1.0, 1.0)
+    assert few["effect"] == pytest.approx(many["effect"])
+    width = lambda r: r["ci_high"] - r["ci_low"]
+    assert width(many) == pytest.approx(width(few) / 10, rel=1e-6)
+
+
+def test_the_interval_narrows_with_the_square_root_of_n():
+    widths = [z_test_against_null([1.0] * n, 1.0, 1.0)["ci_high"]
+              - z_test_against_null([1.0] * n, 1.0, 1.0)["ci_low"]
+              for n in (100, 400)]
+    assert widths[1] == pytest.approx(widths[0] / 2, rel=1e-6)
+
+
+def test_a_wider_confidence_level_gives_a_wider_interval():
+    narrow = z_test_against_null([2.0] * 100, 1.0, 1.0, confidence=0.80)
+    wide = z_test_against_null([2.0] * 100, 1.0, 1.0, confidence=0.99)
+    assert wide["ci_high"] - wide["ci_low"] > narrow["ci_high"] - narrow["ci_low"]
+
+
+def test_an_interval_excluding_zero_agrees_with_the_p_value():
+    """The two must not contradict each other on the same data."""
+    result = z_test_against_null([2.0] * 200, 1.0, 1.0)
+    assert result["ci_low"] > 0 and result["p_value"] < 0.05
+
+    null = z_test_against_null([1.0] * 200, 1.0, 1.0)
+    assert null["ci_low"] < 0 < null["ci_high"] and null["p_value"] > 0.05
+
+
+def test_a_result_without_observations_reports_none_of_them():
+    result = z_test_against_null([], 1.0, 1.0)
+    assert result["n_observations"] == 0
+    assert np.isnan(result["effect"])
+    assert np.isnan(result["ci_low"]) and np.isnan(result["ci_high"])
+
+
+def test_a_degenerate_null_still_reports_the_observation_count():
+    result = z_test_against_null([1.0, 1.0, 1.0], 1.0, 0.0)
+    assert result["n_observations"] == 3
+    assert np.isnan(result["z"])
+
+
 @pytest.mark.parametrize("k, expected", [(1, 0.05), (2, 0.025), (6, 0.05 / 6)])
 def test_bonferroni_threshold(k, expected):
     assert bonferroni_threshold(0.05, k) == pytest.approx(expected)

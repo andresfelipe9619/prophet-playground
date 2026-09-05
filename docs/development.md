@@ -83,9 +83,11 @@ pytest                      # everything
 pytest -m "not slow"        # skip the runs that fit real models (~2s)
 ```
 
-Every test builds its data from the seeded generator in
-`lottery/utils/sample_data.py`, so the suite is deterministic and needs no private
-CSV. Tests that fit real models are marked `slow`.
+Every test builds its data from a seeded generator — `lottery/utils/sample_data.py`
+for uniform draws, `lottery/analysis/sensitivity.py:biased_draws` where a planted
+bias is needed — so the suite is deterministic and needs no private CSV. Tests
+that fit real models, or that repeat an experiment across many seeds, are marked
+`slow`.
 
 What the suite is *for* is worth being explicit about: it does not chase coverage,
 it pins the **invariants** listed in [CLAUDE.md](../CLAUDE.md) and throughout these
@@ -101,6 +103,14 @@ docs — the ones a refactor breaks silently and no reader would notice:
 | Set-based, order-agnostic scoring | It is what makes the hypergeometric baseline the right comparison |
 | Pooled uniformity refuses mixed ranges | 1-16 is a subset of 1-43, so range-checking cannot catch the mistake |
 | Chronological-only XGBoost splits | A shuffled split was the original bug |
+| Effect sizes travel with p-values | A p-value cannot separate "no edge" from "no edge detectable here" |
+| The MDE falls only with sqrt(N) | Four times the data buys half the resolution |
+| The superbalota uses a Bernoulli variance | Reusing the main-ball figures understates the data needed ~3.3x |
+| `independent_seeds` splits the streams | One shared seed couples draws to tickets and invents an edge |
+| `strength = 0` is a true control | Every positive sensitivity row is meaningless if it is not |
+| Popularity moves `E[payout \| win]`, never `P(win)` | The claim the module is careful not to make |
+| The registry refuses past dates and duplicates | Its entire value is in what it will not record |
+| Scoring the registry is all-or-nothing | Choosing which predictions count is the failure it prevents |
 
 A syntax-only check is still occasionally useful on files the suite does not import:
 
