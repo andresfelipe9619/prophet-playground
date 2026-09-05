@@ -21,7 +21,7 @@ Date,Ball
 
 A `Revancha` column may also be present; nothing currently reads it.
 
-**`utils/processor.py:preprocess_draws()` is the single owner of this contract.**
+**`lottery/utils/processor.py:preprocess_draws()` is the single owner of this contract.**
 All three ingestion paths go through it, so the format cannot drift between them:
 
 ```mermaid
@@ -69,11 +69,11 @@ last impossible row. Keeping those would leave a tail of old-game draws mixed in
 the history — precisely the contamination the check exists to remove.
 
 ```python
-from utils.processor import load_and_preprocess
+from lottery.utils.processor import load_and_preprocess
 df, balls = load_and_preprocess("exported_data/final-final.csv", current_format_only=True)
 ```
 
-The CLI equivalent is `python backtest.py --current-format-only`. The dashboard
+The CLI equivalent is `python -m lottery.backtest --current-format-only`. The dashboard
 does the filtering by default and says on screen how many draws it dropped; the
 sidebar checkbox turns it off.
 
@@ -112,7 +112,7 @@ frames on every rerun.
 
 ## 3. The scraper
 
-`utils/scraper.py` builds the CSV from `loterias.com`.
+`lottery/utils/scraper.py` builds the CSV from `loterias.com`.
 
 ### Rebuilding everything from scratch
 
@@ -120,8 +120,8 @@ Lost the CSV? It is gitignored and never committed, so there is nothing to
 recover from the repository — rebuild it from the source:
 
 ```bash
-python -m utils.scraper --years 2024 --dry-run     # 1. confirm the parser still works
-python -m utils.scraper --years 2008-2026           # 2. scrape everything available
+python -m lottery.utils.scraper --years 2024 --dry-run     # 1. confirm the parser still works
+python -m lottery.utils.scraper --years 2008-2026           # 2. scrape everything available
 ```
 
 A wide range is safe. Years that predate the site's archive are **skipped, not
@@ -133,25 +133,25 @@ think you need; the run reports which years had nothing.
 ```bash
 # 1. Inspect one year without writing anything. Compare the printed rows
 #    against the website before trusting the parser.
-python -m utils.scraper --years 2024 --dry-run
+python -m lottery.utils.scraper --years 2024 --dry-run
 
 # 2. If those rows look right, scrape the range you want.
-python -m utils.scraper --years 2020-2025
+python -m lottery.utils.scraper --years 2020-2025
 
 # 3. Confirm the pipeline accepts the result.
-python -c "from utils.processor import load_and_preprocess; \
+python -c "from lottery.utils.processor import load_and_preprocess; \
 df, balls = load_and_preprocess('exported_data/final-final.csv'); \
 print(len(df), 'draws,', balls.shape[1], 'columns'); print(df.head())"
 
 # 4. Keeping it current — re-run any time. Merging is idempotent, so
 #    overlapping ranges are safe.
-python -m utils.scraper --years 2026
+python -m lottery.utils.scraper --years 2026
 ```
 
 Other invocations:
 
 ```bash
-python -m utils.scraper --years 2021,2024 --out other.csv --delay 3
+python -m lottery.utils.scraper --years 2021,2024 --out other.csv --delay 3
 ```
 
 | Flag | Default | Purpose |
@@ -287,7 +287,7 @@ never writes a partial or empty file.
 When the markup has changed, the fastest loop is offline:
 
 ```python
-from utils.scraper import parse_results_page
+from lottery.utils.scraper import parse_results_page
 html = open("saved_page.html").read()      # save the page from your browser
 rows = parse_results_page(html)            # iterate here — no network, no rate limit
 ```
@@ -308,10 +308,10 @@ Importable, so the pieces can be reused or tested independently:
 
 ## 4. Synthetic data
 
-`utils/sample_data.py` generates Baloto-shaped draws with `numpy`'s PRNG:
+`lottery/utils/sample_data.py` generates Baloto-shaped draws with `numpy`'s PRNG:
 
 ```python
-from utils.sample_data import load_sample_and_preprocess
+from lottery.utils.sample_data import load_sample_and_preprocess
 df, balls_expanded = load_sample_and_preprocess(n_draws=400, seed=42)
 ```
 
@@ -332,7 +332,7 @@ dashboard, the models and the backtest all work on it.
 
 ## 5. Legacy ingestion
 
-`utils/csv_merger.py` concatenates hand-exported yearly CSVs from `exported_data/`.
+`lottery/utils/csv_merger.py` concatenates hand-exported yearly CSVs from `exported_data/`.
 It predates the scraper's `merge_into()` and is kept only for existing local files;
 new work should use the scraper.
 

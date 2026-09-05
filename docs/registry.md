@@ -1,6 +1,6 @@
 # The Prediction Registry
 
-`analysis/registry.py` — an append-only, timestamped log of predictions recorded
+`lottery/analysis/registry.py` — an append-only, timestamped log of predictions recorded
 **before** the draw.
 
 Everything else in this project is retrospective, and retrospective analysis can
@@ -53,9 +53,9 @@ timestamp column the file writes about itself.
 ## 3. Using it
 
 ```bash
-python -m analysis.registry record --label Prophet --main 3-12-19-27-41 --super 8
-python -m analysis.registry score
-python -m analysis.registry show
+python -m lottery.analysis.registry record --label Prophet --main 3-12-19-27-41 --super 8
+python -m lottery.analysis.registry score
+python -m lottery.analysis.registry show
 ```
 
 ```python

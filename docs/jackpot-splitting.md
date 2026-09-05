@@ -31,7 +31,7 @@ flowchart LR
 ```
 
 The date bias is the largest and best-established: 1–31 can be a day of the
-month, 32–43 cannot. `analysis/popularity.py` also scores runs of consecutive
+month, 32–43 cannot. `lottery/analysis/popularity.py` also scores runs of consecutive
 numbers, arithmetic spacing (5-10-15-20-25), clustering in one row of the ticket
 grid, and the usual "lucky" numbers — all documented choices people make when
 asked to pick a "random" set.
@@ -57,7 +57,7 @@ model cannot make it for you, and saying so is the point of the band.
 ## 3. Using it
 
 ```bash
-python -m analysis.popularity --jackpot 5000000000 --tickets-sold 3000000
+python -m lottery.analysis.popularity --jackpot 5000000000 --tickets-sold 3000000
 ```
 
 ```

@@ -1,0 +1,19 @@
+# What the test suite alone needs.
+#
+# Deliberately smaller than requirements.txt. The suite never imports prophet,
+# streamlit, plotly, matplotlib, seaborn, requests or beautifulsoup4: those are
+# reached only from the dashboard, the scripts, or lazily from inside a
+# function body (see lottery/models/prophet_model.py, imported on demand by
+# lottery/backtest.py). Installing prophet + cmdstanpy in CI would dominate the
+# job's runtime to exercise code no test touches.
+#
+# If a future test does need one of them, it fails loudly with an ImportError
+# rather than skipping quietly — add it here and to requirements.txt.
+pandas>=2.2
+numpy>=1.26
+scipy>=1.13
+statsmodels>=0.14.1
+statsforecast>=2.0
+xgboost>=2.0.3
+scikit-learn>=1.4.1.post1
+pytest>=8.0

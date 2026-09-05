@@ -5,31 +5,46 @@ it solves*, read [Domain and Premise](domain-and-premise.md) first.
 
 ## 1. Layers
 
-The codebase is four layers with a strict dependency direction: nothing in a lower
+The codebase is five layers with a strict dependency direction: nothing in a lower
 layer imports from a higher one.
+
+The bottom layer, `core/`, is **domain-agnostic**: it knows nothing about balls,
+draws or lotteries. It holds walk-forward splits, the z-test against a null, and
+the multiple-comparison correction — the machinery for judging a predictor
+honestly. Everything Baloto-specific lives under `lottery/`, which supplies the
+two things `core/` deliberately does not have: the null distribution to compare
+against, and the scoring rule. A second domain plugs in at exactly that seam.
 
 ```mermaid
 flowchart TD
     subgraph L4["Presentation"]
         DASH["dashboard/app.py<br/><i>Streamlit UI, 7 tabs</i>"]
-        CLI["Prophet.py · StatsForecast.py<br/>XGBoost.py · backtest.py<br/><i>CLI entry points</i>"]
+        CLI["scripts/*.py · lottery/backtest.py<br/><i>CLI entry points</i>"]
     end
     subgraph L3["Analysis and evaluation"]
-        RAND["analysis/randomness.py<br/><i>is there signal?</i>"]
-        PRIZE["analysis/prizes.py<br/><i>what is a ticket worth?</i>"]
-        TICK["analysis/tickets.py<br/><i>generate · check · measure</i>"]
-        BT["backtest.py<br/><i>does a model beat chance?</i>"]
+        RAND["lottery/analysis/randomness.py<br/><i>is there signal?</i>"]
+        PRIZE["lottery/analysis/prizes.py<br/><i>what is a ticket worth?</i>"]
+        TICK["lottery/analysis/tickets.py<br/><i>generate · check · measure</i>"]
+        BT["lottery/backtest.py<br/><i>does a model beat chance?</i>"]
     end
     subgraph L2["Models"]
-        SF["models/statsforecast_model.py"]
-        XGB["models/xgboost_model.py"]
-        BASE["models/baseline.py<br/><i>chance + frequency baselines</i>"]
+        SF["lottery/models/statsforecast_model.py"]
+        XGB["lottery/models/xgboost_model.py"]
+        BASE["lottery/models/baseline.py<br/><i>chance + frequency baselines</i>"]
     end
-    subgraph L1["Foundation"]
-        COMMON["models/common.py<br/><i>game rules, positions, calendar</i>"]
-        PROC["utils/processor.py<br/><i>data contract</i>"]
-        SCRAPE["utils/scraper.py"]
-        SAMPLE["utils/sample_data.py"]
+    subgraph L1["Foundation (Baloto)"]
+        COMMON["lottery/models/common.py<br/><i>game rules, positions, calendar</i>"]
+        PROC["lottery/utils/processor.py<br/><i>data contract</i>"]
+        SCRAPE["lottery/utils/scraper.py"]
+        SAMPLE["lottery/utils/sample_data.py"]
+    end
+    subgraph LFB["football/ — second domain"]
+        FMKT["football/market.py<br/><i>the closing line as baseline</i>"]
+        FPROC["football/processor.py<br/><i>odds contract, one source per frame</i>"]
+    end
+    subgraph L0["core/ — domain-agnostic"]
+        WIN["core/windows.py<br/><i>walk-forward + cutoff splits</i>"]
+        SIG["core/significance.py<br/><i>z-test vs null, Bonferroni</i>"]
     end
 
     DASH --> RAND & PRIZE & TICK & BT & SF & XGB & BASE
@@ -43,10 +58,14 @@ flowchart TD
     XGB --> COMMON
     SCRAPE --> COMMON & PROC
     SAMPLE --> COMMON & PROC
+    BT --> WIN & SIG
+    BASE --> SIG
+    TICK --> SIG
+    FMKT --> FPROC
     DASH --> PROC & SAMPLE
 ```
 
-`models/common.py` is at the bottom and imports nothing from the project. It is the
+`lottery/models/common.py` is at the bottom and imports nothing from the project. It is the
 single source of truth for the game's rules, and everything else derives from it.
 
 ## 2. Data flow
@@ -64,7 +83,7 @@ flowchart LR
     BE --> POOL["pooled_uniformity_test<br/><i>sort-proof verdict</i>"]
     BPS --> ANA["randomness.py<br/><i>chi2 · runs · Ljung-Box · gaps</i>"]
     BPS --> MODELS["Prophet · AutoARIMA<br/>AutoETS · AutoTheta · XGBoost"]
-    MODELS --> BTEST["backtest.py<br/><i>walk-forward</i>"]
+    MODELS --> BTEST["lottery/backtest.py<br/><i>walk-forward</i>"]
     CHANCE["baseline.py<br/><i>hypergeometric</i>"] --> BTEST
     BTEST --> VERDICT{{"beats chance?"}}
 
@@ -105,7 +124,7 @@ position_series[5]   # DataFrame[ds, y] — the superbalota
 
 A **position** is a column index into `balls_expanded`. The last column is the
 superbalota; the rest are main balls. This is never spelled out inline — it is
-derived from `models/common.py`:
+derived from `lottery/models/common.py`:
 
 | Helper | Returns |
 | --- | --- |
@@ -197,10 +216,10 @@ a win is a real bug this project has already shipped and fixed.
 
 | Contract | Sole owner |
 | --- | --- |
-| Ball ranges, pool sizes, draw calendar, positions | `models/common.py` |
-| CSV shape (`Date`, `Ball`) | `utils/processor.py:preprocess_draws` |
-| Chance baseline | `models/baseline.py` |
-| Prize probabilities | `analysis/prizes.py` |
+| Ball ranges, pool sizes, draw calendar, positions | `lottery/models/common.py` |
+| CSV shape (`Date`, `Ball`) | `lottery/utils/processor.py:preprocess_draws` |
+| Chance baseline | `lottery/models/baseline.py` |
+| Prize probabilities | `lottery/analysis/prizes.py` |
 
 Every entry point routes through the owner. `preprocess_draws` in particular is
 reached by all three ingestion paths — CSV file, dashboard upload, synthetic data —
@@ -225,35 +244,50 @@ makes it true by construction regardless.
 ├── CLAUDE.md                     Terse conventions summary for AI agents
 ├── docs/                         This documentation
 │
-├── models/
-│   ├── common.py                 ★ Game rules, positions, calendar, long-format
-│   ├── baseline.py               Hypergeometric chance baseline + beats_chance_test
-│   ├── statsforecast_model.py    AutoARIMA / AutoETS / AutoTheta (Nixtla)
-│   └── xgboost_model.py          Features, chronological splits, forecast_next
+├── core/                         Domain-agnostic evaluation — knows no lottery
+│   ├── windows.py                Walk-forward and date-cutoff splits
+│   └── significance.py           ★ z-test vs a null, Bonferroni correction
 │
-├── analysis/
-│   ├── randomness.py             Frequency, gaps, hot/cold, chi2, runs, ACF
-│   ├── prizes.py                 Exact prize probabilities, EV, RTP, breakeven
-│   └── tickets.py                Generate, check and measure ticket strategies
+├── football/                     Second domain — real signal, market baseline
+│   ├── common.py                 ★ The three outcomes and their (H, D, A) ordering
+│   ├── processor.py              ★ football-data.co.uk contract + opening/closing guard
+│   ├── market.py                 Odds → calibrated probabilities (football's baseline.py)
+│   └── sample_data.py            Synthetic seasons carrying the generative truth
 │
-├── utils/
-│   ├── processor.py              ★ Data contract + forecast comparison
-│   ├── scraper.py                loterias.com → the project CSV
-│   ├── sample_data.py            Synthetic i.i.d. draws for demo/testing
-│   ├── csv_merger.py             Legacy: merge hand-exported yearly CSVs
-│   └── lib_detector.py           Print installed library versions
+├── lottery/                      Everything Baloto-specific
+│   ├── backtest.py               Walk-forward evaluation vs chance (CLI)
+│   ├── constants.py              Colombian holidays (opt-in Prophet regressor)
+│   ├── models/
+│   │   ├── common.py             ★ Game rules, positions, calendar, long-format
+│   │   ├── baseline.py           Hypergeometric chance baseline + beats_chance_test
+│   │   ├── statsforecast_model.py  AutoARIMA / AutoETS / AutoTheta (Nixtla)
+│   │   ├── xgboost_model.py      Features, chronological splits, forecast_next
+│   │   └── prophet_model.py      Prophet per position (named so it cannot shadow
+│   │                             the `prophet` package it imports)
+│   ├── analysis/
+│   │   ├── randomness.py         Frequency, gaps, hot/cold, chi2, runs, ACF
+│   │   ├── prizes.py             Exact prize probabilities, EV, RTP, breakeven
+│   │   └── tickets.py            Generate, check and measure ticket strategies
+│   └── utils/
+│       ├── processor.py          ★ Data contract + forecast comparison
+│       ├── scraper.py            loterias.com → the project CSV
+│       ├── sample_data.py        Synthetic i.i.d. draws for demo/testing
+│       ├── csv_merger.py         Legacy: merge hand-exported yearly CSVs
+│       └── lib_detector.py       Print installed library versions
 │
-├── dashboard/app.py              Streamlit UI — the primary surface
-├── backtest.py                   Walk-forward evaluation vs chance (CLI)
-├── Prophet.py                    Prophet forecast per position (CLI)
-├── StatsForecast.py              statsforecast forecast per position (CLI)
-├── XGBoost.py                    XGBoost held-out evaluation (CLI)
-├── summary_charts.py             Legacy: original static matplotlib charts
-└── contants.py                   Colombian holidays (opt-in Prophet regressor)
+├── scripts/                      CLI entry points, run with `python -m scripts.<name>`
+│   ├── prophet_forecast.py       Prophet forecast per position
+│   ├── statsforecast_forecast.py statsforecast forecast per position
+│   ├── xgboost_forecast.py       XGBoost held-out evaluation
+│   └── summary_charts.py         Legacy: original static matplotlib charts
+│
+├── tests/                        pytest suite — the Baloto invariants
+└── dashboard/app.py              Streamlit UI — the primary surface
 ```
 
-`contants.py` is misspelled — not `constants.py` — but it is imported under that
-name. Renaming it means updating its importers.
+`contants.py` was misspelled; the move to `lottery/` corrected it to
+`lottery/constants.py`. Nothing imported it by name — only a comment in the
+Prophet script referenced it — so the rename cost nothing.
 
 ## 8. Why these libraries
 
@@ -262,7 +296,7 @@ name. Renaming it means updating its importers.
 | **Nixtla statsforecast** over hand-rolled SARIMAX | Searches the order per series by AIC instead of one hand-picked `(p,d,q)` for all six; fits every position and all three models in **one vectorized call**. Replaced the previous `ARIMA.py`. |
 | **Prophet** kept, but stripped down | Retained for continuity with the project's origin. The fabricated seasonalities were removed — see [Models](models.md#5-prophet). |
 | **Streamlit** for the UI | Whole app is one Python file; no separate frontend build for a local analysis tool. |
-| **Plotly** over matplotlib for the dashboard | Hover, zoom and inspection matter for exploring per-number distributions. matplotlib survives in the legacy `summary_charts.py`. |
+| **Plotly** over matplotlib for the dashboard | Hover, zoom and inspection matter for exploring per-number distributions. matplotlib survives in the legacy `scripts/summary_charts.py`. |
 | **scipy / statsmodels** | `hypergeom` and `chisquare`; `acf` and `acorr_ljungbox`. Exact distributions and standard tests, not reimplementations. |
 
 ---

@@ -236,7 +236,7 @@ Record a play against an upcoming draw, score what has already happened, and see
 the per-label result. The tab's value is in what it refuses: a draw date that is
 not in the future, and a second prediction under the same label. Both refusals
 render in Spanish with the module's English detail beneath, since
-`analysis/registry.py` is library code and raises in English.
+`lottery/analysis/registry.py` is library code and raises in English.
 
 Every scored table carries `min_detectable_effect` beside the p-value, because a
 young registry cannot say much and should say so. Full detail in
