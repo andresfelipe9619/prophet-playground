@@ -24,6 +24,9 @@ python backtest.py --n-windows 20 --min-train 100 [--include-prophet]
 python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
 python -m analysis.power --n-draws 1035          # what edge could this much data detect?
 python -m analysis.sensitivity --n-seeds 10      # can the tests detect a planted edge?
+python -m analysis.popularity --tickets-sold 3000000    # jackpot splitting by combination
+python -m analysis.registry record --label Prophet --main 3-12-19-27-41 --super 8
+python -m analysis.registry score                # score every registered draw that has happened
 ```
 
 There is no test suite, linter, or CI configured. Changes are verified by:
@@ -75,6 +78,8 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 - `analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
 - `analysis/power.py` — minimum detectable effect, required draws, power curves. Mirrors the z-test in `baseline.py` exactly, since the point is to characterise that test. The superbalota helper is separate because it is Bernoulli, not hypergeometric — using the wrong variance understates the required data ~3x.
 - `analysis/sensitivity.py` — plants a known bias and measures detection rates for `pooled`, `hot` and `random`. `random` must stay near alpha even on biased data (a uniform ticket's expected matches do not depend on the weighting) — that is the control, not a failure. **Its own load-bearing detail:** the draw generator and the ticket generator must be driven by *independent* streams, via `independent_seeds`. Passing one seed to both makes the numbers drawn and the numbers played come out of the same `default_rng`, which is a real ticket/draw dependence — exactly what a lottery test hunts for. That mistake reported a 17.5% false-positive rate on bias-free data and sent a full round of investigation after a phantom defect in `evaluate_strategy` (see `docs/evaluation.md`). Any new detector needing randomness takes its seed from `independent_seeds`.
+- `analysis/popularity.py` — jackpot splitting. The only module here that improves anything, and it improves `E[payout | win]`, never `P(win)`. `popularity_score` is **ordinal**, not absolute: its weights cannot be calibrated without data on tickets people bought, which no operator publishes, so `split_adjusted_value` returns a band rather than a figure. Registers `unpopular` in `STRATEGIES`, which correctly fails the hit-rate tests — the accuracy machinery is structurally unable to measure what it targets, and that is documented rather than exempted.
+- `analysis/registry.py` — append-only pre-registration of predictions. Refuses a draw date that is not in the future, refuses a second prediction for the same (draw, label), and scores every eligible row or none. Writes `predictions.csv` at the repo root, deliberately **not** gitignored: committing it dates each prediction in version control, which beats any timestamp the file writes about itself.
 - `analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
 - `backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
 - `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import the root-level model scripts. All explanatory tooltip copy lives in one `HELP` dict at the top and is consumed by two helpers: `section(title, key)` (a subheader with its ⓘ) and `chart(fig, title, key)` (a titled line with its ⓘ, then the figure). `chart` moves the title out of the Plotly figure because Plotly's own title has nowhere to hang a help icon — clear it with `title={"text": ""}`, since `title=None` makes Plotly render the literal string `undefined`. A bare `st.plotly_chart` outside that helper means a chart was added without an explanation.
@@ -98,6 +103,8 @@ Keep these in sync when behaviour changes:
 | [`docs/models.md`](docs/models.md) | Every predictor and how to add one |
 | [`docs/tickets.md`](docs/tickets.md) | Generating, checking and measuring ticket strategies |
 | [`docs/evaluation.md`](docs/evaluation.md) | Backtest, chance baseline, randomness tests, known past bugs |
+| [`docs/jackpot-splitting.md`](docs/jackpot-splitting.md) | Combination popularity, expected co-winners, split-adjusted value |
+| [`docs/registry.md`](docs/registry.md) | Pre-registration: predictions recorded before the draw |
 | [`docs/power-and-sensitivity.md`](docs/power-and-sensitivity.md) | Minimum detectable effect, planted-bias detection rates |
-| [`docs/dashboard.md`](docs/dashboard.md) | The nine tabs and how to read them |
+| [`docs/dashboard.md`](docs/dashboard.md) | The ten tabs and how to read them |
 | [`docs/development.md`](docs/development.md) | Setup, verification workflow, conventions, gotchas |

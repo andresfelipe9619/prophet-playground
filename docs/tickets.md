@@ -45,6 +45,7 @@ number — that is not a duplicate.
 | `hot_ticket(balls_expanded, rng)` | Weighted toward the most-drawn numbers |
 | `cold_ticket(balls_expanded, rng)` | Weighted toward the least-drawn numbers |
 | `ticket_from_predictions(preds, rng)` | Turns a model's `{position: number}` into a valid ticket |
+| `unpopular_ticket(...)` | Least commonly *played* combination from a random sample |
 | `generate_portfolio(n, strategy, ...)` | Several tickets at once |
 
 ```python
@@ -54,6 +55,14 @@ ticket = random_ticket()
 tickets = generate_portfolio(5, strategy="random", disjoint=True)
 print(portfolio_coverage(tickets))
 ```
+
+`unpopular` is the odd one out. Every other strategy aims at winning more often,
+which none of them can do; that one targets what a win is *worth*, by avoiding
+the combinations other people play. It correctly fails the hit-rate tests below,
+because the hit rate is structurally unable to measure the thing it improves —
+see [Jackpot Splitting](jackpot-splitting.md#4-the-strategy-that-the-accuracy-tests-cannot-see).
+It is measured anyway rather than exempted: a strategy that skipped evaluation
+because "it works differently" is the pattern this project exists to avoid.
 
 `hot` and `cold` exist so that `evaluate_strategy` can **measure** them rather than
 leaving them as an argument. They are the two most common lottery heuristics, and

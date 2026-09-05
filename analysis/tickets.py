@@ -126,10 +126,29 @@ def ticket_from_predictions(predictions, rng=None):
     return Ticket(main=tuple(main[:MAIN_BALLS_DRAWN]), super_ball=int(predictions[super_position(n_columns)]))
 
 
+def unpopular_ticket(balls_expanded=None, rng=None, candidates=None):
+    """Pick the least commonly *played* combination out of a random sample.
+
+    The odd one out in this registry: every other strategy is aimed at winning
+    more often, which none of them can do. This one targets what a win is worth
+    — a jackpot is shared among everyone holding the combination, and people
+    play birthdays, runs and patterns. `evaluate_strategy` will report that it
+    does not beat chance, and that verdict is correct and beside the point: the
+    hit rate is structurally blind to the quantity this strategy improves.
+
+    The import is deferred because `analysis.popularity` imports `Ticket` from
+    this module; at module scope the two would deadlock on each other.
+    """
+    from analysis.popularity import unpopular_ticket as generate
+    kwargs = {} if candidates is None else {"candidates": candidates}
+    return generate(balls_expanded, rng=rng, **kwargs)
+
+
 STRATEGIES = {
     "random": lambda balls_expanded, rng: random_ticket(rng),
     "hot": lambda balls_expanded, rng: hot_ticket(balls_expanded, rng),
     "cold": lambda balls_expanded, rng: cold_ticket(balls_expanded, rng),
+    "unpopular": lambda balls_expanded, rng: unpopular_ticket(balls_expanded, rng),
 }
 
 
