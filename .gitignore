@@ -12,3 +12,4 @@ xgboost_results/
 holdout_summary.csv
 holdout_detail.csv
 sensitivity_report.csv
+.DS_Store
