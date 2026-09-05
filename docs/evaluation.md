@@ -90,6 +90,12 @@ itself informative:
 
 Both use the same `_score_window`, so their summaries are directly comparable.
 
+`cutoff_bounds(dates, cutoff)` is the single owner of the split arithmetic —
+it returns `(n_train, n_holdout)` for a date, and the dashboard calls it to
+preview the split before you press the button, so the CLI and the UI cannot
+disagree about what a cutoff means. (`window_bounds` plays the same role for the
+last-N-draws mode.)
+
 `run_holdout()` returns `(results_by_model, info)`; `info` carries the cutoff, the
 mode and both split sizes so a caller can report the experiment next to its result.
 `holdout_detail()` turns the results into one row per held-out draw — the actual
@@ -204,6 +210,38 @@ healthy result**. It means the data behaves like a fair lottery.
 
 A low Ljung–Box p-value would be the one finding that could justify a time-series
 model at all. Do not expect one.
+
+### The effect size, and why the interval matters more than the p-value
+
+`beats_chance_test` also returns the observed edge with a confidence interval,
+because a p-value on its own hides precision — "no edge detected" over 15
+windows and over 1,000 draws produce the same kind of number while differing by
+an order of magnitude in what they actually establish.
+
+| Returned key | Meaning |
+| --- | --- |
+| `effect` | Observed mean minus chance mean, in matches per draw |
+| `ci_low` / `ci_high` | 95% interval on that effect (`confidence=` to change it) |
+| `relative_effect` | The same edge as a fraction of the chance mean |
+| `observed_mean` / `chance_mean` | The two averages being compared |
+| `n_observations` | Sample size behind all of it |
+
+A wide interval straddling zero is not "there is no edge". It is "this run could
+not tell", which is the same message
+[Power](power-and-sensitivity.md#the-minimum-detectable-effect) delivers from the
+other direction — and over 8 windows the intervals visibly cross zero in both
+directions. Both the backtest summary and the strategies table carry the interval
+as a column, and so do their dashboard renderings.
+
+### On several tickets sharing one draw
+
+The exact hypergeometric variance is used even when `tickets_per_draw > 1`,
+which was checked rather than assumed. Sharing a draw induces positive
+correlation in principle, so the statistic was measured under the null: sd(z)
+came out at 0.997 at one ticket per draw and 0.927 at five, against the 1.0 a
+calibrated statistic gives. No inflation. A cluster-robust variance was written
+for this and removed — see [§8](#the-one-that-nearly-got-fixed) for how the
+phantom came to be believed.
 
 ### Per-position vs pooled
 

@@ -90,6 +90,8 @@ slightly pessimistic, which is the safe direction.
 | `required_draws_table(...)` | The table above, with a years column |
 | `super_minimum_detectable_effect(n_draws, ...)` | Same for the superbalota — **Bernoulli, not hypergeometric** |
 | `describe(n_draws, ...)` | One-line English summary |
+| `chance_moments(m_guessed)` | `(mean, sd)` per draw under chance — the two numbers everything else is built from |
+| `draws_to_years(n_draws)` | The same count on the real Mon/Wed/Sat calendar |
 
 The superbalota helper is separate rather than a parameter because using the
 hypergeometric variance for a 1-in-16 Bernoulli trial understates the required
@@ -183,6 +185,8 @@ seed from there**, never from the loop variable.
 | `required_draws_table(...)` | The table above, with a years column |
 | `super_minimum_detectable_effect(n_draws, ...)` | Same for the superbalota — **Bernoulli, not hypergeometric** |
 | `describe(n_draws, ...)` | One-line English summary |
+| `chance_moments(m_guessed)` | `(mean, sd)` per draw under chance — the two numbers everything else is built from |
+| `draws_to_years(n_draws)` | The same count on the real Mon/Wed/Sat calendar |
 
 The superbalota helper is separate rather than a parameter because using the
 hypergeometric variance for a 1-in-16 Bernoulli trial understates the required

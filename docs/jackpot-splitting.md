@@ -91,6 +91,7 @@ documented ordering into a fabricated number.
 | `split_adjusted_value(ticket, jackpot, tickets_sold, ...)` | What the jackpot is worth, with a band |
 | `unpopular_ticket(...)` | Least popular of a random sample |
 | `compare_tickets(tickets, jackpot, tickets_sold)` | One row per ticket |
+| `jackpot_probability()` | P(5 main + superbalota), restated so callers need not import `prizes` |
 
 ## 4. The strategy that the accuracy tests cannot see
 

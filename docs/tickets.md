@@ -150,9 +150,15 @@ model backtest uses ([Evaluation §3](evaluation.md#3-the-chance-baseline)).
 | --- | --- |
 | `avg_main_matches` | Observed average |
 | `chance_avg_main_matches` | Exact expectation, 5×5/43 = 0.5814 |
+| `effect`, `ci_low`, `ci_high` | The observed edge with its 95% interval — read this before the p-value |
 | `p_value_better_than_chance` | One-sided. Small = evidence of an edge |
 | `beats_chance` | Naive per-test verdict at α = 0.05 |
+| `n_tickets_evaluated` / `n_draws_evaluated` | Tickets scored, and how many draws they came from |
 | `best_result` | Best single ticket in the run |
+
+A wide interval crossing zero means the run had no resolution, not that the
+strategy is neutral — see
+[Evaluation](evaluation.md#the-effect-size-and-why-the-interval-matters-more-than-the-p-value).
 
 ### Multiple comparisons
 
