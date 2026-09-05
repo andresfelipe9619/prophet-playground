@@ -245,6 +245,10 @@ HELP = {
                      "que da el azar (0.58 de 5). Los picos por encima y por debajo son varianza normal.",
     "summary_chart": "Aciertos promedio de cada modelo contra el promedio del azar puro. Si las barras se ven "
                      "casi iguales, ese es el resultado esperado y correcto para una lotería justa.",
+    "effect_ci": "La ventaja observada con su intervalo de confianza del 95%. El p-valor dice si "
+                 "descartas el azar; el intervalo dice **con cuánta precisión** mediste. Un intervalo "
+                 "que cruza el cero y es ancho no significa 'no hay ventaja': significa que esta "
+                 "corrida no tuvo resolución para saberlo. Con pocas ventanas el intervalo es enorme.",
     "summary_table": "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto. "
                      "Lee la columna corregida: al probar varios modelos contra los mismos sorteos, alguno "
                      "pasa el 5% por suerte mucho más seguido de lo que ese 5% sugiere. La corrección de "
@@ -789,19 +793,6 @@ with tabs[6]:
                                help=HELP["draws_back"])
         per_draw = c2.slider("Jugadas por sorteo", 1, 50, 10, help=HELP["per_draw"])
 
-        # Measured, not assumed: see docs/power-and-sensitivity.md. The p-value below
-        # is optimistic for hot/cold whenever this is above 1, so the slider says so
-        # rather than leaving a silently wrong number on screen.
-        if per_draw > 1:
-            st.warning(
-                f"Con {per_draw} jugadas por sorteo, el p-valor de `hot` y `cold` queda **optimista**. "
-                "Las jugadas de un mismo sorteo se concentran en los mismos números calientes, así que "
-                "cuando esos números salen aciertan todas juntas: están correlacionadas y la prueba las "
-                "cuenta como independientes. Medido sobre datos sin ningún sesgo, `hot` marca ganador "
-                "el **17.5%** de las veces con 5 jugadas por sorteo, no el 5% nominal. `random` no se "
-                "ve afectada. Para un veredicto confiable pon **1 jugada por sorteo**, o usa la tasa "
-                "que mide *¿El resultado se sostiene?* como tu piso real."
-            )
 
         if st.button("Ejecutar experimento"):
             with st.spinner("Generando y puntuando jugadas..."):
@@ -822,9 +813,12 @@ with tabs[6]:
 
             display = table.copy()
             display["¿Le gana al azar?"] = display["beats_chance_corrected"].map({True: "Sí", False: "No"})
+            display["Ventaja (IC 95%)"] = display.apply(
+                lambda r: f"{r['effect']:+.3f}  [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}]", axis=1)
             st.markdown("**Resultado por estrategia**", help=HELP["strategy_table"])
             st.dataframe(
-                display[["strategy", "n_tickets_evaluated", "avg_main_matches", "chance_avg_main_matches",
+                display[["strategy", "n_tickets_evaluated", "avg_main_matches",
+                         "chance_avg_main_matches", "Ventaja (IC 95%)",
                          "p_value_better_than_chance", "¿Le gana al azar?", "best_result"]]
                 .style.format({"avg_main_matches": "{:.4f}", "chance_avg_main_matches": "{:.4f}",
                                 "p_value_better_than_chance": "{:.4f}"}),
@@ -1006,10 +1000,13 @@ with tabs[7]:
         display = summary.copy()
         display["¿Le gana al azar? (p<0.05)"] = display["beats_chance"].map({True: "Sí", False: "No"})
         display["¿Le gana? (corregido)"] = display["beats_chance_corrected"].map({True: "Sí", False: "No"})
+        display["Ventaja (IC 95%)"] = display.apply(
+            lambda r: f"{r['effect']:+.3f}  [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}]", axis=1)
         st.markdown("**Veredicto por modelo**", help=HELP["summary_table"])
         st.dataframe(
             display[["model", "n_windows", "avg_main_hits", "chance_avg_main_hits",
-                     "p_value_better_than_chance", "¿Le gana al azar? (p<0.05)",
+                     "Ventaja (IC 95%)", "p_value_better_than_chance",
+                     "¿Le gana al azar? (p<0.05)",
                      "bonferroni_threshold", "¿Le gana? (corregido)", "super_hit_rate",
                      "chance_super_hit_rate"]]
             .style.format({
@@ -1027,6 +1024,11 @@ with tabs[7]:
             "azar). Un 'ningún modelo le gana al azar' aquí significa *ninguna ventaja mayor que eso* — "
             "no *ninguna ventaja*. Mira la pestaña **Potencia y Sensibilidad** para ver cuánta historia "
             "haría falta para afinar más."
+        )
+        st.caption(
+            "La columna **Ventaja (IC 95%)** es la que dice cuánta resolución tuvo la corrida: un "
+            "intervalo ancho que cruza el cero no es 'no hay ventaja', es 'no alcanzó a medirlo'.",
+            help=HELP["effect_ci"],
         )
         st.caption(
             "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto "

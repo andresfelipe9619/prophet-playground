@@ -16,9 +16,9 @@ the information:
 
 | Detector | On uniform draws | On biased draws |
 | --- | --- | --- |
-| `pooled` — `pooled_uniformity_test` | ~alpha | should fire |
-| `hot` — `evaluate_strategy("hot")` | ~alpha | should fire |
-| `random` — `evaluate_strategy("random")` | ~alpha | **still ~alpha** |
+| `pooled` - `pooled_uniformity_test` | ~alpha | should fire |
+| `hot` - `evaluate_strategy("hot")` | ~alpha | should fire |
+| `random` - `evaluate_strategy("random")` | ~alpha | **still ~alpha** |
 
 `random` staying at the floor on biased data is not a failure, it is the
 control working. A ticket drawn uniformly has expected matches 5x5/43 no matter
@@ -118,6 +118,26 @@ def measured_favored_share(balls_expanded, favored=DEFAULT_FAVORED):
     }
 
 
+def independent_seeds(seed, n=2):
+    """Split one seed into `n` streams that share no random numbers.
+
+    This is load-bearing, and it is here because getting it wrong produced a
+    convincing false alarm. Seeding the draw generator and the ticket generator
+    with the *same* integer makes both consume `np.random.default_rng(seed)`
+    from the same starting state, so the numbers drawn and the numbers played
+    come out of one stream. That is a dependence between ticket and draw, which
+    is precisely the thing a lottery test is looking for — so the detector
+    reported an edge on data built to have none, at a 17.5% rate with 5 tickets
+    per draw, and the blame landed on `evaluate_strategy` for a full round of
+    investigation before the harness itself was suspected.
+
+    `SeedSequence.spawn` is the numpy-sanctioned way to get streams guaranteed
+    not to overlap. Any new detector that needs randomness must take its seed
+    from here rather than reusing the loop variable.
+    """
+    return [int(child.generate_state(1)[0]) for child in np.random.SeedSequence(seed).spawn(n)]
+
+
 def _detect_pooled(df, balls_expanded, alpha, **kwargs):
     n_columns = balls_expanded.shape[1]
     result = pooled_uniformity_test(balls_expanded, main_positions(n_columns))
@@ -144,7 +164,9 @@ def detection_rate(strength, detector="pooled", n_draws=500, n_seeds=10, alpha=D
     """Fraction of independent runs in which this detector fires at the given bias.
 
     Each seed regenerates the data as well as the tickets, so the repetitions
-    are independent experiments rather than re-rolls of one dataset.
+    are independent experiments rather than re-rolls of one dataset. The two
+    generators are driven by separate streams (see `independent_seeds`) — the
+    one detail here that, done wrong, invents an edge out of nothing.
     """
     if detector not in DETECTORS:
         raise ValueError(f"Unknown detector {detector!r}. Available: {sorted(DETECTORS)}")
@@ -152,10 +174,11 @@ def detection_rate(strength, detector="pooled", n_draws=500, n_seeds=10, alpha=D
     detect = DETECTORS[detector]
     flags, p_values, shares = 0, [], []
     for seed in range(n_seeds):
+        data_seed, ticket_seed = independent_seeds(seed)
         df, balls_expanded = load_biased_and_preprocess(
-            n_draws=n_draws, favored=favored, strength=strength, seed=seed)
+            n_draws=n_draws, favored=favored, strength=strength, seed=data_seed)
         shares.append(measured_favored_share(balls_expanded, favored)["favored_share"])
-        p, fired = detect(df, balls_expanded, alpha, seed=seed, **strategy_kwargs)
+        p, fired = detect(df, balls_expanded, alpha, seed=ticket_seed, **strategy_kwargs)
         p_values.append(p)
         flags += fired
 

@@ -128,6 +128,99 @@ in the ticket path.
 ### Reading the report
 
 **Read the `strength = 0` rows first.** If any detector fires much above α
+there, something in the experiment is broken — and not necessarily the detector,
+as the note below explains.
+
+Measured over 20 seeds, 500 draws each, 200 evaluated draws × 5 tickets:
+
+| strength | favoured share | `pooled` | `hot` | `random` |
+| --- | --- | --- | --- | --- |
+| 0.00 | 7.13% | 5% | 0% | 0% |
+| 0.25 | 8.59% | 15% | 5% | 10% |
+| 0.50 | 9.99% | **75%** | 0% | 0% |
+| 1.00 | 12.68% | **100%** | 30% | 10% |
+| 2.00 | 17.10% | 100% | **100%** | 5% |
+
+The controls land where they should: 5%, 0%, 0% against α = 0.05.
+`sensitivity_threshold()` reports where each detector crosses 80% — `pooled` at
+strength 1.0, `hot` only at 2.0. **The direct uniformity test is substantially
+more sensitive than the ticket path**, which makes sense: `hot_ticket` samples
+*weighted toward* hot numbers rather than picking them outright, so it dilutes
+the very signal it is looking for.
+
+`random` never crosses, at any strength. That is the correct and expected
+result, and it is what makes the other two columns trustworthy. Its scattered
+5–10% rows are 1–2 flags in 20 — ordinary noise at this seed count.
+
+### The seeding trap this module walked into
+
+`detection_rate` regenerates the data *and* the tickets on every seed. Both need
+randomness, and the obvious wiring — pass the loop variable to each — is wrong
+in a way that is invisible and severe: `np.random.default_rng(seed)` twice with
+the same integer yields the same stream, so the numbers drawn and the numbers
+played come out of one sequence. That is a real dependence between ticket and
+draw, which is precisely what a lottery test is built to detect. It duly
+detected it, on data planted with no bias whatsoever, at a 17.5% rate with five
+tickets per draw.
+
+The failure was convincing enough to survive a round of investigation and a
+shipped "fix" aimed at `evaluate_strategy` — the full story is in
+[Evaluation §8](evaluation.md#the-one-that-nearly-got-fixed), and it is worth
+reading before trusting any control arm.
+
+`independent_seeds()` now splits one seed into non-overlapping streams via
+`SeedSequence.spawn`. **Any new detector that needs randomness must take its
+seed from there**, never from the loop variable.
+
+### API
+
+| Function | Returns |
+| --- | --- |
+| `minimum_detectable_effect(n_draws, ...)` | The smallest visible edge, absolute / relative / as a target mean |
+| `required_draws(relative_edge, ...)` | Draws needed to see an edge that size |
+| `achieved_power(n_draws, relative_edge, ...)` | Probability of detecting it |
+| `power_curve(n_draws, ...)` | Power against edge size — the curve to plot |
+| `required_draws_table(...)` | The table above, with a years column |
+| `super_minimum_detectable_effect(n_draws, ...)` | Same for the superbalota — **Bernoulli, not hypergeometric** |
+| `describe(n_draws, ...)` | One-line English summary |
+
+The superbalota helper is separate rather than a parameter because using the
+hypergeometric variance for a 1-in-16 Bernoulli trial understates the required
+data by roughly a factor of three, and the two are easy to confuse.
+
+## 2. Sensitivity: `analysis/sensitivity.py`
+
+```bash
+python -m analysis.sensitivity --n-draws 500 --n-seeds 10
+```
+
+`utils/sample_data.py` checks one direction: run the tests on i.i.d. uniform
+draws, confirm they say "looks random". That is **specificity** — it proves the
+tests do not cry wolf. It says nothing about whether they can hear a wolf. *A
+test that always returns "looks random" passes that check perfectly.*
+
+So this module plants a **known bias** and measures how often each detector
+fires. Three run together, and the pattern across them is the information:
+
+| Detector | What it exercises | On uniform draws | On biased draws |
+| --- | --- | --- | --- |
+| `pooled` | `pooled_uniformity_test` — the data directly | ~α | should fire |
+| `hot` | `evaluate_strategy("hot")` — the whole chain | ~α | should fire |
+| `random` | `evaluate_strategy("random")` — the control | ~α | **still ~α** |
+
+`random` staying at the floor on biased data is the control working, not a
+failure. A uniformly drawn ticket has expected matches 5×5/43 no matter how the
+balls are weighted: the expectation sums P(drawn) over five numbers chosen
+without regard to the bias, and that sum is unchanged. Only a strategy that
+*learns* which numbers are favoured converts bias into hits — which is exactly
+what separates `hot` from `random` here.
+
+If `pooled` fires and `hot` does not, the bug is downstream of the statistics,
+in the ticket path.
+
+### Reading the report
+
+**Read the `strength = 0` rows first.** If any detector fires much above α
 there, it is broken and every other row is meaningless.
 
 Measured over 10 seeds, 500 draws each, 200 evaluated draws × 5 tickets:

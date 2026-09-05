@@ -187,18 +187,18 @@ so when those numbers come up the tickets *all* score high together. `random` is
 unaffected — its match distribution does not depend on which numbers were drawn,
 so its tickets stay independent.
 
-> **This is worse than "slightly less information", and it is now measured.**
-> `evaluate_strategy` feeds every ticket to `beats_chance_test` as an independent
-> observation, so the positive within-draw correlation understates the standard
-> error and inflates z. On data with **no bias at all**, `hot` flags a winner
-> 17.5% of the time at 5 tickets per draw, against a nominal α of 5% — while
-> `random` stays at 0%. See
-> [Power and Sensitivity](power-and-sensitivity.md#what-this-found-tickets_per_draw-inflates-the-false-positive-rate).
->
-> Until it is fixed, read `hot`/`cold` verdicts at `tickets_per_draw = 1`, or take
-> `stability_check`'s measured flag rate — not α — as the floor. The principled
-> fix is a cluster-robust variance: treat each draw as one cluster and estimate
-> the variance from across-draw variation.
+That correlation is real, but it turns out **not** to distort the test. Measured
+under the null over 60 runs, `beats_chance_test` gives sd(z) = 0.997 at one ticket
+per draw and 0.927 at five, against the 1.0 a calibrated statistic produces — no
+inflation, slightly conservative at five. So `tickets_per_draw > 1` is safe to use
+and no cluster-robust variance is needed; one was written for this and removed
+once it was measured.
+
+> An earlier version of this page claimed the false-positive rate ran at 17.5% at
+> five tickets per draw. That number was real but its cause was not: the harness
+> measuring it seeded the draw generator and the ticket generator identically, so
+> both drew from one PRNG stream and the tickets genuinely correlated with the
+> draws. See [Evaluation §8](evaluation.md#8-known-failure-modes-we-have-already-hit).
 
 ## 6. In the dashboard
 

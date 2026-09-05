@@ -260,8 +260,12 @@ def evaluate_strategy(strategy, df, balls_expanded, n_draws_back=100, tickets_pe
     return {
         "strategy": strategy,
         "n_tickets_evaluated": len(hits),
+        "n_draws_evaluated": total - start,
         "avg_main_matches": float(np.mean(hits)),
         "chance_avg_main_matches": chance["chance_mean"],
+        "effect": chance["effect"],
+        "ci_low": chance["ci_low"],
+        "ci_high": chance["ci_high"],
         "z": chance["z"],
         "p_value_better_than_chance": chance["p_value_greater"],
         "beats_chance": bool(chance["p_value_greater"] < 0.05)
