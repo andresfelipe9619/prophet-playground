@@ -121,7 +121,9 @@ python -m lottery.analysis.popularity --tickets-sold 3000000  # jackpot splittin
 python -m lottery.analysis.registry record --label yo --main 3-12-19-27-41 --super 8
 python -m lottery.analysis.registry score             # score the draws that have happened
 
-python -m lottery.utils.scraper --years 2020-2025     # build/update the dataset
+python -m lottery.utils.scraper --years 2020-2025      # build/update the Baloto dataset
+python -m football.downloader --seasons 2019/20..2024/25 --leagues E0   # football seasons
+python -m cycling.scraper --race tour-de-france --year 2024 --stages 1-21  # cycling results
 python -m lottery.utils.lib_detector                  # print library versions
 python -m lottery.utils.check_docs                    # verify documentation links
 
@@ -132,8 +134,8 @@ pytest -m "not slow"                                  # skip runs that fit real 
 ## Repository layout
 
 The tree is split by domain. `core/` is evaluation machinery that knows nothing
-about lotteries; `lottery/` is everything Baloto-specific and supplies `core/`
-with the null distribution and the scoring rule it deliberately lacks.
+about lotteries; `lottery/`, `football/` and `cycling/` are the domains, and each
+supplies `core/` with the baseline and the scoring rule it deliberately lacks.
 
 ```
 core/
@@ -143,7 +145,13 @@ football/                  Second domain — real signal, market baseline
   common.py                The three outcomes and their (H, D, A) ordering
   processor.py             ★ football-data.co.uk contract; never mixes opening/closing odds
   market.py                Odds → calibrated probabilities; the baseline to beat
+  downloader.py            football-data.co.uk → exported_data/football/
   sample_data.py           Synthetic seasons carrying the generative truth
+cycling/                   Third domain — an ordering, not an outcome
+  common.py                Result kinds, finish statuses, cycling time parsing
+  processor.py             ★ Result contract; one kind per frame, gaps never stored as totals
+  scraper.py               procyclingstats.com → exported_data/cycling/
+  sample_data.py           Synthetic stage races carrying the generative truth
 lottery/
   backtest.py              Walk-forward evaluation vs chance
   models/
@@ -173,8 +181,14 @@ Columns: `Date` (dd/mm/yyyy) and `Ball` (six dash-separated numbers, superbalota
 last, e.g. `3-12-19-27-41-8`). Details in
 **[docs/data-pipeline.md](docs/data-pipeline.md)**.
 
-Always run the scraper with `--dry-run` first and compare its output against the
-website — nothing in this repository can verify the parser against the live site.
+Football seasons live in `exported_data/football/` and cycling results in
+`exported_data/cycling/`, both also gitignored and both with contracts of their
+own — see **[docs/football.md](docs/football.md)** and
+**[docs/cycling.md](docs/cycling.md)**.
+
+Always run a scraper with `--dry-run` first and compare its output against the
+site — nothing in this repository can verify any of the three parsers against
+the live source.
 
 ## Contributing
 

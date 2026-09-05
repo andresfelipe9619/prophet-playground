@@ -1,9 +1,10 @@
 # Documentation
 
 Reference documentation for this project. It began as Baloto lottery analysis and
-now spans two domains: `lottery/`, where nothing can beat chance, and `football/`,
-where something can. Start with the premise — several design decisions look wrong
-until you have read it, and the football half only makes sense against it.
+now spans three domains: `lottery/`, where nothing can beat chance, and `football/`
+and `cycling/`, where something can. Start with the premise — several design
+decisions look wrong until you have read it, and the two sibling domains only
+make sense against it.
 
 ## Reading order
 
@@ -11,7 +12,7 @@ until you have read it, and the football half only makes sense against it.
 | --- | --- | --- |
 | 1 | **[Domain and Premise](domain-and-premise.md)** | The game's rules, why an i.i.d. process cannot be forecast, what this project does instead and why, and the anti-patterns to avoid. **Read first.** |
 | 2 | **[Architecture](architecture.md)** | Layers, data flow, the central data structures, position semantics, the two time axes, cross-cutting invariants. |
-| 3 | **[Data Pipeline](data-pipeline.md)** | The data contract, the scraper and its state machine, source resolution, synthetic data. |
+| 3 | **[Data Pipeline](data-pipeline.md)** | The data contract, the scraper and its state machine, source resolution, synthetic data, and where the other two domains get their data. |
 | 4 | **[Models](models.md)** | Every predictor: Prophet, the statsforecast trio, XGBoost, the frequency baseline. |
 | 5 | **[Tickets](tickets.md)** | Generating plays, checking them against real draws, and measuring whether a strategy beats picking at random. |
 | 6 | **[Evaluation](evaluation.md)** | Walk-forward backtesting, the hypergeometric chance baseline, randomness tests, expected value, how to read results. |
@@ -19,8 +20,9 @@ until you have read it, and the football half only makes sense against it.
 | 8 | **[Power and Sensitivity](power-and-sensitivity.md)** | What an edge would have to look like for this much data to see it, and whether the tests fire on a planted one. The two questions that make a null result mean something. |
 | 9 | **[Registry](registry.md)** | Pre-registration: predictions written down before the draw, which is the one thing retrospective analysis can never be. |
 | 10 | **[Football](football.md)** | The second domain. The premise inverted, the closing line as the baseline, the odds contract and its opening/closing trap, synthetic seasons with a known answer. |
-| 11 | **[Dashboard](dashboard.md)** | Guide to each of the ten tabs and how to read them. |
-| 12 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
+| 11 | **[Cycling](cycling.md)** | The third domain. An ordering rather than an outcome, the ranking baseline, the result contract and its three traps, the scraper. |
+| 12 | **[Dashboard](dashboard.md)** | Guide to each of the ten tabs and how to read them. |
+| 13 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
 
 ## Quick answers
 
@@ -45,6 +47,10 @@ until you have read it, and the football half only makes sense against it.
 | What does a football model have to beat? | [Football §2](football.md#2-the-baseline-is-the-closing-line) |
 | Why are odds not probabilities? | [Football: odds are not probabilities](football.md#odds-are-not-probabilities) |
 | Why won't it load two seasons together? | [Football §3](football.md#the-trap-never-mix-opening-and-closing-odds) |
+| How do I download real football seasons? | [Football §5](football.md#5-getting-real-data) |
+| How do I scrape cycling results? | [Cycling §4](cycling.md#4-the-scraper) |
+| Why can't I mix stage results and a GC? | [Cycling §3](cycling.md#one-kind-of-result-per-frame) |
+| Why are the abandons still in my frame? | [Cycling §3](cycling.md#non-finishers-stay-in-the-frame) |
 
 ## Conventions
 

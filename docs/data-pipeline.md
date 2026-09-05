@@ -330,7 +330,24 @@ use, so the demo data cannot drift from the real draw schedule.
 This is what makes the whole project runnable without any private data — the
 dashboard, the models and the backtest all work on it.
 
-## 5. Legacy ingestion
+## 5. The sibling domains' ingestion
+
+Everything above is Baloto's. The other two domains have their own sources, and
+each carries a trap that is invisible in the shape of the frame — the same
+class of problem as [the two eras](#12-two-eras-of-the-game) here.
+
+| Domain | Source | Fetched by | The trap |
+| --- | --- | --- | --- |
+| Football | [football-data.co.uk](https://www.football-data.co.uk/) CSVs | `football/downloader.py` ([docs](football.md#5-getting-real-data)) | [Opening odds silently standing in for closing ones](football.md#the-trap-never-mix-opening-and-closing-odds) |
+| Cycling | [procyclingstats.com](https://www.procyclingstats.com/) pages | `cycling/scraper.py` ([docs](cycling.md#4-the-scraper)) | [A stage result and a classification in one `rank` column](cycling.md#3-the-three-traps) |
+
+Both keep this scraper's [design principle](#31-design-principle-fail-loudly)
+and its [missing-data-vs-broken-parser distinction](#33-empty-years-vs-a-broken-parser):
+a page or file that is simply absent is skipped and named in the summary, while
+anything structural — a changed table, an unknown marker, a response that is
+not a CSV — raises from the first row that shows it.
+
+## 6. Legacy ingestion
 
 `lottery/utils/csv_merger.py` concatenates hand-exported yearly CSVs from `exported_data/`.
 It predates the scraper's `merge_into()` and is kept only for existing local files;
@@ -338,4 +355,4 @@ new work should use the scraper.
 
 ---
 
-**Next:** [Models](models.md) · [Architecture](architecture.md)
+**Next:** [Models](models.md) · [Football](football.md) · [Cycling](cycling.md) · [Architecture](architecture.md)

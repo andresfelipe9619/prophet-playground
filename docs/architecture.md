@@ -13,7 +13,8 @@ draws or lotteries. It holds walk-forward splits, the z-test against a null, and
 the multiple-comparison correction — the machinery for judging a predictor
 honestly. Everything Baloto-specific lives under `lottery/`, which supplies the
 two things `core/` deliberately does not have: the null distribution to compare
-against, and the scoring rule. A second domain plugs in at exactly that seam.
+against, and the scoring rule. The sibling domains — `football/` and `cycling/` —
+plug in at exactly that seam.
 
 ```mermaid
 flowchart TD
@@ -41,6 +42,11 @@ flowchart TD
     subgraph LFB["football/ — second domain"]
         FMKT["football/market.py<br/><i>the closing line as baseline</i>"]
         FPROC["football/processor.py<br/><i>odds contract, one source per frame</i>"]
+        FDL["football/downloader.py<br/><i>season files, validated on arrival</i>"]
+    end
+    subgraph LCY["cycling/ — third domain"]
+        CPROC["cycling/processor.py<br/><i>result contract, one kind per frame</i>"]
+        CSCR["cycling/scraper.py<br/><i>gaps resolved into totals</i>"]
     end
     subgraph L0["core/ — domain-agnostic"]
         WIN["core/windows.py<br/><i>walk-forward + cutoff splits</i>"]
@@ -58,6 +64,8 @@ flowchart TD
     XGB --> COMMON
     SCRAPE --> COMMON & PROC
     SAMPLE --> COMMON & PROC
+    FDL --> FPROC
+    CSCR --> CPROC
     BT --> WIN & SIG
     BASE --> SIG
     TICK --> SIG
@@ -252,7 +260,14 @@ makes it true by construction regardless.
 │   ├── common.py                 ★ The three outcomes and their (H, D, A) ordering
 │   ├── processor.py              ★ football-data.co.uk contract + opening/closing guard
 │   ├── market.py                 Odds → calibrated probabilities (football's baseline.py)
+│   ├── downloader.py             Season files, validated through the contract on arrival
 │   └── sample_data.py            Synthetic seasons carrying the generative truth
+│
+├── cycling/                      Third domain — an ordering, not an outcome
+│   ├── common.py                 ★ Result kinds, finish statuses, time parsing
+│   ├── processor.py              ★ Result contract: one kind per frame, totals not gaps
+│   ├── scraper.py                procyclingstats.com, tables found by their headers
+│   └── sample_data.py            Synthetic stage races carrying the generative truth
 │
 ├── lottery/                      Everything Baloto-specific
 │   ├── backtest.py               Walk-forward evaluation vs chance (CLI)

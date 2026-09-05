@@ -86,7 +86,7 @@ pytest -m "not slow"        # skip the runs that fit real models (~2s)
 
 Every test builds its data from a seeded generator — `lottery/utils/sample_data.py`
 for uniform draws, `lottery/analysis/sensitivity.py:biased_draws` where a planted
-bias is needed, `football/sample_data.py` for match results with a known truth — so the suite is deterministic and needs no private CSV. Tests
+bias is needed, `football/sample_data.py` for match results with a known truth, `cycling/sample_data.py` for stage races with a known rider strength — so the suite is deterministic and needs no private CSV. Tests
 that fit real models, or that repeat an experiment across many seeds, are marked
 `slow`.
 
@@ -116,16 +116,22 @@ docs — the ones a refactor breaks silently and no reader would notice:
 | A partial price triple is blanked whole | Two of three prices cannot be normalised into probabilities |
 | De-margining recovers a noiseless market exactly | Ties the odds generator and the normalisation together |
 | The `(H, D, A)` ordering | Transposing two probability columns passes every range check |
+| One kind of cycling result per frame | A stage placing and a GC standing are different quantities in one `rank` column |
+| Cycling non-finishers survive loading | Abandons are not random, so dropping them makes the problem easier than it is |
+| `time_seconds` is a total, never a gap | A column of gaps looks normal and ranks the field backwards by hours |
+| An unknown rank marker raises | Defaulting to "not ranked" is how a changed page quietly loses riders |
+| A results table is found by its headers | A CSS selector that misses returns zero rows instead of failing |
+| An HTML error page is never written as a CSV | `pd.read_csv` turns one into a plausible one-column frame |
 
 A syntax-only check is still occasionally useful on files the suite does not import:
 
 ```bash
-python -m py_compile $(find core lottery football scripts dashboard tests -name '*.py')
+python -m py_compile $(find core lottery football cycling scripts dashboard tests -name '*.py')
 ```
 
-This is not redundant with the suite: pytest imports `core/`, `lottery/` and
-`football/`, but never `dashboard/app.py` or the entry points under `scripts/`.
-A syntax error in either passes all 357 tests. The `static` CI job runs exactly
+This is not redundant with the suite: pytest imports `core/`, `lottery/`,
+`football/` and `cycling/`, but never `dashboard/app.py` or the entry points
+under `scripts/`. A syntax error in either passes the whole suite. The `static` CI job runs exactly
 this command for that reason.
 
 ### 3.2 Behaviour, against synthetic data
