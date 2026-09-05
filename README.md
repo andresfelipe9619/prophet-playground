@@ -137,6 +137,11 @@ with the null distribution and the scoring rule it deliberately lacks.
 core/
   windows.py               Walk-forward and date-cutoff splits
   significance.py          ★ z-test vs a null, Bonferroni correction
+football/                  Second domain — real signal, market baseline
+  common.py                The three outcomes and their (H, D, A) ordering
+  processor.py             ★ football-data.co.uk contract; never mixes opening/closing odds
+  market.py                Odds → calibrated probabilities; the baseline to beat
+  sample_data.py           Synthetic seasons carrying the generative truth
 lottery/
   backtest.py              Walk-forward evaluation vs chance
   models/

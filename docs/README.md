@@ -1,7 +1,9 @@
 # Documentation
 
-Reference documentation for the Baloto analytics project. Start with the premise —
-several design decisions look wrong until you have read it.
+Reference documentation for this project. It began as Baloto lottery analysis and
+now spans two domains: `lottery/`, where nothing can beat chance, and `football/`,
+where something can. Start with the premise — several design decisions look wrong
+until you have read it, and the football half only makes sense against it.
 
 ## Reading order
 
@@ -15,8 +17,10 @@ several design decisions look wrong until you have read it.
 | 6 | **[Evaluation](evaluation.md)** | Walk-forward backtesting, the hypergeometric chance baseline, randomness tests, expected value, how to read results. |
 | 7 | **[Jackpot Splitting](jackpot-splitting.md)** | The only lever that changes anything: unpopular combinations do not win more often, they split less. |
 | 8 | **[Power and Sensitivity](power-and-sensitivity.md)** | What an edge would have to look like for this much data to see it, and whether the tests fire on a planted one. The two questions that make a null result mean something. |
-| 9 | **[Dashboard](dashboard.md)** | Guide to each of the ten tabs and how to read them. |
-| 10 | **[Development](development.md)** | Setup, the verification workflow, conventions, how to extend, gotchas. |
+| 9 | **[Registry](registry.md)** | Pre-registration: predictions written down before the draw, which is the one thing retrospective analysis can never be. |
+| 10 | **[Football](football.md)** | The second domain. The premise inverted, the closing line as the baseline, the odds contract and its opening/closing trap, synthetic seasons with a known answer. |
+| 11 | **[Dashboard](dashboard.md)** | Guide to each of the ten tabs and how to read them. |
+| 12 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
 
 ## Quick answers
 
@@ -35,8 +39,11 @@ several design decisions look wrong until you have read it.
 | How do I add a model? | [Models §7](models.md#7-adding-a-model) |
 | How do I generate and check tickets? | [Tickets](tickets.md) |
 | My strategy beat chance once — is it real? | [Tickets §5](tickets.md#5-measuring-the-accuracy-system) |
-| How is anything verified without tests? | [Development §3](development.md#3-verification) |
+| What does the test suite actually pin? | [Development §3.1](development.md#31-the-test-suite) |
 | What broke before, so I don't repeat it? | [Evaluation §8](evaluation.md#8-known-failure-modes-we-have-already-hit) |
+| What does a football model have to beat? | [Football §2](football.md#2-the-baseline-is-the-closing-line) |
+| Why are odds not probabilities? | [Football: odds are not probabilities](football.md#odds-are-not-probabilities) |
+| Why won't it load two seasons together? | [Football §3](football.md#the-trap-never-mix-opening-and-closing-odds) |
 
 ## Conventions
 

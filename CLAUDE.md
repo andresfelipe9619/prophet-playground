@@ -8,7 +8,9 @@ It is the condensed version. Full documentation lives in [`docs/`](docs/README.m
 
 Analysis and forecasting over historical Colombian Baloto lottery results. A ticket is 5 distinct numbers from 1-43 plus one "superbalota" from 1-16; draws run Monday, Wednesday and Saturday.
 
-**The repository is split by domain.** `core/` holds evaluation machinery that knows nothing about lotteries — walk-forward splits, the z-test against a null, the multiple-comparison correction. `lottery/` holds everything Baloto-specific and supplies `core/` with the two things it deliberately lacks: the null distribution to compare against and the scoring rule. That seam exists so a second domain can reuse the evaluation discipline rather than copy it. **Do not put anything domain-specific in `core/`** — if it mentions a ball, a draw or a pool, it belongs in `lottery/`.
+**The repository is split by domain.** `core/` holds evaluation machinery that knows nothing about lotteries — walk-forward splits, the z-test against a null, the multiple-comparison correction. `lottery/` and `football/` are sibling domains that supply `core/` with the two things it deliberately lacks: the null distribution to compare against and the scoring rule. **Do not put anything domain-specific in `core/`** — if it mentions a ball, a draw, a pool, a team or a match, it belongs in a domain package.
+
+**Football inverts the premise, not the discipline.** Baloto is i.i.d. by design and nothing can beat chance; football has real signal and a model genuinely can predict. What does not change is that a prediction is worth nothing until it beats a baseline named in advance. In football that baseline is the **closing betting line**, and it is brutally hard — a model that beats an Elo rating but loses to the market has found nothing. See [`docs/football.md`](docs/football.md). Football is currently a data layer only: contract, market baseline, synthetic data. No models yet.
 
 **The domain constraint that shapes the whole architecture:** lottery draws are i.i.d. uniform by design, so no model can beat chance. The codebase was deliberately refactored around this. Every model output is paired with the chance baseline it must beat, and every heuristic (hot/cold, "overdue" numbers) carries an explicit note that it has no predictive value. Do not "improve" a model by adding seasonalities, holiday regressors, or tuned hyperparameters that fit historical noise — that is the anti-pattern this repo was moved away from, and [`docs/domain-and-premise.md`](docs/domain-and-premise.md#6-anti-patterns) explains why. If a change makes a model look better on history without beating the chance baseline in `lottery/backtest.py`, it made the project worse.
 
@@ -73,6 +75,10 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 
 **Chance comparisons are one-sided.** `lottery/models/baseline.py:beats_chance_test` returns `p_value` (two-sided, "differs from chance") and `p_value_greater` (one-sided, "better than chance"). Only the one-sided value may back a "beats chance" claim — a model significantly *worse* than chance also gets a small two-sided p-value.
 
+**Opening and closing odds are never mixed.** (football) Closing prices are sharp; opening prices are soft, and a model that beats them has usually beaten a bookmaker's first guess. football-data publishes closing odds (`AvgCH`, `B365CH`) only from 2019/20, so a merged history has them for its recent half only. `football/processor.py` resolves **one odds source per frame or none**: rows missing it stay NaN, there is no per-row fallback, a partial price triple is blanked whole, and `load_seasons` raises rather than concatenating files that resolve to different sources. This is the football counterpart of Baloto's two eras and is just as invisible in the frame's shape.
+
+**Odds are not probabilities.** (football) The three implied probabilities of a match sum to 1.02-1.08; that excess is the bookmaker's margin and must be removed before the prices mean anything. A model compared against raw `1/odds` is measured against a baseline deliberately wrong in the bookmaker's favour. `football/market.py` offers three normalisations that disagree on longshots — run `compare_methods`, and if a conclusion flips between them it is about the margin model, not the model.
+
 **Effect sizes travel with p-values.** `core/significance.py:z_test_against_null` returns `effect`, `ci_low`, `ci_high`, `relative_effect` and `n_observations` alongside both p-values, and `beats_chance_test` passes them straight through. A p-value alone cannot distinguish "no edge" from "no edge detectable here" — report the interval.
 
 ## Module layout
@@ -94,6 +100,10 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 - `lottery/backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
 - `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import `core` and `lottery`. All explanatory tooltip copy lives in one `HELP` dict at the top and is consumed by two helpers: `section(title, key)` (a subheader with its ⓘ) and `chart(fig, title, key)` (a titled line with its ⓘ, then the figure). `chart` moves the title out of the Plotly figure because Plotly's own title has nowhere to hang a help icon — clear it with `title={"text": ""}`, since `title=None` makes Plotly render the literal string `undefined`. A bare `st.plotly_chart` outside that helper means a chart was added without an explanation.
 - `lottery/utils/check_docs.py` — the documentation link checker described above.
+- `football/common.py` — the three outcomes and the `(home, draw, away)` ordering every probability vector, score and column triple in the package follows. Transposing two of them is a bug no range check can catch, since all three are valid probabilities.
+- `football/processor.py` — the football-data.co.uk contract and the opening/closing guard described above.
+- `football/market.py` — decimal odds to calibrated probabilities. `overround`, `implied_probabilities` (multiplicative / additive / power), `market_probabilities` for a whole frame, and `compare_methods`. This is football's `baseline.py`.
+- `football/sample_data.py` — seeded synthetic seasons that carry the **generative truth** as `p_true_*`, computed exactly rather than simulated. On real data nobody knows the answer; here they do, which is what lets a test check that a forecast which *is* the truth beats the market. `market_noise` controls how sharp the simulated book is; at 0 it prices the truth exactly. `p_true_*` are an answer key — nothing outside tests may read them.
 - `scripts/` — CLI entry points, run as `python -m scripts.<name>`. `summary_charts.py` is the original static matplotlib/seaborn set, superseded by the dashboard for exploratory use.
 - `tests/` — the invariant suite. Mirrors the layout above; `pytest -m "not slow"` skips the runs that fit real models.
 
@@ -116,5 +126,6 @@ Keep these in sync when behaviour changes:
 | [`docs/jackpot-splitting.md`](docs/jackpot-splitting.md) | Combination popularity, expected co-winners, split-adjusted value |
 | [`docs/registry.md`](docs/registry.md) | Pre-registration: predictions recorded before the draw |
 | [`docs/power-and-sensitivity.md`](docs/power-and-sensitivity.md) | Minimum detectable effect, planted-bias detection rates |
+| [`docs/football.md`](docs/football.md) | The second domain: the market baseline, the odds contract, synthetic seasons |
 | [`docs/dashboard.md`](docs/dashboard.md) | The ten tabs and how to read them |
 | [`docs/development.md`](docs/development.md) | Setup, the test suite, verification workflow, conventions, gotchas |

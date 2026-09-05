@@ -164,16 +164,24 @@ def test_a_missing_p_value_is_not_a_pass():
 def test_core_imports_nothing_from_a_domain():
     """The seam only holds if it is one-directional.
 
-    Checked on the import graph rather than the text, since the docstrings in
-    `core/` legitimately name the lottery as the worked example.
+    Domains are discovered rather than listed, so adding a third one does not
+    silently fall outside this check. Verified on the import graph rather than
+    the text, since the docstrings in `core/` legitimately name the lottery as
+    the worked example.
     """
     import ast
     import pathlib
 
-    domains = {"lottery", "dashboard", "scripts"}
-    for path in sorted(pathlib.Path("core").glob("*.py")):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    domains = {
+        path.name
+        for path in repo.iterdir()
+        if path.is_dir() and path.name != "core" and (path / "__init__.py").exists()
+    } | {"scripts"}
+    assert "lottery" in domains and "football" in domains, f"discovery failed: {domains}"
+
+    for path in sorted((repo / "core").glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Import):
                 names = [a.name for a in node.names]
             elif isinstance(node, ast.ImportFrom):
@@ -181,4 +189,4 @@ def test_core_imports_nothing_from_a_domain():
             else:
                 continue
             for name in names:
-                assert name.split(".")[0] not in domains, f"{path} imports {name}"
+                assert name.split(".")[0] not in domains, f"{path.name} imports {name}"

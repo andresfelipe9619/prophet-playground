@@ -38,6 +38,10 @@ flowchart TD
         SCRAPE["lottery/utils/scraper.py"]
         SAMPLE["lottery/utils/sample_data.py"]
     end
+    subgraph LFB["football/ — second domain"]
+        FMKT["football/market.py<br/><i>the closing line as baseline</i>"]
+        FPROC["football/processor.py<br/><i>odds contract, one source per frame</i>"]
+    end
     subgraph L0["core/ — domain-agnostic"]
         WIN["core/windows.py<br/><i>walk-forward + cutoff splits</i>"]
         SIG["core/significance.py<br/><i>z-test vs null, Bonferroni</i>"]
@@ -57,6 +61,7 @@ flowchart TD
     BT --> WIN & SIG
     BASE --> SIG
     TICK --> SIG
+    FMKT --> FPROC
     DASH --> PROC & SAMPLE
 ```
 
@@ -242,6 +247,12 @@ makes it true by construction regardless.
 ├── core/                         Domain-agnostic evaluation — knows no lottery
 │   ├── windows.py                Walk-forward and date-cutoff splits
 │   └── significance.py           ★ z-test vs a null, Bonferroni correction
+│
+├── football/                     Second domain — real signal, market baseline
+│   ├── common.py                 ★ The three outcomes and their (H, D, A) ordering
+│   ├── processor.py              ★ football-data.co.uk contract + opening/closing guard
+│   ├── market.py                 Odds → calibrated probabilities (football's baseline.py)
+│   └── sample_data.py            Synthetic seasons carrying the generative truth
 │
 ├── lottery/                      Everything Baloto-specific
 │   ├── backtest.py               Walk-forward evaluation vs chance (CLI)

@@ -85,7 +85,7 @@ pytest -m "not slow"        # skip the runs that fit real models (~2s)
 
 Every test builds its data from a seeded generator — `lottery/utils/sample_data.py`
 for uniform draws, `lottery/analysis/sensitivity.py:biased_draws` where a planted
-bias is needed — so the suite is deterministic and needs no private CSV. Tests
+bias is needed, `football/sample_data.py` for match results with a known truth — so the suite is deterministic and needs no private CSV. Tests
 that fit real models, or that repeat an experiment across many seeds, are marked
 `slow`.
 
@@ -111,11 +111,15 @@ docs — the ones a refactor breaks silently and no reader would notice:
 | Popularity moves `E[payout \| win]`, never `P(win)` | The claim the module is careful not to make |
 | The registry refuses past dates and duplicates | Its entire value is in what it will not record |
 | Scoring the registry is all-or-nothing | Choosing which predictions count is the failure it prevents |
+| Opening and closing odds are never mixed | One column meaning two markets is invisible in the frame's shape |
+| A partial price triple is blanked whole | Two of three prices cannot be normalised into probabilities |
+| De-margining recovers a noiseless market exactly | Ties the odds generator and the normalisation together |
+| The `(H, D, A)` ordering | Transposing two probability columns passes every range check |
 
 A syntax-only check is still occasionally useful on files the suite does not import:
 
 ```bash
-python -m py_compile $(find core lottery scripts dashboard tests -name '*.py')
+python -m py_compile $(find core lottery football scripts dashboard tests -name '*.py')
 ```
 
 ### 3.2 Behaviour, against synthetic data
