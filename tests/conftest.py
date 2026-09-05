@@ -1,15 +1,15 @@
 """Shared fixtures.
 
-Everything is built from utils.sample_data, which is seeded, so every test in
+Everything is built from lottery.utils.sample_data, which is seeded, so every test in
 this suite is deterministic and needs no private CSV.
 """
 
 import pandas as pd
 import pytest
 
-from models.common import build_position_series
-from utils.processor import preprocess_draws
-from utils.sample_data import load_sample_and_preprocess
+from lottery.models.common import build_position_series
+from lottery.utils.processor import preprocess_draws
+from lottery.utils.sample_data import load_sample_and_preprocess
 
 
 @pytest.fixture(scope="session")

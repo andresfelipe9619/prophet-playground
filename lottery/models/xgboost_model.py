@@ -1,6 +1,6 @@
 """XGBoost per ball position, with the temporal-leak bug from the old script fixed.
 
-The previous XGBoost.py called `train_test_split(..., random_state=42)` with
+The previous scripts/xgboost_forecast.py called `train_test_split(..., random_state=42)` with
 its default `shuffle=True` on a time series — that puts future draws in the
 training set and past draws in the test set, which silently inflates the
 reported accuracy. Here every split is chronological (train on the past,
@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from models.common import clip_to_range
+from lottery.models.common import clip_to_range
 
 DEFAULT_PARAMS = {"max_depth": 4, "eta": 0.1, "objective": "reg:squarederror"}
 

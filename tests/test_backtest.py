@@ -1,4 +1,4 @@
-"""Walk-forward evaluation — backtest.py.
+"""Walk-forward evaluation — lottery/backtest.py.
 
 Two invariants carry the file: scoring is set-based (which makes the exact
 hypergeometric baseline the right comparison, and makes order-statistic
@@ -9,8 +9,8 @@ reports a multiplicity-corrected verdict alongside the naive one.
 import pandas as pd
 import pytest
 
-import backtest as bt
-from models.common import build_position_series
+import lottery.backtest as bt
+from lottery.models.common import build_position_series
 
 
 # -------------------------------------------------------------------- splits

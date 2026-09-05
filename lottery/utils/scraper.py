@@ -1,8 +1,8 @@
 """Scrape historical Baloto results from loterias.com into the project's data contract.
 
 Usage:
-    python -m utils.scraper --years 2020-2025                 # merge into exported_data/final-final.csv
-    python -m utils.scraper --years 2024 --dry-run            # print what was parsed, write nothing
+    python -m lottery.utils.scraper --years 2020-2025                 # merge into exported_data/final-final.csv
+    python -m lottery.utils.scraper --years 2024 --dry-run            # print what was parsed, write nothing
 
 The parser is deliberately loud. A scraper that silently writes an empty file
 when the site's markup changes is worse than one that crashes: you only find
@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.common import DEFAULT_DATA_PATH, MAIN_BALLS_DRAWN
+from lottery.models.common import DEFAULT_DATA_PATH, MAIN_BALLS_DRAWN
 
 BASE_URL = "https://www.loterias.com/baloto/resultados/{year}"
 BALLS_PER_DRAW = MAIN_BALLS_DRAWN + 1  # 5 main + superbalota, in that order

@@ -4,15 +4,15 @@ For each of the last `n_windows` real draws, every model is trained only on
 data available before that draw (expanding window, 1-step ahead) and scored
 on how many of the 5 main balls it matched and whether it matched the
 superbalota. Those hit counts are then compared against the exact
-hypergeometric chance baseline (models/baseline.py) with a z-test — this is
+hypergeometric chance baseline (lottery/models/baseline.py) with a z-test — this is
 the number that should decide whether a model is worth trusting, since raw
 "N matches" means nothing without knowing what pure luck would already give
 you.
 
 Two ways to choose which draws are held out:
 
-    python backtest.py --n-windows 20 --min-train 100
-    python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
+    python lottery/backtest.py --n-windows 20 --min-train 100
+    python lottery/backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
 
 The first holds out the last N draws. The second holds out everything after a
 date — "train on the data up to July, then predict the draws that have already
@@ -28,24 +28,16 @@ import time
 
 import pandas as pd
 
-from models.baseline import beats_chance_test, expected_super_match_rate, most_frequent_pick
-from models.common import DEFAULT_DATA_PATH, build_position_series, main_positions, super_position
-from models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
-from models.xgboost_model import forecast_horizon, train_predict_one_step
-from utils.processor import load_and_preprocess
+from core.significance import bonferroni_threshold, verdicts
+from core.windows import cutoff_bounds, window_bounds
+from lottery.models.baseline import beats_chance_test, expected_super_match_rate, most_frequent_pick
+from lottery.models.common import DEFAULT_DATA_PATH, build_position_series, main_positions, super_position
+from lottery.models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
+from lottery.models.xgboost_model import forecast_horizon, train_predict_one_step
+from lottery.utils.processor import load_and_preprocess
 
 RESULT_COLUMNS = ["t", "main_hits", "super_hit", "m_guessed"]
 MIN_TRAIN_FOR_HOLDOUT = 30  # below this the models have nothing to fit
-
-
-def window_bounds(n_draws, n_windows, min_train):
-    """The (start, total) range of draws a backtest would evaluate.
-
-    Single owner of the feasibility rule, so the CLI and the dashboard's
-    sliders agree on what combinations are runnable.
-    """
-    start = max(min_train, n_draws - n_windows)
-    return start, n_draws
 
 
 def _score_window(predictions_by_position, actual_by_position, n_columns):
@@ -124,7 +116,7 @@ def _xgboost_window(n_columns):
 
 
 def _prophet_window(n_columns):
-    from Prophet import define_and_fit_model, predict_at_dates
+    from lottery.models.prophet_model import define_and_fit_model, predict_at_dates
 
     @_predictor("Prophet")
     def predict(position_series, t):
@@ -150,11 +142,13 @@ def summarize(results_by_model, alpha=0.05):
     chance that at least one signal-free model clears the bar. `beats_chance`
     is the naive per-test verdict and is the one that misleads;
     `beats_chance_corrected` applies a Bonferroni threshold of alpha/k and is
-    the column to read. This mirrors analysis/tickets.py:compare_strategies —
-    the two tables answer the same question and must not disagree on how they
-    handle it.
+    the column to read.
+
+    The correction itself comes from core.significance, which is also what
+    lottery/analysis/tickets.py:compare_strategies uses — the two tables answer
+    the same question and cannot drift apart on how they handle it.
     """
-    corrected = alpha / max(len(results_by_model), 1)
+    threshold = bonferroni_threshold(alpha, len(results_by_model))
     summary = []
     for name, df in results_by_model.items():
         chance_test = beats_chance_test(df["main_hits"], df["m_guessed"])
@@ -166,9 +160,7 @@ def summarize(results_by_model, alpha=0.05):
             "chance_avg_main_hits": chance_test["chance_mean"],
             "z_vs_chance": chance_test["z"],
             "p_value_better_than_chance": beats,
-            "beats_chance": bool(beats < alpha) if pd.notna(beats) else False,
-            "bonferroni_threshold": corrected,
-            "beats_chance_corrected": bool(beats < corrected) if pd.notna(beats) else False,
+            **verdicts(beats, alpha, threshold),
             "super_hit_rate": df["super_hit"].mean(),
             "chance_super_hit_rate": expected_super_match_rate(),
         })
@@ -214,13 +206,6 @@ def run_all(position_series, n_columns, n_windows=15, min_train=60, include_prop
 HOLDOUT_MODES = ("expanding", "frozen")
 
 
-def cutoff_bounds(dates, cutoff):
-    """(n_train, n_holdout) for a date cutoff — draws on the cutoff day count as training."""
-    ds = pd.to_datetime(pd.Series(list(dates))).sort_values()
-    n_train = int((ds <= pd.Timestamp(cutoff)).sum())
-    return n_train, len(ds) - n_train
-
-
 def _frozen_statsforecast(position_series, n_columns, start, horizon):
     truncated = {pos: frame.iloc[:start] for pos, frame in position_series.items()}
     forecast = fit_predict_all(truncated, h=horizon)
@@ -247,7 +232,7 @@ def _frozen_xgboost(position_series, n_columns, start, horizon):
 
 
 def _frozen_prophet(position_series, n_columns, start, horizon):
-    from Prophet import define_and_fit_model, predict_at_dates
+    from lottery.models.prophet_model import define_and_fit_model, predict_at_dates
 
     by_step = {}
     for pos, frame in position_series.items():

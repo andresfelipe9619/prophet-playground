@@ -1,4 +1,4 @@
-"""XGBoost feature building and splits — models/xgboost_model.py.
+"""XGBoost feature building and splits — lottery/models/xgboost_model.py.
 
 The original code used a shuffled train_test_split, leaking future draws into
 training. Every test here is about that not coming back.
@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from models.common import range_for_position
-from models.xgboost_model import (
+from lottery.models.common import range_for_position
+from lottery.models.xgboost_model import (
     FEATURE_LAGS,
     chronological_split,
     create_features,

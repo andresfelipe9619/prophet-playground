@@ -4,16 +4,17 @@ Baloto draws 5 distinct main balls from a pool of 43 and 1 superbalota from a
 pool of 16, all uniformly at random. If you commit to `m` distinct numbers as
 your "prediction" for the main balls, the number of them that actually get
 drawn follows a hypergeometric distribution — that's the chance baseline,
-computed exactly (no simulation needed) and used by backtest.py to judge
+computed exactly (no simulation needed) and used by lottery/backtest.py to judge
 whether Prophet/StatsForecast/XGBoost add any real signal.
 """
 
 from functools import lru_cache
 
 import numpy as np
-from scipy.stats import hypergeom, norm
+from scipy.stats import hypergeom
 
-from models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
+from core.significance import z_test_against_null
+from lottery.models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
 
 
 @lru_cache(maxsize=None)
@@ -35,11 +36,15 @@ def expected_super_match_rate(pool_size=SUPER_POOL, m_guessed=1):
 def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAIN_BALLS_DRAWN):
     """z-test: is this model's average number of matches distinguishable from pure chance?
 
-    Each historical draw is an independent hypergeometric trial (the pool
-    resets every draw), so the sum of `observed_hits` is asymptotically normal
-    around the chance mean under the null "the model has no real signal".
-    `m_guessed` may be a single count (same every window) or a per-window list,
-    since collisions between positions can make the distinct-guess count vary.
+    This is the lottery's half of the contract with core.significance: the
+    pool resets every draw, so each historical draw is an independent
+    hypergeometric trial, and this function's only job is to turn
+    `m_guessed` into the per-draw mean and variance of that trial. The
+    arithmetic and both p-values come from core.
+
+    `m_guessed` may be a single count (same every window) or a per-window
+    list, since collisions between positions can make the distinct-guess
+    count vary.
 
     Two p-values come back, and they answer different questions. `p_value` is
     two-sided ("does this differ from chance at all?"); `p_value_greater` is
@@ -48,30 +53,20 @@ def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAI
     chance also gets a small two-sided p-value.
     """
     observed_hits = np.asarray(observed_hits, dtype=float)
-    empty = {"z": np.nan, "p_value": np.nan, "p_value_greater": np.nan,
-             "observed_mean": np.nan, "chance_mean": np.nan}
-    if len(observed_hits) == 0:
-        return empty
+    if observed_hits.size == 0:
+        return {"z": np.nan, "p_value": np.nan, "p_value_greater": np.nan,
+                "observed_mean": np.nan, "chance_mean": np.nan}
 
     m_list = np.broadcast_to(np.asarray(m_guessed), observed_hits.shape)
-    chance = [expected_main_matches(int(m), pool_size, n_drawn) for m in m_list]
-    means = np.array([c["mean"] for c in chance])
-    variances = np.array([c["var"] for c in chance])
+    chance = [expected_main_matches(int(m), pool_size, n_drawn) for m in m_list.ravel()]
+    means = np.array([c["mean"] for c in chance]).reshape(observed_hits.shape)
+    variances = np.array([c["var"] for c in chance]).reshape(observed_hits.shape)
 
-    observed_mean = float(observed_hits.mean())
-    chance_mean = float(means.mean())
-    se_sum = np.sqrt(variances.sum())
-    if se_sum == 0:
-        return {**empty, "observed_mean": observed_mean, "chance_mean": chance_mean}
-
-    z = (observed_hits.sum() - means.sum()) / se_sum
-    return {
-        "z": float(z),
-        "p_value": float(2 * (1 - norm.cdf(abs(z)))),
-        "p_value_greater": float(1 - norm.cdf(z)),
-        "observed_mean": observed_mean,
-        "chance_mean": chance_mean,
-    }
+    result = z_test_against_null(observed_hits, means, variances)
+    # `chance_mean` is this domain's name for the null mean; keep it, since
+    # every lottery surface reads that key.
+    result["chance_mean"] = result.pop("null_mean")
+    return result
 
 
 def most_frequent_pick(position_series, upto=None):

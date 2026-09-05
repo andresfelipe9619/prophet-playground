@@ -21,8 +21,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-import backtest as bt
-from analysis.randomness import (
+import lottery.backtest as bt
+from lottery.analysis.randomness import (
     autocorrelation_check,
     frequency_table,
     gap_table,
@@ -31,13 +31,13 @@ from analysis.randomness import (
     pooled_uniformity_test,
     randomness_report,
 )
-from analysis.prizes import (
+from lottery.analysis.prizes import (
     breakeven_jackpot,
     category_probabilities,
     expected_value,
     total_combinations,
 )
-from analysis.tickets import (
+from lottery.analysis.tickets import (
     STRATEGIES,
     Ticket,
     check_against_history,
@@ -50,8 +50,8 @@ from analysis.tickets import (
     stability_check,
     ticket_from_predictions,
 )
-from models.baseline import expected_main_matches, most_frequent_pick
-from models.common import (
+from lottery.models.baseline import expected_main_matches, most_frequent_pick
+from lottery.models.common import (
     DEFAULT_DATA_PATH,
     MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
@@ -63,15 +63,15 @@ from models.common import (
     series_label,
     super_position,
 )
-from models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
-from models.xgboost_model import forecast_next
-from utils.processor import (
+from lottery.models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
+from lottery.models.xgboost_model import forecast_next
+from lottery.utils.processor import (
     check_draw_format,
     current_format_mask,
     load_and_preprocess,
     preprocess_draws,
 )
-from utils.sample_data import load_sample_and_preprocess
+from lottery.utils.sample_data import load_sample_and_preprocess
 
 st.set_page_config(page_title="Baloto Analytics", layout="wide")
 
@@ -95,7 +95,7 @@ HELP = {
                "sensibles. Por debajo de ~200 casi nada es concluyente.",
     "date_from": "Fecha del sorteo más antiguo del archivo cargado.",
     "date_to": "Fecha del sorteo más reciente. Si está muy atrás, actualiza con "
-               "`python -m utils.scraper --years <año>`.",
+               "`python -m lottery.utils.scraper --years <año>`.",
     "sorted_flag": "Muchas fuentes publican las 5 balotas ordenadas de menor a mayor. Si es así, cada columna "
                    "deja de ser una balota al azar y pasa a ser un estadístico de orden (el mínimo, el 2do "
                    "menor...), lo que hace que las pruebas por posición marquen patrones falsos. La prueba "
@@ -613,7 +613,7 @@ with tabs[5]:
             if model_choice == "FrequencyBaseline":
                 preds = most_frequent_pick(position_series)
             elif model_choice == "Prophet":
-                from Prophet import define_and_fit_model, predict_at_dates
+                from lottery.models.prophet_model import define_and_fit_model, predict_at_dates
                 for p in range(n_columns):
                     m = define_and_fit_model(position_series[p])  # sin festivos: no afectan una balota
                     # predict_at_dates evalúa solo la fecha pedida; make_predictions

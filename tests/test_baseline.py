@@ -8,13 +8,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from models.baseline import (
+from lottery.models.baseline import (
     beats_chance_test,
     expected_main_matches,
     expected_super_match_rate,
     most_frequent_pick,
 )
-from models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
+from lottery.models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
 
 
 @pytest.mark.parametrize("m", [0, 1, 2, 3, 4, 5])
@@ -87,7 +87,7 @@ def test_zero_variance_is_handled():
 
 
 def test_most_frequent_pick_returns_one_legal_ball_per_position(position_series, n_columns):
-    from models.common import range_for_position
+    from lottery.models.common import range_for_position
 
     pick = most_frequent_pick(position_series)
     assert set(pick) == set(range(n_columns))

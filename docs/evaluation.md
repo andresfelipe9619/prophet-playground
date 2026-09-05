@@ -13,12 +13,35 @@ already gives you ~0.58. The only interesting quantity is the **difference**, an
 whether that difference survives a significance test.
 
 Every accuracy number this project reports is paired with its chance baseline.
-`backtest.summarize()` cannot emit an accuracy column without a
+`lottery.backtest.summarize()` cannot emit an accuracy column without a
 `chance_avg_main_hits` column beside it.
+
+### Where the rule is enforced
+
+The rule is deliberately split across two packages, because it is the one part
+of this project that is not about lotteries at all.
+
+| Layer | Owns | Knows about balls? |
+| --- | --- | --- |
+| `core/significance.py` | The z-test against a null, both p-values, the Bonferroni threshold, and the paired naive/corrected verdicts | No |
+| `core/windows.py` | Walk-forward and date-cutoff splits | No |
+| `lottery/models/baseline.py` | Turning `m_guessed` into the per-draw hypergeometric mean and variance | Yes |
+| `lottery/backtest.py` | The scoring rule (`_score_window`) | Yes |
+
+`core/` asks the domain for two things and supplies everything else: **the null's
+mean and variance per observation**, and **the score**. For Baloto the null is the
+exact hypergeometric distribution. For a different domain it would be something
+else — a market's implied probabilities, a climatological base rate — and none of
+the arithmetic in `core/` would change.
+
+That split is why `verdicts()` returns `beats_chance` and
+`beats_chance_corrected` **together**, as one dict: an evaluation surface cannot
+report the naive verdict without the corrected one, because it never gets the
+chance to build the row by hand.
 
 ## 2. Walk-forward backtesting
 
-`backtest.py`. For each of the last `n_windows` real draws, every model is trained
+`lottery/backtest.py`. For each of the last `n_windows` real draws, every model is trained
 **only on data before that draw** and scored against what actually came out.
 
 ```mermaid
@@ -36,8 +59,8 @@ flowchart TD
 ```
 
 ```bash
-python backtest.py --n-windows 20 --min-train 100
-python backtest.py --n-windows 20 --include-prophet     # slower
+python -m lottery.backtest --n-windows 20 --min-train 100
+python -m lottery.backtest --n-windows 20 --include-prophet     # slower
 ```
 
 | Flag | Default | Meaning |
@@ -74,7 +97,7 @@ Picking the last N draws gives an average. Picking a **date** gives something yo
 can check against your own memory of what came out:
 
 ```bash
-python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
+python -m lottery.backtest --cutoff 2026-07-31 --mode frozen --current-format-only
 ```
 
 > Train on everything up to 31 July, then predict the draws of August and
@@ -139,7 +162,7 @@ free 5/5 windows that flowed straight into the significance test.
 
 ## 3. The chance baseline
 
-`models/baseline.py`. Computed **exactly**, not simulated.
+`lottery/models/baseline.py`. Computed **exactly**, not simulated.
 
 If you commit to `m` distinct numbers and the lottery draws 5 from a pool of 43,
 the count you match follows a **hypergeometric distribution**:
@@ -160,7 +183,7 @@ For the superbalota it is simply `1/16 = 0.0625`.
 ### The significance test
 
 ```python
-from models.baseline import beats_chance_test
+from lottery.models.baseline import beats_chance_test
 result = beats_chance_test(observed_hits, m_guessed)
 ```
 
@@ -189,7 +212,7 @@ labelled a winner.
 
 ## 4. Randomness testing
 
-`analysis/randomness.py`. Run **before** trusting any forecast: if the series shows
+`lottery/analysis/randomness.py`. Run **before** trusting any forecast: if the series shows
 no exploitable structure, a model that appears to find some is fitting noise.
 
 | Test | Function | What a **high** p-value means |
@@ -228,10 +251,10 @@ too.
 
 ## 5. Expected value: the one exact answer
 
-`analysis/prizes.py`. No historical data required, no model, no uncertainty.
+`lottery/analysis/prizes.py`. No historical data required, no model, no uncertainty.
 
 ```python
-from analysis.prizes import category_probabilities, expected_value, breakeven_jackpot
+from lottery.analysis.prizes import category_probabilities, expected_value, breakeven_jackpot
 
 probs = category_probabilities()                       # all 12 categories, exact
 ev = expected_value(probs, payouts, ticket_price=5700)
@@ -260,7 +283,7 @@ calculation assumes; withholding tax cuts it further.
 
 ## 6. Forecast-accuracy metrics (Prophet cross-validation)
 
-`Prophet.py:evaluate_model_performance()` wraps Prophet's own cross-validation.
+`lottery/models/prophet_model.py:evaluate_model_performance()` wraps Prophet's own cross-validation.
 
 | Metric | Meaning | Direction |
 | --- | --- | --- |

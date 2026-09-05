@@ -10,7 +10,7 @@ import warnings
 
 import pandas as pd
 
-from models.common import (
+from lottery.models.common import (
     MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
     SUPER_BALL_RANGE,
@@ -96,7 +96,7 @@ def check_draw_format(df, balls_expanded):
             f"main ball), between {bad_dates.min():%Y-%m-%d} and {bad_dates.max():%Y-%m-%d}. This "
             "history most likely mixes the pre-2017 game (6 balls from 1-45, no superbalota) with the "
             f"current one. Only {int(keep.sum())} draws are current-format; analysing the rest together "
-            "mixes two different games. Filter with utils.processor.current_format_mask()."
+            "mixes two different games. Filter with lottery.utils.processor.current_format_mask()."
         ),
     }
 

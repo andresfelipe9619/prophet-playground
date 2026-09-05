@@ -1,17 +1,19 @@
 """XGBoost per ball position, evaluated on a held-out chronological tail.
 
-See models/xgboost_model.py for the fix to the previous version's random
+See lottery/models/xgboost_model.py for the fix to the previous version's random
 (shuffled) train/test split, which was leaking future draws into training.
 
 Note what this script produces: out-of-sample predictions for draws that
 already happened, which is what comparing against the actual 2024 results
 requires. For a prediction of the *next* draw use
-models.xgboost_model.forecast_next (what the dashboard's Forecast tab calls).
+lottery.models.xgboost_model.forecast_next (what the dashboard's Forecast tab calls).
+
+    python -m scripts.xgboost_forecast
 """
 
-from models.common import DEFAULT_DATA_PATH, build_position_series
-from models.xgboost_model import train_predict
-from utils.processor import load_and_preprocess, process_and_compare_forecasts
+from lottery.models.common import DEFAULT_DATA_PATH, build_position_series
+from lottery.models.xgboost_model import train_predict
+from lottery.utils.processor import load_and_preprocess, process_and_compare_forecasts
 
 if __name__ == "__main__":
     actual_2024_file_path = "exported_data/exported_data_2024.csv"

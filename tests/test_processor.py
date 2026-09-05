@@ -1,4 +1,4 @@
-"""The data contract and the two-eras detection — utils/processor.py.
+"""The data contract and the two-eras detection — lottery/utils/processor.py.
 
 Baloto changed rules in April 2017 (before: 6 balls from 1-45, no
 superbalota). Both eras publish as six dash-separated numbers, so only the
@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from tests.conftest import draws_frame, parsed
-from utils.processor import (
+from lottery.utils.processor import (
     check_draw_format,
     current_format_mask,
     format_violations,

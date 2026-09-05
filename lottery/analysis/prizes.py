@@ -20,7 +20,7 @@ from math import comb
 
 import pandas as pd
 
-from models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
+from lottery.models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
 
 
 def total_combinations(main_pool=MAIN_POOL, main_drawn=MAIN_BALLS_DRAWN, super_pool=SUPER_POOL):

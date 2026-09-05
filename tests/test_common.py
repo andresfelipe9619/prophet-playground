@@ -1,4 +1,4 @@
-"""Position semantics and the draw calendar — models/common.py.
+"""Position semantics and the draw calendar — lottery/models/common.py.
 
 These are the invariants the whole codebase derives from, so they are the
 ones a refactor is most likely to break silently.
@@ -7,7 +7,7 @@ ones a refactor is most likely to break silently.
 import pandas as pd
 import pytest
 
-from models.common import (
+from lottery.models.common import (
     MAIN_BALL_RANGE,
     SUPER_BALL_RANGE,
     build_position_series,

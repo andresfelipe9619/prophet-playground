@@ -19,9 +19,10 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from analysis.prizes import total_combinations
-from models.baseline import beats_chance_test
-from models.common import (
+from core.significance import bonferroni_threshold, verdicts
+from lottery.analysis.prizes import total_combinations
+from lottery.models.baseline import beats_chance_test
+from lottery.models.common import (
     MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
     SUPER_BALL_RANGE,
@@ -264,6 +265,8 @@ def evaluate_strategy(strategy, df, balls_expanded, n_draws_back=100, tickets_pe
         "chance_avg_main_matches": chance["chance_mean"],
         "z": chance["z"],
         "p_value_better_than_chance": chance["p_value_greater"],
+        # A single result, not a table: there is nothing to correct for here.
+        # `compare_strategies` is where k strategies meet the Bonferroni bar.
         "beats_chance": bool(chance["p_value_greater"] < 0.05)
                         if pd.notna(chance["p_value_greater"]) else False,
         "super_hit_rate": float(np.mean(super_hits)),
@@ -319,10 +322,8 @@ def compare_strategies(df, balls_expanded, strategies=None, alpha=0.05, **kwargs
     strategies = strategies or list(STRATEGIES)
     rows = [evaluate_strategy(s, df, balls_expanded, **kwargs) for s in strategies]
 
-    corrected = alpha / len(strategies)
+    threshold = bonferroni_threshold(alpha, len(strategies))
     for row in rows:
-        p = row["p_value_better_than_chance"]
-        row["bonferroni_threshold"] = corrected
-        row["beats_chance_corrected"] = bool(p < corrected) if pd.notna(p) else False
+        row.update(verdicts(row["p_value_better_than_chance"], alpha, threshold))
 
     return pd.DataFrame(rows).sort_values("avg_main_matches", ascending=False).reset_index(drop=True)

@@ -25,19 +25,19 @@ Skipping `clip_to_range()` produces out-of-range balls. It is not optional.
 
 | Model | Module | Fits | Speed | Real forecast? |
 | --- | --- | --- | --- | --- |
-| **FrequencyBaseline** | `models/baseline.py` | mode per position | instant | n/a — a baseline |
-| **AutoARIMA** | `models/statsforecast_model.py` | all positions in one call | fast | yes |
+| **FrequencyBaseline** | `lottery/models/baseline.py` | mode per position | instant | n/a — a baseline |
+| **AutoARIMA** | `lottery/models/statsforecast_model.py` | all positions in one call | fast | yes |
 | **AutoETS** | same call | " | fast | yes |
 | **AutoTheta** | same call | " | fast | yes |
-| **XGBoost** | `models/xgboost_model.py` | per position | fast | yes, via `forecast_next` / `forecast_horizon` |
-| **Prophet** | `Prophet.py` | per position | slow | yes |
+| **XGBoost** | `lottery/models/xgboost_model.py` | per position | fast | yes, via `forecast_next` / `forecast_horizon` |
+| **Prophet** | `lottery/models/prophet_model.py` | per position | slow | yes |
 
 ## 2. FrequencyBaseline
 
 The "play the hottest number in each slot" strategy.
 
 ```python
-from models.baseline import most_frequent_pick
+from lottery.models.baseline import most_frequent_pick
 preds = most_frequent_pick(position_series)            # {position: number}
 preds = most_frequent_pick(position_series, upto=t)    # walk-forward: history before t
 ```
@@ -60,7 +60,7 @@ model, rather than one guess for all; and all six positions × three models are 
 in **one vectorized call**.
 
 ```python
-from models.statsforecast_model import MODEL_NAMES, fit_predict_all, adjusted_predictions
+from lottery.models.statsforecast_model import MODEL_NAMES, fit_predict_all, adjusted_predictions
 
 forecast = fit_predict_all(position_series, h=1)               # all positions, all 3 models
 clipped = adjusted_predictions(forecast, n_columns, model_name="AutoARIMA")
@@ -86,7 +86,7 @@ These models run on the **draw-index axis**, not calendar dates — see
 
 ## 4. XGBoost
 
-Gradient boosting on lag features. `models/xgboost_model.py`.
+Gradient boosting on lag features. `lottery/models/xgboost_model.py`.
 
 ### Features
 
@@ -115,7 +115,7 @@ row.
 ### Four entry points
 
 ```python
-from models.xgboost_model import (
+from lottery.models.xgboost_model import (
     train_predict, train_predict_one_step, forecast_next, forecast_horizon,
 )
 
@@ -155,7 +155,7 @@ predict at all; short histories return `None` rather than a fabricated number.
 
 ## 5. Prophet
 
-`Prophet.py`. Kept for continuity with the project's origin, stripped of the parts
+`lottery/models/prophet_model.py`. Kept for continuity with the project's origin, stripped of the parts
 that were fitting noise.
 
 ```python
@@ -184,7 +184,7 @@ holiday has no causal effect on which ball leaves the machine. Seasonality and
 holidays are now **off by default and opt-in**:
 
 ```python
-from contants import COLOMBIA_HOLIDAYS
+from lottery.constants import COLOMBIA_HOLIDAYS
 forecast_position(series, pos, n, holidays=COLOMBIA_HOLIDAYS)   # if you want to experiment
 ```
 
@@ -201,14 +201,14 @@ forecast_position(series, pos, n, holidays=COLOMBIA_HOLIDAYS)   # if you want to
 ```mermaid
 flowchart TD
     Q1{"What do you need?"}
-    Q1 -->|"What is a ticket worth?"| PRIZE["analysis/prizes.py<br/><b>This is the exact answer.</b>"]
-    Q1 -->|"Is there any signal at all?"| RAND["analysis/randomness.py<br/>Run this before any model."]
+    Q1 -->|"What is a ticket worth?"| PRIZE["lottery/analysis/prizes.py<br/><b>This is the exact answer.</b>"]
+    Q1 -->|"Is there any signal at all?"| RAND["lottery/analysis/randomness.py<br/>Run this before any model."]
     Q1 -->|"A forecasting exercise"| Q2{"Constraint?"}
     Q2 -->|"Fastest, all models at once"| SF["statsforecast trio"]
     Q2 -->|"Feature engineering practice"| XGB["XGBoost"]
     Q2 -->|"Calendar-aware, interpretable"| PROPH["Prophet (slow)"]
     Q2 -->|"Reference point"| FREQ["FrequencyBaseline"]
-    SF & XGB & PROPH & FREQ --> BT["Then: backtest.py<br/>Does it beat chance?"]
+    SF & XGB & PROPH & FREQ --> BT["Then: lottery/backtest.py<br/>Does it beat chance?"]
 ```
 
 ## 7. Adding a model
@@ -218,7 +218,7 @@ flowchart TD
 2. Clip through `common.clip_to_range()`.
 3. Derive positions from `common.main_positions()` / `super_position()` — never
    `range(5)` or `n - 1`.
-4. Add a window predictor in `backtest.py` decorated with `@_predictor("YourModel")`.
+4. Add a window predictor in `lottery/backtest.py` decorated with `@_predictor("YourModel")`.
 5. Register it in `run_all()`.
 6. Add it to the dashboard's Forecast tab selector.
 

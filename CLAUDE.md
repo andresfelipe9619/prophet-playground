@@ -8,7 +8,9 @@ It is the condensed version. Full documentation lives in [`docs/`](docs/README.m
 
 Analysis and forecasting over historical Colombian Baloto lottery results. A ticket is 5 distinct numbers from 1-43 plus one "superbalota" from 1-16; draws run Monday, Wednesday and Saturday.
 
-**The domain constraint that shapes the whole architecture:** lottery draws are i.i.d. uniform by design, so no model can beat chance. The codebase was deliberately refactored around this. Every model output is paired with the chance baseline it must beat, and every heuristic (hot/cold, "overdue" numbers) carries an explicit note that it has no predictive value. Do not "improve" a model by adding seasonalities, holiday regressors, or tuned hyperparameters that fit historical noise — that is the anti-pattern this repo was moved away from, and [`docs/domain-and-premise.md`](docs/domain-and-premise.md#6-anti-patterns) explains why. If a change makes a model look better on history without beating the chance baseline in `backtest.py`, it made the project worse.
+**The repository is split by domain.** `core/` holds evaluation machinery that knows nothing about lotteries — walk-forward splits, the z-test against a null, the multiple-comparison correction. `lottery/` holds everything Baloto-specific and supplies `core/` with the two things it deliberately lacks: the null distribution to compare against and the scoring rule. That seam exists so a second domain can reuse the evaluation discipline rather than copy it. **Do not put anything domain-specific in `core/`** — if it mentions a ball, a draw or a pool, it belongs in `lottery/`.
+
+**The domain constraint that shapes the whole architecture:** lottery draws are i.i.d. uniform by design, so no model can beat chance. The codebase was deliberately refactored around this. Every model output is paired with the chance baseline it must beat, and every heuristic (hot/cold, "overdue" numbers) carries an explicit note that it has no predictive value. Do not "improve" a model by adding seasonalities, holiday regressors, or tuned hyperparameters that fit historical noise — that is the anti-pattern this repo was moved away from, and [`docs/domain-and-premise.md`](docs/domain-and-premise.md#6-anti-patterns) explains why. If a change makes a model look better on history without beating the chance baseline in `lottery/backtest.py`, it made the project worse.
 
 ## Setup and commands
 
@@ -17,61 +19,66 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 streamlit run dashboard/app.py          # main entry point
-python Prophet.py                        # per-position Prophet forecast
-python StatsForecast.py AutoARIMA        # or AutoETS / AutoTheta
-python XGBoost.py
-python backtest.py --n-windows 20 --min-train 100 [--include-prophet]
-python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
+python -m scripts.prophet_forecast                        # per-position Prophet forecast
+python -m scripts.statsforecast_forecast AutoARIMA        # or AutoETS / AutoTheta
+python -m scripts.xgboost_forecast
+python -m lottery.backtest --n-windows 20 --min-train 100 [--include-prophet]
+python -m lottery.backtest --cutoff 2026-07-31 --mode frozen --current-format-only
+
+pytest                                  # the invariant suite
+pytest -m "not slow"                    # skip runs that fit real models (~2s)
 ```
 
-There is no test suite, linter, or CI configured. Changes are verified by:
+There is a pytest suite in `tests/`; there is still no linter or CI. Changes are verified by:
 
-1. `python -m py_compile <files>` for syntax.
-2. Running the affected module against synthetic data from `utils.sample_data.load_sample_and_preprocess()`, which returns the same `(df, balls_expanded)` shape as the real loader — no private CSVs needed.
-3. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium at `/opt/pw-browsers/chromium`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
+1. `pytest`. The suite is deterministic (everything is built from the seeded generator in `lottery/utils/sample_data.py`) and pins the invariants listed below rather than chasing coverage — those are what a refactor breaks silently. Add to it when you add an invariant. `python -m py_compile <files>` still helps for files the suite does not import.
+2. Running the affected module against synthetic data from `lottery.utils.sample_data.load_sample_and_preprocess()`, which returns the same `(df, balls_expanded)` shape as the real loader — no private CSVs needed.
+3. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium is under `/opt/pw-browsers/`, at a versioned path such as `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
 
-`backtest.py` with `--include-prophet` refits Prophet per position per window and is far slower than the other models; it is off by default for that reason.
+`lottery/backtest.py` with `--include-prophet` refits Prophet per position per window and is far slower than the other models; it is off by default for that reason.
 
 ## Data contract
 
-Scripts read `exported_data/final-final.csv` — gitignored, not in the repo. Columns: `Date` (dd/mm/yyyy) and `Ball`, six dash-separated numbers where the **last one is the superbalota** (e.g. `3-12-19-27-41-8`). `utils/processor.py:preprocess_draws` is the single owner of that contract; `load_and_preprocess` (CSV), the dashboard's upload path and `utils/sample_data.py` all go through it.
+Scripts read `exported_data/final-final.csv` — gitignored, not in the repo. Columns: `Date` (dd/mm/yyyy) and `Ball`, six dash-separated numbers where the **last one is the superbalota** (e.g. `3-12-19-27-41-8`). `lottery/utils/processor.py:preprocess_draws` is the single owner of that contract; `load_and_preprocess` (CSV), the dashboard's upload path and `lottery/utils/sample_data.py` all go through it.
 
 **Two eras of the game.** Baloto changed rules in April 2017 (before: 6 balls from 1-45, no superbalota). Both eras publish as six dash-separated numbers, so a long history has the same *shape* throughout and only the values give the mix away — a real 2010-2026 export splits 707/1035 across the change. `preprocess_draws` warns rather than raises (the rows are real draws; a caller may want them), and `format_violations` / `current_format_mask` / `check_draw_format` in the same module do the detection. Note the two masks differ deliberately: `format_violations` can only flag rows that are *provably* impossible today, so `current_format_mask` cuts at the date of the last violation instead — an old-era draw that happens to fit today's bounds would otherwise survive. Use `load_and_preprocess(..., current_format_only=True)`, `--current-format-only`, or the dashboard's sidebar checkbox (on by default).
 
-`python -m utils.scraper --years 2020-2025` builds that file from loterias.com, merging into whatever is already there. Its parser raises rather than skipping on anything unexpected (no rows, wrong ball count, unknown month) — a scraper that silently writes an empty CSV when the markup changes is the failure mode this module is shaped to avoid. `parse_results_page(html)` takes HTML and does no I/O, so it can be tested against saved pages; nothing in the repo can verify it against the live site, so `--dry-run` exists to eyeball a scrape before writing.
+`python -m lottery.utils.scraper --years 2020-2025` builds that file from loterias.com, merging into whatever is already there. Its parser raises rather than skipping on anything unexpected (no rows, wrong ball count, unknown month) — a scraper that silently writes an empty CSV when the markup changes is the failure mode this module is shaped to avoid. `parse_results_page(html)` takes HTML and does no I/O, so it can be tested against saved pages; nothing in the repo can verify it against the live site, so `--dry-run` exists to eyeball a scrape before writing.
 
 When no real CSV is present the dashboard falls back to synthetic data and says so on screen.
 
 ## Cross-cutting invariants
 
-**Position semantics.** Throughout the codebase a "position" is a column index into `balls_expanded`. `models/common.py` is the single source of truth for what each position means: `super_position(n_columns)` (the last column, range 1-16), `main_positions(n_columns)` (all the others, range 1-43), plus `range_for_position` / `clip_to_range` / `series_label`. Derive positions from those helpers rather than writing `n_columns - 1` or `range(5)` — the two only coincide when there are exactly 6 columns, and nothing else in the codebase assumes that. Any new model must clip its raw output through `clip_to_range` or it will emit out-of-range numbers.
+**Position semantics.** Throughout the codebase a "position" is a column index into `balls_expanded`. `lottery/models/common.py` is the single source of truth for what each position means: `super_position(n_columns)` (the last column, range 1-16), `main_positions(n_columns)` (all the others, range 1-43), plus `range_for_position` / `clip_to_range` / `series_label`. Derive positions from those helpers rather than writing `n_columns - 1` or `range(5)` — the two only coincide when there are exactly 6 columns, and nothing else in the codebase assumes that. Any new model must clip its raw output through `clip_to_range` or it will emit out-of-range numbers.
 
 Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH` also live in `common.py` and are imported, never re-declared.
 
-**Two time axes.** Prophet and all display code use calendar dates (`ds`). statsforecast models use a sequential integer draw index instead, assigned in `models/common.py:to_long_format`, because draw days are 2 and 3 days apart and no fixed pandas frequency fits them. Never introduce a fixed `freq=` for future dates — use `next_draw_dates(last_date, h, weekdays=infer_draw_weekdays(history))`. `infer_draw_weekdays` reads the schedule off the recent tail of the data so that a pre-Monday history keeps generating Wed/Sat dates rather than phantom Monday draws.
+**Two time axes.** Prophet and all display code use calendar dates (`ds`). statsforecast models use a sequential integer draw index instead, assigned in `lottery/models/common.py:to_long_format`, because draw days are 2 and 3 days apart and no fixed pandas frequency fits them. Never introduce a fixed `freq=` for future dates — use `next_draw_dates(last_date, h, weekdays=infer_draw_weekdays(history))`. `infer_draw_weekdays` reads the schedule off the recent tail of the data so that a pre-Monday history keeps generating Wed/Sat dates rather than phantom Monday draws.
 
-**Backtest scoring is set-based and order-agnostic.** `backtest.py:_score_window` compares the *set* of the 5 main-position predictions against the *set* of actual main balls; slot order is irrelevant. This is what makes the exact hypergeometric baseline in `models/baseline.py` the correct comparison, and it is why order-statistic artifacts in the source data cannot inflate backtest results. Preserve this property in any new scoring code.
+**Backtest scoring is set-based and order-agnostic.** `lottery/backtest.py:_score_window` compares the *set* of the 5 main-position predictions against the *set* of actual main balls; slot order is irrelevant. This is what makes the exact hypergeometric baseline in `lottery/models/baseline.py` the correct comparison, and it is why order-statistic artifacts in the source data cannot inflate backtest results. Preserve this property in any new scoring code.
 
-**The sorted-data trap.** Official results are often published with the main balls sorted ascending. When that happens each column is an order statistic (min, 2nd-smallest, ...), not a uniform draw, and a per-position chi-square test will report spurious "non-random" structure. `analysis/randomness.py:is_sorted_ascending` detects this and `pooled_uniformity_test` is the sort-proof alternative (it pools columns and only asks whether every number appears equally often). It takes only the positions to pool and derives the range from them, so pooling the 1-16 superbalota with the 1-43 main balls is not expressible — a mistake that value range-checking cannot catch, since 1-16 is a subset of 1-43. Per-position tests are diagnostics; the pooled test is the verdict. Also note six simultaneous per-position tests produce false positives at the usual rate — the dashboard says so, and any new test surface should too.
+**The sorted-data trap.** Official results are often published with the main balls sorted ascending. When that happens each column is an order statistic (min, 2nd-smallest, ...), not a uniform draw, and a per-position chi-square test will report spurious "non-random" structure. `lottery/analysis/randomness.py:is_sorted_ascending` detects this and `pooled_uniformity_test` is the sort-proof alternative (it pools columns and only asks whether every number appears equally often). It takes only the positions to pool and derives the range from them, so pooling the 1-16 superbalota with the 1-43 main balls is not expressible — a mistake that value range-checking cannot catch, since 1-16 is a subset of 1-43. Per-position tests are diagnostics; the pooled test is the verdict. Also note six simultaneous per-position tests produce false positives at the usual rate — the dashboard says so, and any new test surface should too.
 
 **Multiple comparisons are corrected everywhere.** A backtest scores k models against the same draws and `compare_strategies` scores k strategies the same way, so both emit `beats_chance` (naive, α = 0.05) *and* `beats_chance_corrected` (Bonferroni, α/k), and every surface points the reader at the corrected column. With six models the naive bar is cleared by luck ~26% of the time — "one of my six models beat chance" is exactly the sentence a lottery system gets built on. A new evaluation table that reports one uncorrected verdict has reintroduced the bug.
 
-**Chance comparisons are one-sided.** `models/baseline.py:beats_chance_test` returns `p_value` (two-sided, "differs from chance") and `p_value_greater` (one-sided, "better than chance"). Only the one-sided value may back a "beats chance" claim — a model significantly *worse* than chance also gets a small two-sided p-value.
+**Chance comparisons are one-sided.** `lottery/models/baseline.py:beats_chance_test` returns `p_value` (two-sided, "differs from chance") and `p_value_greater` (one-sided, "better than chance"). Only the one-sided value may back a "beats chance" claim — a model significantly *worse* than chance also gets a small two-sided p-value.
 
 ## Module layout
 
-- `models/common.py` — ball ranges, draw calendar, position helpers, long-format conversion. Everything else imports its constants from here.
-- `models/baseline.py` — exact hypergeometric chance baseline and `beats_chance_test`, the z-test that decides whether a model has real signal. `m_guessed` accepts a per-window list because collisions between positions change the distinct-guess count.
-- `models/statsforecast_model.py` — AutoARIMA/AutoETS/AutoTheta via Nixtla. `fit_predict_all` fits **every position and all three models in one call**; don't loop per position for these.
-- `models/xgboost_model.py` — chronological splits only. The original code used a shuffled `train_test_split`, leaking future draws into training; keep splits time-ordered.
-- `analysis/randomness.py` — frequency, gaps, hot/cold, chi-square (per-position and pooled), runs test, ACF/Ljung-Box.
-- `analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
-- `analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
-- `backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
-- `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import the root-level model scripts. All explanatory tooltip copy lives in one `HELP` dict at the top and is consumed by two helpers: `section(title, key)` (a subheader with its ⓘ) and `chart(fig, title, key)` (a titled line with its ⓘ, then the figure). `chart` moves the title out of the Plotly figure because Plotly's own title has nowhere to hang a help icon — clear it with `title={"text": ""}`, since `title=None` makes Plotly render the literal string `undefined`. A bare `st.plotly_chart` outside that helper means a chart was added without an explanation.
-- `summary_charts.py` — the original static matplotlib/seaborn charts, superseded by the dashboard for exploratory use.
-
-`contants.py` is misspelled (not `constants.py`) but is imported under that name; renaming it means updating its importers.
+- `core/significance.py` — `z_test_against_null` (both p-values), `bonferroni_threshold`, and `verdicts`, which returns the naive and corrected verdicts together so no surface can report one without the other. Domain-free: the caller supplies the null's mean and variance.
+- `core/windows.py` — `window_bounds` (walk-forward) and `cutoff_bounds` (date holdout). Pure index arithmetic over an ordered sequence.
+- `lottery/models/common.py` — ball ranges, draw calendar, position helpers, long-format conversion. Everything else imports its constants from here.
+- `lottery/models/baseline.py` — exact hypergeometric chance baseline and `beats_chance_test`, the z-test that decides whether a model has real signal. `m_guessed` accepts a per-window list because collisions between positions change the distinct-guess count.
+- `lottery/models/statsforecast_model.py` — AutoARIMA/AutoETS/AutoTheta via Nixtla. `fit_predict_all` fits **every position and all three models in one call**; don't loop per position for these.
+- `lottery/models/xgboost_model.py` — chronological splits only. The original code used a shuffled `train_test_split`, leaking future draws into training; keep splits time-ordered.
+- `lottery/analysis/randomness.py` — frequency, gaps, hot/cold, chi-square (per-position and pooled), runs test, ACF/Ljung-Box.
+- `lottery/analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
+- `lottery/analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
+- `lottery/models/prophet_model.py` — Prophet per position. Named `prophet_model`, not `Prophet`, so importing it cannot shadow the `prophet` package it depends on.
+- `lottery/backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
+- `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import `core` and `lottery`. All explanatory tooltip copy lives in one `HELP` dict at the top and is consumed by two helpers: `section(title, key)` (a subheader with its ⓘ) and `chart(fig, title, key)` (a titled line with its ⓘ, then the figure). `chart` moves the title out of the Plotly figure because Plotly's own title has nowhere to hang a help icon — clear it with `title={"text": ""}`, since `title=None` makes Plotly render the literal string `undefined`. A bare `st.plotly_chart` outside that helper means a chart was added without an explanation.
+- `scripts/` — CLI entry points, run as `python -m scripts.<name>`. `summary_charts.py` is the original static matplotlib/seaborn set, superseded by the dashboard for exploratory use.
+- `tests/` — the invariant suite. Mirrors the layout above; `pytest -m "not slow"` skips the runs that fit real models.
 
 ## Language
 
@@ -90,4 +97,4 @@ Keep these in sync when behaviour changes:
 | [`docs/tickets.md`](docs/tickets.md) | Generating, checking and measuring ticket strategies |
 | [`docs/evaluation.md`](docs/evaluation.md) | Backtest, chance baseline, randomness tests, known past bugs |
 | [`docs/dashboard.md`](docs/dashboard.md) | The seven tabs and how to read them |
-| [`docs/development.md`](docs/development.md) | Setup, verification workflow, conventions, gotchas |
+| [`docs/development.md`](docs/development.md) | Setup, the test suite, verification workflow, conventions, gotchas |

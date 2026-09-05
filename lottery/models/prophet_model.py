@@ -1,4 +1,4 @@
-"""Prophet 1.4 forecasting per ball position.
+"""Prophet forecasting per ball position.
 
 Compared to the previous version, this drops the hand-tuned custom
 seasonalities (weekly/biweekly/yearly Fourier terms) that were being fit on
@@ -6,23 +6,23 @@ a series that only has observations on draw days (Wed/Sat) — there is no
 real periodic signal there to capture, so those terms were just fitting
 noise and inflating the model's confidence. Seasonality/holidays are now
 opt-in flags so you can turn them on for experimentation, but they're off
-by default. See analysis/randomness.py for whether a given position shows
+by default. See lottery/analysis/randomness.py for whether a given position shows
 *any* evidence of non-randomness before trusting a forecast from here.
+
+The module is named prophet_model rather than Prophet so that importing it
+cannot shadow the `prophet` package it depends on.
 """
 
 import pandas as pd
 from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 
-from models.common import (
-    DEFAULT_DATA_PATH,
-    build_position_series,
+from lottery.models.common import (
     clip_to_range,
     infer_draw_weekdays,
     next_draw_dates,
     series_label,
 )
-from utils.processor import load_and_preprocess, process_and_compare_forecasts
 
 
 def define_and_fit_model(series, holidays=None, weekly_seasonality=False, yearly_seasonality=False,
@@ -83,28 +83,3 @@ def forecast_position(position_series, position, n_columns, periods=8, holidays=
         result["cv"] = df_cv
         result["performance"] = df_p
     return result
-
-
-if __name__ == "__main__":
-    actual_2024_file_path = "exported_data/exported_data_2024.csv"
-
-    df, balls_expanded = load_and_preprocess(DEFAULT_DATA_PATH)
-    position_series = build_position_series(df, balls_expanded)
-    n_columns = balls_expanded.shape[1]
-
-    all_predictions = []
-    for position, temp_df in position_series.items():
-        # holidays are opt-in (forecast_position(holidays=contants.COLOMBIA_HOLIDAYS)) and
-        # off here: a public holiday has no causal effect on which ball comes out.
-        result = forecast_position(
-            temp_df, position, n_columns, periods=120, run_cross_validation=True,
-        )
-        print(f"{result['label']} performance metrics:")
-        print(result["performance"].head())
-
-        forecast = result["forecast"]
-        all_predictions.append(
-            forecast[["ds", "yhat_adjusted"]].rename(columns={"yhat_adjusted": f"yhat_adjusted_{position}"})
-        )
-
-    process_and_compare_forecasts(all_predictions, actual_2024_file_path, "prophet_results")

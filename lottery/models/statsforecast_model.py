@@ -16,7 +16,7 @@ from statsforecast.models import AutoARIMA, AutoETS, AutoTheta
 
 import numpy as np
 
-from models.common import max_for_position, min_for_position, to_long_format
+from lottery.models.common import max_for_position, min_for_position, to_long_format
 
 MODEL_NAMES = ("AutoARIMA", "AutoETS", "AutoTheta")
 

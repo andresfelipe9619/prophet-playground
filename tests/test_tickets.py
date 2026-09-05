@@ -1,4 +1,4 @@
-"""Ticket generation, checking and strategy measurement — analysis/tickets.py.
+"""Ticket generation, checking and strategy measurement — lottery/analysis/tickets.py.
 
 The load-bearing invariant is the Bonferroni column on `compare_strategies`:
 k strategies scored against the same draws get k chances at a false positive,
@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analysis.prizes import total_combinations
-from analysis.tickets import (
+from lottery.analysis.prizes import total_combinations
+from lottery.analysis.tickets import (
     MAIN_NUMBERS,
     STRATEGIES,
     Ticket,
@@ -28,7 +28,7 @@ from analysis.tickets import (
     stability_check,
     ticket_from_predictions,
 )
-from models.common import MAIN_BALLS_DRAWN
+from lottery.models.common import MAIN_BALLS_DRAWN
 
 
 # ------------------------------------------------------------------ validity

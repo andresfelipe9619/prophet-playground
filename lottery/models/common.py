@@ -3,7 +3,7 @@
 Baloto: pick 5 main balls from 1-43 (no repeats) plus one "superbalota"
 from 1-16. Draws run Monday, Wednesday and Saturday. Every module that
 needs those bounds or needs to turn `balls_expanded` (from
-utils.processor.load_and_preprocess) into one series per ball position
+lottery.utils.processor.load_and_preprocess) into one series per ball position
 imports from here so the rules only live in one place.
 """
 

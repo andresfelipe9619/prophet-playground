@@ -1,8 +1,8 @@
-"""Exact prize combinatorics — analysis/prizes.py. Pure math, no data needed."""
+"""Exact prize combinatorics — lottery/analysis/prizes.py. Pure math, no data needed."""
 
 import pytest
 
-from analysis.prizes import (
+from lottery.analysis.prizes import (
     apply_payouts,
     breakeven_jackpot,
     category_probabilities,

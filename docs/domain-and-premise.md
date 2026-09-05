@@ -84,7 +84,7 @@ things, and only one of them is forecasting.
 
 Item 1 answers a real decision exactly. Which numbers will come up is unknowable;
 **what a ticket returns on average is arithmetic**. See
-[`analysis/prizes.py`](../analysis/prizes.py) and
+[`lottery/analysis/prizes.py`](../lottery/analysis/prizes.py) and
 [evaluation](evaluation.md#5-expected-value-the-one-exact-answer).
 
 Items 2 and 3 are the experimental core. The claim "no strategy beats random" is
@@ -139,9 +139,9 @@ Consequences, all of which the code handles:
 - A **per-position chi-square test** against a uniform distribution will report a
   vanishingly small p-value. This is a true statement about the column and a
   false statement about the lottery.
-- [`analysis.randomness.is_sorted_ascending()`](../analysis/randomness.py) detects
+- [`lottery.analysis.randomness.is_sorted_ascending()`](../lottery/analysis/randomness.py) detects
   the condition and the dashboard warns about it.
-- [`analysis.randomness.pooled_uniformity_test()`](../analysis/randomness.py) is
+- [`lottery.analysis.randomness.pooled_uniformity_test()`](../lottery/analysis/randomness.py) is
   the sort-proof alternative: it pools all five main columns and asks only whether
   each number 1–43 appears equally often overall. Sorting cannot affect that count.
 - **Per-position tests are diagnostics; the pooled test is the verdict.**
@@ -175,7 +175,7 @@ several of them.
 | Treating a per-position chi-square as proof of non-randomness | See §4. |
 
 > **The test for any change:** does it make a model look better on history without
-> beating the chance baseline in [`backtest.py`](../backtest.py)? If so, it made the
+> beating the chance baseline in [`lottery/backtest.py`](../lottery/backtest.py)? If so, it made the
 > project worse.
 
 ## 7. Responsible use

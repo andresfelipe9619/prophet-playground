@@ -1,6 +1,6 @@
 # Tickets: Generating, Checking, Measuring
 
-`analysis/tickets.py` — the experimental surface of the project. Generate plays,
+`lottery/analysis/tickets.py` — the experimental surface of the project. Generate plays,
 check them against real draws, and measure whether a way of choosing them does
 better than picking at random.
 
@@ -24,7 +24,7 @@ flowchart LR
 ## 2. The Ticket type
 
 ```python
-from analysis.tickets import Ticket
+from lottery.analysis.tickets import Ticket
 
 t = Ticket(main=(3, 12, 19, 27, 41), super_ball=8)
 print(t)          # 3 - 12 - 19 - 27 - 41  +  8
@@ -48,7 +48,7 @@ number — that is not a duplicate.
 | `generate_portfolio(n, strategy, ...)` | Several tickets at once |
 
 ```python
-from analysis.tickets import random_ticket, generate_portfolio, portfolio_coverage
+from lottery.analysis.tickets import random_ticket, generate_portfolio, portfolio_coverage
 
 ticket = random_ticket()
 tickets = generate_portfolio(5, strategy="random", disjoint=True)
@@ -97,7 +97,7 @@ change the expected value of any ticket, nor of the portfolio.
 ## 4. Checking
 
 ```python
-from analysis.tickets import check_ticket, check_against_history, history_summary, draw_from_row
+from lottery.analysis.tickets import check_ticket, check_against_history, history_summary, draw_from_row
 
 main_drawn, super_drawn = draw_from_row(balls_expanded.iloc[-1])
 check_ticket(ticket, main_drawn, super_drawn)
@@ -107,7 +107,7 @@ results = check_against_history(ticket, df, balls_expanded)   # every draw, one 
 history_summary(results)                                       # counts per prize category
 ```
 
-Category naming matches `analysis/prizes.py`, so the observed distribution can be
+Category naming matches `lottery/analysis/prizes.py`, so the observed distribution can be
 compared directly against the exact probabilities.
 
 A typical result over 400 draws:
@@ -125,7 +125,7 @@ point.
 ## 5. Measuring: the accuracy system
 
 ```python
-from analysis.tickets import evaluate_strategy, compare_strategies, stability_check
+from lottery.analysis.tickets import evaluate_strategy, compare_strategies, stability_check
 
 evaluate_strategy("hot", df, balls_expanded, n_draws_back=300, tickets_per_draw=20)
 compare_strategies(df, balls_expanded)

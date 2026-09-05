@@ -1,4 +1,4 @@
-"""Randomness diagnostics — analysis/randomness.py.
+"""Randomness diagnostics — lottery/analysis/randomness.py.
 
 The sorted-data trap is the invariant here: when official results are
 published sorted ascending, each column is an order statistic and
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analysis.randomness import (
+from lottery.analysis.randomness import (
     autocorrelation_check,
     chi_square_uniformity,
     frequency_table,
@@ -21,7 +21,7 @@ from analysis.randomness import (
     randomness_report,
     runs_test,
 )
-from models.common import main_positions, super_position
+from lottery.models.common import main_positions, super_position
 
 
 def test_frequency_table_covers_the_whole_range(position_series, n_columns):

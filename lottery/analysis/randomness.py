@@ -12,7 +12,7 @@ from scipy import stats
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tsa.stattools import acf
 
-from models.common import (
+from lottery.models.common import (
     MAIN_BALLS_DRAWN,
     max_for_position,
     min_for_position,

@@ -54,24 +54,24 @@ No data required — the dashboard falls back to synthetic draws and says so on
 screen. To use real results:
 
 ```bash
-python -m utils.scraper --years 2024 --dry-run    # inspect what it parses
-python -m utils.scraper --years 2020-2025          # write exported_data/final-final.csv
+python -m lottery.utils.scraper --years 2024 --dry-run    # inspect what it parses
+python -m lottery.utils.scraper --years 2020-2025          # write exported_data/final-final.csv
 ```
 
 Then, the question that matters — generate tickets and measure whether the way
 you chose them beat chance:
 
 ```bash
-python backtest.py --n-windows 20 --min-train 100   # do the models beat chance?
+python -m lottery.backtest --n-windows 20 --min-train 100   # do the models beat chance?
 
 # Or the tangible version: train on everything up to July, then predict the
 # draws of August and September that have already happened.
-python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
+python -m lottery.backtest --cutoff 2026-07-31 --mode frozen --current-format-only
 ```
 
 ```python
-from utils.sample_data import load_sample_and_preprocess
-from analysis.tickets import generate_portfolio, check_against_history, compare_strategies
+from lottery.utils.sample_data import load_sample_and_preprocess
+from lottery.analysis.tickets import generate_portfolio, check_against_history, compare_strategies
 
 df, balls = load_sample_and_preprocess(n_draws=800)   # or load_and_preprocess(your_csv)
 
@@ -102,37 +102,51 @@ Eight tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**
 ```bash
 streamlit run dashboard/app.py                       # main entry point
 
-python backtest.py --n-windows 20 --min-train 100    # evaluate vs chance
-python backtest.py --n-windows 20 --include-prophet  # include Prophet (slow)
-python backtest.py --cutoff 2026-07-31 --mode frozen # hold out everything after a date
-python backtest.py --current-format-only             # drop pre-2017 draws (rules changed)
+python -m lottery.backtest --n-windows 20 --min-train 100    # evaluate vs chance
+python -m lottery.backtest --n-windows 20 --include-prophet  # include Prophet (slow)
+python -m lottery.backtest --cutoff 2026-07-31 --mode frozen # hold out everything after a date
+python -m lottery.backtest --current-format-only             # drop pre-2017 draws (rules changed)
 
-python Prophet.py                                     # per-position Prophet forecast
-python StatsForecast.py AutoARIMA                     # or AutoETS / AutoTheta
-python XGBoost.py                                     # held-out evaluation
+python -m scripts.prophet_forecast                                     # per-position Prophet forecast
+python -m scripts.statsforecast_forecast AutoARIMA                     # or AutoETS / AutoTheta
+python -m scripts.xgboost_forecast                                     # held-out evaluation
 
-python -m utils.scraper --years 2020-2025             # build/update the dataset
-python -m utils.lib_detector                          # print library versions
+python -m lottery.utils.scraper --years 2020-2025             # build/update the dataset
+python -m lottery.utils.lib_detector                  # print library versions
+
+pytest                                               # the invariant test suite
+pytest -m "not slow"                                 # skip runs that fit real models
 ```
 
 ## Repository layout
 
+The tree is split by domain. `core/` is evaluation machinery that knows nothing
+about lotteries; `lottery/` is everything Baloto-specific and supplies `core/`
+with the null distribution and the scoring rule it deliberately lacks.
+
 ```
-models/
-  common.py                ★ Game rules, position helpers, draw calendar
-  baseline.py              Hypergeometric chance baseline + significance test
-  statsforecast_model.py   AutoARIMA / AutoETS / AutoTheta (Nixtla)
-  xgboost_model.py         Lag features, chronological splits, forecast_next
-analysis/
-  randomness.py            Frequency, gaps, hot/cold, chi-square, runs, ACF
-  prizes.py                Exact prize probabilities, EV, RTP, breakeven jackpot
-  tickets.py               Generate tickets, check them, measure strategies vs chance
-utils/
-  processor.py             ★ The data contract
-  scraper.py               loterias.com → project CSV
-  sample_data.py           Synthetic i.i.d. draws
+core/
+  windows.py               Walk-forward and date-cutoff splits
+  significance.py          ★ z-test vs a null, Bonferroni correction
+lottery/
+  backtest.py              Walk-forward evaluation vs chance
+  models/
+    common.py              ★ Game rules, position helpers, draw calendar
+    baseline.py            Hypergeometric chance baseline + significance test
+    statsforecast_model.py AutoARIMA / AutoETS / AutoTheta (Nixtla)
+    xgboost_model.py       Lag features, chronological splits, forecast_next
+    prophet_model.py       Prophet per position
+  analysis/
+    randomness.py          Frequency, gaps, hot/cold, chi-square, runs, ACF
+    prizes.py              Exact prize probabilities, EV, RTP, breakeven jackpot
+    tickets.py             Generate tickets, check them, measure strategies vs chance
+  utils/
+    processor.py           ★ The data contract
+    scraper.py             loterias.com → project CSV
+    sample_data.py         Synthetic i.i.d. draws
+scripts/                   CLI entry points (python -m scripts.<name>)
+tests/                     pytest suite pinning the invariants
 dashboard/app.py           Streamlit UI
-backtest.py                Walk-forward evaluation vs chance
 docs/                      Full documentation
 ```
 
@@ -148,7 +162,11 @@ website — nothing in this repository can verify the parser against the live si
 
 ## Contributing
 
-Conventions, the verification workflow (there is no test suite — see
+Run `pytest` before and after any change. The suite pins the project's
+invariants rather than chasing coverage, and is deterministic — it builds its
+data from a seeded generator, so no private CSV is needed.
+
+Conventions, the full verification workflow (see
 [docs/development.md §3](docs/development.md#3-verification)) and instructions for
 adding models or tests are documented in
 **[docs/development.md](docs/development.md)**.

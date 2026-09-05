@@ -4,18 +4,20 @@ Replaces the old ARIMA.py, which fit a single manually-chosen SARIMAX order
 per series. Here every position gets its own AIC-searched order per model,
 fit for all positions in one call. Pick which model's column to use for the
 final "combined" prediction via --model (default AutoARIMA).
+
+    python -m scripts.statsforecast_forecast [AutoARIMA|AutoETS|AutoTheta]
 """
 
 import sys
 
-from models.common import (
+from lottery.models.common import (
     DEFAULT_DATA_PATH,
     build_position_series,
     infer_draw_weekdays,
     next_draw_dates,
 )
-from models.statsforecast_model import adjusted_predictions, fit_predict_all
-from utils.processor import load_and_preprocess, process_and_compare_forecasts
+from lottery.models.statsforecast_model import adjusted_predictions, fit_predict_all
+from lottery.utils.processor import load_and_preprocess, process_and_compare_forecasts
 
 if __name__ == "__main__":
     actual_2024_file_path = "exported_data/exported_data_2024.csv"
