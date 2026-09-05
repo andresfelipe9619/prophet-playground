@@ -131,8 +131,11 @@ python -m py_compile $(find core lottery football cycling scripts dashboard test
 
 This is not redundant with the suite: pytest imports `core/`, `lottery/`,
 `football/` and `cycling/`, but never `dashboard/app.py` or the entry points
-under `scripts/`. A syntax error in either passes the whole suite. The `static` CI job runs exactly
-this command for that reason.
+under `scripts/`. A syntax error in either passes the whole suite. The `static` CI job runs this
+command for that reason, and its `find` paths have to be extended whenever a new
+top-level package appears — as of this writing the workflow still lists
+`core lottery football scripts dashboard tests`, so `cycling/` is compiled
+locally but not in CI.
 
 ### 3.2 Behaviour, against synthetic data
 
