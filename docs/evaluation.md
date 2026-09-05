@@ -90,6 +90,12 @@ itself informative:
 
 Both use the same `_score_window`, so their summaries are directly comparable.
 
+`cutoff_bounds(dates, cutoff)` is the single owner of the split arithmetic —
+it returns `(n_train, n_holdout)` for a date, and the dashboard calls it to
+preview the split before you press the button, so the CLI and the UI cannot
+disagree about what a cutoff means. (`window_bounds` plays the same role for the
+last-N-draws mode.)
+
 `run_holdout()` returns `(results_by_model, info)`; `info` carries the cutoff, the
 mode and both split sizes so a caller can report the experiment next to its result.
 `holdout_detail()` turns the results into one row per held-out draw — the actual
@@ -204,6 +210,38 @@ healthy result**. It means the data behaves like a fair lottery.
 
 A low Ljung–Box p-value would be the one finding that could justify a time-series
 model at all. Do not expect one.
+
+### The effect size, and why the interval matters more than the p-value
+
+`beats_chance_test` also returns the observed edge with a confidence interval,
+because a p-value on its own hides precision — "no edge detected" over 15
+windows and over 1,000 draws produce the same kind of number while differing by
+an order of magnitude in what they actually establish.
+
+| Returned key | Meaning |
+| --- | --- |
+| `effect` | Observed mean minus chance mean, in matches per draw |
+| `ci_low` / `ci_high` | 95% interval on that effect (`confidence=` to change it) |
+| `relative_effect` | The same edge as a fraction of the chance mean |
+| `observed_mean` / `chance_mean` | The two averages being compared |
+| `n_observations` | Sample size behind all of it |
+
+A wide interval straddling zero is not "there is no edge". It is "this run could
+not tell", which is the same message
+[Power](power-and-sensitivity.md#the-minimum-detectable-effect) delivers from the
+other direction — and over 8 windows the intervals visibly cross zero in both
+directions. Both the backtest summary and the strategies table carry the interval
+as a column, and so do their dashboard renderings.
+
+### On several tickets sharing one draw
+
+The exact hypergeometric variance is used even when `tickets_per_draw > 1`,
+which was checked rather than assumed. Sharing a draw induces positive
+correlation in principle, so the statistic was measured under the null: sd(z)
+came out at 0.997 at one ticket per draw and 0.927 at five, against the 1.0 a
+calibrated statistic gives. No inflation. A cluster-robust variance was written
+for this and removed — see [§8](#the-one-that-nearly-got-fixed) for how the
+phantom came to be believed.
 
 ### Per-position vs pooled
 
@@ -320,6 +358,48 @@ plausible-looking wrong answer rather than a crash.
 | Fitted value presented as a forecast | The dashboard showed a hindcast of an already-drawn result | `forecast_next()` |
 | Pooling the 1-16 superbalota into a 1-43 test | Spurious "not uniform" verdict from the sort-proof test | Range derived from positions; mixing is now inexpressible |
 | Per-position chi-square on sorted data | Spurious "non-random" structure | `is_sorted_ascending` + pooled test |
+| One seed driving both the draw generator and the ticket generator | A 17.5% false-positive rate on bias-free data, blamed on the estimator | `sensitivity.independent_seeds` — `SeedSequence.spawn`, never the loop variable |
+
+### The one that nearly got "fixed"
+
+The last row deserves its own note, because it is the only entry here that
+produced a *plausible statistical story* rather than an obvious mistake, and
+that story survived a round of investigation.
+
+`analysis/sensitivity.py` measured `evaluate_strategy("hot")` flagging a winner
+17.5% of the time on data built with no bias at all, against a nominal α of 5%.
+The explanation was ready-made and correct-sounding: tickets scored against the
+same draw are positively correlated for a history-dependent strategy, so
+treating them as independent understates the standard error. `random`, whose
+tickets genuinely are independent, was unaffected — which fit the story exactly.
+A cluster-robust variance was written, wired in, documented, and shipped.
+
+It moved the rate from 17.5% to 15.0%. That near-miss is what forced the actual
+measurement:
+
+```
+tickets/draw   sd(z) under the null    P(z > 1.645)
+     1               0.997                 5.0%
+     5               0.927                 3.3%
+```
+
+The test was calibrated all along. The correlation is real but does not distort
+z at these ticket counts. The 17.5% came from the harness: `detection_rate`
+passed the same integer seed to `load_biased_and_preprocess` and to
+`evaluate_strategy`, so both consumed `np.random.default_rng(seed)` from the
+same state and the numbers played were drawn from the same stream as the numbers
+drawn. That is a genuine ticket/draw dependence — the exact thing the detector
+exists to find. It found it. Decoupling the streams drops the rate to **0/40**.
+
+Three things to take from it:
+
+1. **Measure the statistic before replacing it.** sd(z) under the null is one
+   loop and would have settled this before any code changed.
+2. **A plausible mechanism is not evidence.** The correlation story was true in
+   every particular except being the cause.
+3. **Suspect the harness.** The control arm firing is a fact about the whole
+   experiment, and the newest code in it — the measuring apparatus — is the
+   likeliest suspect, not the code it was pointed at.
 
 ---
 

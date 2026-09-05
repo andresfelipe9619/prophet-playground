@@ -13,8 +13,10 @@ several design decisions look wrong until you have read it.
 | 4 | **[Models](models.md)** | Every predictor: Prophet, the statsforecast trio, XGBoost, the frequency baseline. |
 | 5 | **[Tickets](tickets.md)** | Generating plays, checking them against real draws, and measuring whether a strategy beats picking at random. |
 | 6 | **[Evaluation](evaluation.md)** | Walk-forward backtesting, the hypergeometric chance baseline, randomness tests, expected value, how to read results. |
-| 7 | **[Dashboard](dashboard.md)** | Guide to each of the eight tabs and how to read them. |
-| 8 | **[Development](development.md)** | Setup, the verification workflow, conventions, how to extend, gotchas. |
+| 7 | **[Jackpot Splitting](jackpot-splitting.md)** | The only lever that changes anything: unpopular combinations do not win more often, they split less. |
+| 8 | **[Power and Sensitivity](power-and-sensitivity.md)** | What an edge would have to look like for this much data to see it, and whether the tests fire on a planted one. The two questions that make a null result mean something. |
+| 9 | **[Dashboard](dashboard.md)** | Guide to each of the ten tabs and how to read them. |
+| 10 | **[Development](development.md)** | Setup, the verification workflow, conventions, how to extend, gotchas. |
 
 ## Quick answers
 
@@ -24,6 +26,11 @@ several design decisions look wrong until you have read it.
 | What is a ticket actually worth? | [Evaluation §5](evaluation.md#5-expected-value-the-one-exact-answer) |
 | Why does my chi-square say "not random"? | [The sorted-data trap](domain-and-premise.md#4-the-sorted-data-trap) |
 | How do I read a backtest table? | [Evaluation §7](evaluation.md#7-how-to-read-a-backtest-result) |
+| "No model beat chance" — how much does that prove? | [Power §1](power-and-sensitivity.md#1-power-analysispowerpy) |
+| How do I know the tests aren't just blind? | [Sensitivity §2](power-and-sensitivity.md#2-sensitivity-analysissensitivitypy) |
+| How many draws would I need to prove an edge? | [Power: how much history](power-and-sensitivity.md#how-much-history-each-edge-would-need) |
+| Can I improve anything at all by choosing numbers? | [Jackpot Splitting](jackpot-splitting.md) |
+| How do I prove a prediction was made in advance? | [Registry](registry.md) |
 | Why isn't there a `freq=` anywhere? | [Architecture §5](architecture.md#5-two-time-axes) |
 | How do I add a model? | [Models §7](models.md#7-adding-a-model) |
 | How do I generate and check tickets? | [Tickets](tickets.md) |

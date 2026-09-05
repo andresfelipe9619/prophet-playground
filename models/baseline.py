@@ -32,7 +32,8 @@ def expected_super_match_rate(pool_size=SUPER_POOL, m_guessed=1):
     return m_guessed / pool_size
 
 
-def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAIN_BALLS_DRAWN):
+def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAIN_BALLS_DRAWN,
+                      confidence=0.95):
     """z-test: is this model's average number of matches distinguishable from pure chance?
 
     Each historical draw is an independent hypergeometric trial (the pool
@@ -46,10 +47,27 @@ def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAI
     one-sided ("is this *better* than chance?"). Only the one-sided one may be
     used to claim a model beats chance — a model significantly worse than
     chance also gets a small two-sided p-value.
+
+    `effect` and its confidence interval come back too, because a p-value alone
+    hides precision: "no edge detected" over 15 windows and over 1,000 draws
+    read identically as p-values, while their intervals differ by an order of
+    magnitude. The interval is the honest summary of what was measured.
+
+    **The exact hypergeometric variance is used even when several tickets are
+    scored against the same draw**, and that was checked rather than assumed.
+    Sharing a draw does induce positive correlation in principle, so this test
+    was measured under the null at 1 and 5 tickets per draw: sd(z) came out at
+    0.997 and 0.927 over 60 runs, against the 1.0 a calibrated statistic gives.
+    No inflation — if anything slightly conservative at 5. A cluster-robust
+    variance was written for this and then removed, because it corrected a
+    distortion that is not there. See docs/evaluation.md for how the phantom
+    came to be believed in the first place.
     """
     observed_hits = np.asarray(observed_hits, dtype=float)
     empty = {"z": np.nan, "p_value": np.nan, "p_value_greater": np.nan,
-             "observed_mean": np.nan, "chance_mean": np.nan}
+             "observed_mean": np.nan, "chance_mean": np.nan, "effect": np.nan,
+             "ci_low": np.nan, "ci_high": np.nan, "relative_effect": np.nan,
+             "n_observations": 0}
     if len(observed_hits) == 0:
         return empty
 
@@ -60,17 +78,25 @@ def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAI
 
     observed_mean = float(observed_hits.mean())
     chance_mean = float(means.mean())
-    se_sum = np.sqrt(variances.sum())
-    if se_sum == 0:
-        return {**empty, "observed_mean": observed_mean, "chance_mean": chance_mean}
+    se_sum = float(np.sqrt(variances.sum()))
 
-    z = (observed_hits.sum() - means.sum()) / se_sum
+    base = {"observed_mean": observed_mean, "chance_mean": chance_mean,
+            "n_observations": len(observed_hits)}
+    if se_sum == 0:
+        return {**empty, **base}
+
+    z = float((observed_hits.sum() - means.sum()) / se_sum)
+    effect = observed_mean - chance_mean
+    margin = float(norm.ppf(0.5 + confidence / 2) * se_sum / len(observed_hits))
     return {
-        "z": float(z),
+        "z": z,
         "p_value": float(2 * (1 - norm.cdf(abs(z)))),
         "p_value_greater": float(1 - norm.cdf(z)),
-        "observed_mean": observed_mean,
-        "chance_mean": chance_mean,
+        "effect": effect,
+        "ci_low": effect - margin,
+        "ci_high": effect + margin,
+        "relative_effect": effect / chance_mean if chance_mean else np.nan,
+        **base,
     }
 
 
