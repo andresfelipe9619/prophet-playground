@@ -45,6 +45,7 @@ number — that is not a duplicate.
 | `hot_ticket(balls_expanded, rng)` | Weighted toward the most-drawn numbers |
 | `cold_ticket(balls_expanded, rng)` | Weighted toward the least-drawn numbers |
 | `ticket_from_predictions(preds, rng)` | Turns a model's `{position: number}` into a valid ticket |
+| `unpopular_ticket(...)` | Least commonly *played* combination from a random sample |
 | `generate_portfolio(n, strategy, ...)` | Several tickets at once |
 
 ```python
@@ -54,6 +55,14 @@ ticket = random_ticket()
 tickets = generate_portfolio(5, strategy="random", disjoint=True)
 print(portfolio_coverage(tickets))
 ```
+
+`unpopular` is the odd one out. Every other strategy aims at winning more often,
+which none of them can do; that one targets what a win is *worth*, by avoiding
+the combinations other people play. It correctly fails the hit-rate tests below,
+because the hit rate is structurally unable to measure the thing it improves —
+see [Jackpot Splitting](jackpot-splitting.md#4-the-strategy-that-the-accuracy-tests-cannot-see).
+It is measured anyway rather than exempted: a strategy that skipped evaluation
+because "it works differently" is the pattern this project exists to avoid.
 
 `hot` and `cold` exist so that `evaluate_strategy` can **measure** them rather than
 leaving them as an argument. They are the two most common lottery heuristics, and
@@ -141,9 +150,15 @@ model backtest uses ([Evaluation §3](evaluation.md#3-the-chance-baseline)).
 | --- | --- |
 | `avg_main_matches` | Observed average |
 | `chance_avg_main_matches` | Exact expectation, 5×5/43 = 0.5814 |
+| `effect`, `ci_low`, `ci_high` | The observed edge with its 95% interval — read this before the p-value |
 | `p_value_better_than_chance` | One-sided. Small = evidence of an edge |
 | `beats_chance` | Naive per-test verdict at α = 0.05 |
+| `n_tickets_evaluated` / `n_draws_evaluated` | Tickets scored, and how many draws they came from |
 | `best_result` | Best single ticket in the run |
+
+A wide interval crossing zero means the run had no resolution, not that the
+strategy is neutral — see
+[Evaluation](evaluation.md#the-effect-size-and-why-the-interval-matters-more-than-the-p-value).
 
 ### Multiple comparisons
 
@@ -182,13 +197,27 @@ All three land near the 5% floor. That is the expected — and correct — resul
 ### Note on `tickets_per_draw`
 
 For history-dependent strategies (`hot`, `cold`), tickets generated for the same
-draw are correlated with each other, so those rows carry slightly less information
-than the raw ticket count suggests. `random` is unaffected: its match distribution
-does not depend on which numbers were drawn, so tickets stay independent.
+draw are correlated with each other: they all concentrate on the same hot numbers,
+so when those numbers come up the tickets *all* score high together. `random` is
+unaffected — its match distribution does not depend on which numbers were drawn,
+so its tickets stay independent.
+
+That correlation is real, but it turns out **not** to distort the test. Measured
+under the null over 60 runs, `beats_chance_test` gives sd(z) = 0.997 at one ticket
+per draw and 0.927 at five, against the 1.0 a calibrated statistic produces — no
+inflation, slightly conservative at five. So `tickets_per_draw > 1` is safe to use
+and no cluster-robust variance is needed; one was written for this and removed
+once it was measured.
+
+> An earlier version of this page claimed the false-positive rate ran at 17.5% at
+> five tickets per draw. That number was real but its cause was not: the harness
+> measuring it seeded the draw generator and the ticket generator identically, so
+> both drew from one PRNG stream and the tickets genuinely correlated with the
+> draws. See [Evaluation §8](evaluation.md#8-known-failure-modes-we-have-already-hit).
 
 ## 6. In the dashboard
 
-The **Jugadas** tab wraps all of this — see [Dashboard](dashboard.md#6-jugadas-generate-check-measure).
+The **Jugadas** tab wraps all of this — see [Dashboard](dashboard.md#6--jugadas--generate-check-measure).
 
 ## 7. Adding a strategy
 

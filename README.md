@@ -84,7 +84,7 @@ print(compare_strategies(df, balls))                   # random vs hot vs cold, 
 
 ## The dashboard
 
-Eight tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**.
+Ten tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**.
 
 | Tab | Purpose |
 | --- | --- |
@@ -96,6 +96,8 @@ Eight tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**
 | **Forecast** | Next-draw suggestion from any model |
 | **Jugadas** | Generate tickets, check one against your whole history, and measure strategies against chance |
 | **Backtest vs. Azar** | Walk-forward accuracy against the hypergeometric baseline, over the last N draws or everything after a date you pick |
+| **Potencia y Sensibilidad** | What edge this much data could detect, and whether the tests fire on a planted one |
+| **Registro** | Predictions recorded before the draw, scored after it |
 
 ## Command reference
 
@@ -111,11 +113,18 @@ python -m scripts.prophet_forecast                                     # per-pos
 python -m scripts.statsforecast_forecast AutoARIMA                     # or AutoETS / AutoTheta
 python -m scripts.xgboost_forecast                                     # held-out evaluation
 
-python -m lottery.utils.scraper --years 2020-2025             # build/update the dataset
-python -m lottery.utils.lib_detector                  # print library versions
+python -m lottery.analysis.power --n-draws 1035        # what edge could this data detect?
+python -m lottery.analysis.sensitivity --n-seeds 10   # can the tests detect a planted edge?
+python -m lottery.analysis.popularity --tickets-sold 3000000  # jackpot splitting
+python -m lottery.analysis.registry record --label yo --main 3-12-19-27-41 --super 8
+python -m lottery.analysis.registry score             # score the draws that have happened
 
-pytest                                               # the invariant test suite
-pytest -m "not slow"                                 # skip runs that fit real models
+python -m lottery.utils.scraper --years 2020-2025     # build/update the dataset
+python -m lottery.utils.lib_detector                  # print library versions
+python -m lottery.utils.check_docs                    # verify documentation links
+
+pytest                                                # the invariant test suite
+pytest -m "not slow"                                  # skip runs that fit real models
 ```
 
 ## Repository layout

@@ -24,6 +24,11 @@ python -m scripts.statsforecast_forecast AutoARIMA        # or AutoETS / AutoThe
 python -m scripts.xgboost_forecast
 python -m lottery.backtest --n-windows 20 --min-train 100 [--include-prophet]
 python -m lottery.backtest --cutoff 2026-07-31 --mode frozen --current-format-only
+python -m lottery.analysis.power --n-draws 1035          # what edge could this much data detect?
+python -m lottery.analysis.sensitivity --n-seeds 10      # can the tests detect a planted edge?
+python -m lottery.analysis.popularity --tickets-sold 3000000    # jackpot splitting by combination
+python -m lottery.analysis.registry record --label Prophet --main 3-12-19-27-41 --super 8
+python -m lottery.analysis.registry score                # score every registered draw that has happened
 
 pytest                                  # the invariant suite
 pytest -m "not slow"                    # skip runs that fit real models (~2s)
@@ -33,7 +38,8 @@ There is a pytest suite in `tests/`; there is still no linter or CI. Changes are
 
 1. `pytest`. The suite is deterministic (everything is built from the seeded generator in `lottery/utils/sample_data.py`) and pins the invariants listed below rather than chasing coverage — those are what a refactor breaks silently. Add to it when you add an invariant. `python -m py_compile <files>` still helps for files the suite does not import.
 2. Running the affected module against synthetic data from `lottery.utils.sample_data.load_sample_and_preprocess()`, which returns the same `(df, balls_expanded)` shape as the real loader — no private CSVs needed.
-3. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium is under `/opt/pw-browsers/`, at a versioned path such as `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
+3. `python -m lottery.utils.check_docs` after any documentation change — it reimplements github-slugger exactly, because headings here use `·` and `—` and GitHub removes those without collapsing the spaces they leave (`### 6 · Jugadas — generate` anchors as `6--jugadas--generate`, doubled hyphens). A checker that normalises hyphen runs passes links that 404 in the browser.
+4. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium is under `/opt/pw-browsers/`, at a versioned path such as `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
 
 `lottery/backtest.py` with `--include-prophet` refits Prophet per position per window and is far slower than the other models; it is off by default for that reason.
 
@@ -61,22 +67,33 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 
 **Multiple comparisons are corrected everywhere.** A backtest scores k models against the same draws and `compare_strategies` scores k strategies the same way, so both emit `beats_chance` (naive, α = 0.05) *and* `beats_chance_corrected` (Bonferroni, α/k), and every surface points the reader at the corrected column. With six models the naive bar is cleared by luck ~26% of the time — "one of my six models beat chance" is exactly the sentence a lottery system gets built on. A new evaluation table that reports one uncorrected verdict has reintroduced the bug.
 
+**A null result needs its resolution attached.** `lottery/analysis/power.py` computes the minimum detectable effect for a given number of draws, and every surface reporting "nothing beat chance" should say what it could have detected: 15 windows cannot see a +75% edge, 1035 draws bottom out at +9%, and the MDE only falls with the square root of N. `lottery/analysis/sensitivity.py` is the other half — it plants a known bias and measures how often each detector fires, so "the tests found nothing" is backed by evidence that they can find something. Its `strength = 0` row is the control; a detector firing well above alpha there means *something* is broken, though not necessarily the thing under test — the first time it fired, the fault was in the harness, not the estimator.
+
+**Suspect the harness before the statistic.** When a control arm misbehaves, check how the experiment was wired before concluding the tested code is wrong. `beats_chance_test` was measured under the null and is calibrated (sd(z) = 0.997 at 1 ticket per draw, 0.927 at 5, against a nominal 1.0), including when several tickets share a draw — so do not add a cluster-robust variance for that; one was written, measured against the exact test, and removed. Measure sd(z) under the null before changing an estimator.
+
 **Chance comparisons are one-sided.** `lottery/models/baseline.py:beats_chance_test` returns `p_value` (two-sided, "differs from chance") and `p_value_greater` (one-sided, "better than chance"). Only the one-sided value may back a "beats chance" claim — a model significantly *worse* than chance also gets a small two-sided p-value.
+
+**Effect sizes travel with p-values.** `core/significance.py:z_test_against_null` returns `effect`, `ci_low`, `ci_high`, `relative_effect` and `n_observations` alongside both p-values, and `beats_chance_test` passes them straight through. A p-value alone cannot distinguish "no edge" from "no edge detectable here" — report the interval.
 
 ## Module layout
 
-- `core/significance.py` — `z_test_against_null` (both p-values), `bonferroni_threshold`, and `verdicts`, which returns the naive and corrected verdicts together so no surface can report one without the other. Domain-free: the caller supplies the null's mean and variance.
+- `core/significance.py` — `z_test_against_null` (both p-values, effect size, confidence interval), `bonferroni_threshold`, and `verdicts`, which returns the naive and corrected verdicts together so no surface can report one without the other. Domain-free: the caller supplies the null's mean and variance.
 - `core/windows.py` — `window_bounds` (walk-forward) and `cutoff_bounds` (date holdout). Pure index arithmetic over an ordered sequence.
 - `lottery/models/common.py` — ball ranges, draw calendar, position helpers, long-format conversion. Everything else imports its constants from here.
-- `lottery/models/baseline.py` — exact hypergeometric chance baseline and `beats_chance_test`, the z-test that decides whether a model has real signal. `m_guessed` accepts a per-window list because collisions between positions change the distinct-guess count.
+- `lottery/models/baseline.py` — exact hypergeometric chance baseline and `beats_chance_test`, the domain half of the contract with `core/significance.py`: it turns `m_guessed` into a per-draw mean and variance and renames `null_mean` to `chance_mean`. `m_guessed` accepts a per-window list because collisions between positions change the distinct-guess count.
 - `lottery/models/statsforecast_model.py` — AutoARIMA/AutoETS/AutoTheta via Nixtla. `fit_predict_all` fits **every position and all three models in one call**; don't loop per position for these.
 - `lottery/models/xgboost_model.py` — chronological splits only. The original code used a shuffled `train_test_split`, leaking future draws into training; keep splits time-ordered.
+- `lottery/models/prophet_model.py` — Prophet per position. Named `prophet_model`, not `Prophet`, so importing it cannot shadow the `prophet` package it depends on.
 - `lottery/analysis/randomness.py` — frequency, gaps, hot/cold, chi-square (per-position and pooled), runs test, ACF/Ljung-Box.
 - `lottery/analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
+- `lottery/analysis/power.py` — minimum detectable effect, required draws, power curves. Mirrors the z-test in `baseline.py` exactly, since the point is to characterise that test. The superbalota helper is separate because it is Bernoulli, not hypergeometric — using the wrong variance understates the required data ~3x.
+- `lottery/analysis/sensitivity.py` — plants a known bias and measures detection rates for `pooled`, `hot` and `random`. `random` must stay near alpha even on biased data (a uniform ticket's expected matches do not depend on the weighting) — that is the control, not a failure. **Its own load-bearing detail:** the draw generator and the ticket generator must be driven by *independent* streams, via `independent_seeds`. Passing one seed to both makes the numbers drawn and the numbers played come out of the same `default_rng`, which is a real ticket/draw dependence — exactly what a lottery test hunts for. That mistake reported a 17.5% false-positive rate on bias-free data and sent a full round of investigation after a phantom defect in `evaluate_strategy` (see `docs/evaluation.md`). Any new detector needing randomness takes its seed from `independent_seeds`.
+- `lottery/analysis/popularity.py` — jackpot splitting. The only module here that improves anything, and it improves `E[payout | win]`, never `P(win)`. `popularity_score` is **ordinal**, not absolute: its weights cannot be calibrated without data on tickets people bought, which no operator publishes, so `split_adjusted_value` returns a band rather than a figure. Registers `unpopular` in `STRATEGIES`, which correctly fails the hit-rate tests — the accuracy machinery is structurally unable to measure what it targets, and that is documented rather than exempted.
+- `lottery/analysis/registry.py` — append-only pre-registration of predictions. Refuses a draw date that is not in the future, refuses a second prediction for the same (draw, label), and scores every eligible row or none. Writes `predictions.csv` at the repo root, deliberately **not** gitignored: committing it dates each prediction in version control, which beats any timestamp the file writes about itself.
 - `lottery/analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
-- `lottery/models/prophet_model.py` — Prophet per position. Named `prophet_model`, not `Prophet`, so importing it cannot shadow the `prophet` package it depends on.
 - `lottery/backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
 - `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import `core` and `lottery`. All explanatory tooltip copy lives in one `HELP` dict at the top and is consumed by two helpers: `section(title, key)` (a subheader with its ⓘ) and `chart(fig, title, key)` (a titled line with its ⓘ, then the figure). `chart` moves the title out of the Plotly figure because Plotly's own title has nowhere to hang a help icon — clear it with `title={"text": ""}`, since `title=None` makes Plotly render the literal string `undefined`. A bare `st.plotly_chart` outside that helper means a chart was added without an explanation.
+- `lottery/utils/check_docs.py` — the documentation link checker described above.
 - `scripts/` — CLI entry points, run as `python -m scripts.<name>`. `summary_charts.py` is the original static matplotlib/seaborn set, superseded by the dashboard for exploratory use.
 - `tests/` — the invariant suite. Mirrors the layout above; `pytest -m "not slow"` skips the runs that fit real models.
 
@@ -96,5 +113,8 @@ Keep these in sync when behaviour changes:
 | [`docs/models.md`](docs/models.md) | Every predictor and how to add one |
 | [`docs/tickets.md`](docs/tickets.md) | Generating, checking and measuring ticket strategies |
 | [`docs/evaluation.md`](docs/evaluation.md) | Backtest, chance baseline, randomness tests, known past bugs |
-| [`docs/dashboard.md`](docs/dashboard.md) | The seven tabs and how to read them |
+| [`docs/jackpot-splitting.md`](docs/jackpot-splitting.md) | Combination popularity, expected co-winners, split-adjusted value |
+| [`docs/registry.md`](docs/registry.md) | Pre-registration: predictions recorded before the draw |
+| [`docs/power-and-sensitivity.md`](docs/power-and-sensitivity.md) | Minimum detectable effect, planted-bias detection rates |
+| [`docs/dashboard.md`](docs/dashboard.md) | The ten tabs and how to read them |
 | [`docs/development.md`](docs/development.md) | Setup, the test suite, verification workflow, conventions, gotchas |

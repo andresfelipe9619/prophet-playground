@@ -16,6 +16,13 @@ models, there is a ~26% chance at least one signal-free model clears the bar.
 Every evaluation surface must report the corrected verdict alongside the
 naive one and point the reader at the corrected column.
 
+**The effect size travels with the p-value.** A p-value alone hides
+precision: "no edge detected" over 15 observations and over 1,000 read
+identically as p-values, while their confidence intervals differ by an order
+of magnitude. Every result therefore carries `effect`, its interval, and the
+number of observations behind it, so a negative result can be stated with its
+own resolution attached.
+
 What the domain supplies is the null itself: a mean and variance per
 observation. For a lottery those come from the exact hypergeometric
 distribution; for a match-outcome model they would come from the market's
@@ -31,10 +38,15 @@ EMPTY_RESULT = {
     "p_value_greater": np.nan,
     "observed_mean": np.nan,
     "null_mean": np.nan,
+    "effect": np.nan,
+    "ci_low": np.nan,
+    "ci_high": np.nan,
+    "relative_effect": np.nan,
+    "n_observations": 0,
 }
 
 
-def z_test_against_null(observed, null_means, null_variances):
+def z_test_against_null(observed, null_means, null_variances, confidence=0.95):
     """z-test of a sum of independent scores against the null it is judged on.
 
     `observed` is one score per held-out observation. `null_means` and
@@ -46,6 +58,11 @@ def z_test_against_null(observed, null_means, null_variances):
 
     Each observation is an independent trial, so the sum of scores is
     asymptotically normal under the null.
+
+    Returns the two p-values, and alongside them the effect size
+    (`observed_mean - null_mean`), its confidence interval, the effect
+    relative to the null, and `n_observations`. Report the interval: it is
+    what separates "no edge" from "no edge detectable here".
     """
     observed = np.asarray(observed, dtype=float)
     if observed.size == 0:
@@ -57,16 +74,24 @@ def z_test_against_null(observed, null_means, null_variances):
     observed_mean = float(observed.mean())
     null_mean = float(means.mean())
     se_sum = float(np.sqrt(variances.sum()))
+
+    base = {"observed_mean": observed_mean, "null_mean": null_mean,
+            "n_observations": int(observed.size)}
     if se_sum == 0:
-        return {**EMPTY_RESULT, "observed_mean": observed_mean, "null_mean": null_mean}
+        return {**EMPTY_RESULT, **base}
 
     z = float((observed.sum() - means.sum()) / se_sum)
+    effect = observed_mean - null_mean
+    margin = float(norm.ppf(0.5 + confidence / 2) * se_sum / observed.size)
     return {
         "z": z,
         "p_value": float(2 * (1 - norm.cdf(abs(z)))),
         "p_value_greater": float(1 - norm.cdf(z)),
-        "observed_mean": observed_mean,
-        "null_mean": null_mean,
+        "effect": effect,
+        "ci_low": effect - margin,
+        "ci_high": effect + margin,
+        "relative_effect": effect / null_mean if null_mean else np.nan,
+        **base,
     }
 
 

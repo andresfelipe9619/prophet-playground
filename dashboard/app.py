@@ -31,6 +31,20 @@ from lottery.analysis.randomness import (
     pooled_uniformity_test,
     randomness_report,
 )
+from lottery.analysis.power import (
+    DEFAULT_RELATIVE_EDGES,
+    describe as power_describe,
+    minimum_detectable_effect,
+    power_curve,
+    required_draws_table,
+    super_minimum_detectable_effect,
+)
+from lottery.analysis.popularity import (
+    compare_tickets,
+    popularity_components,
+    popularity_score,
+    split_adjusted_value,
+)
 from lottery.analysis.prizes import (
     breakeven_jackpot,
     category_probabilities,
@@ -49,6 +63,20 @@ from lottery.analysis.tickets import (
     portfolio_coverage,
     stability_check,
     ticket_from_predictions,
+)
+from lottery.analysis.registry import (
+    RegistryError,
+    load as load_registry,
+    pending as pending_predictions,
+    record as record_prediction,
+    score_pending,
+    status as registry_status,
+    summary as registry_summary,
+)
+from lottery.analysis.sensitivity import (
+    DEFAULT_STRENGTHS,
+    sensitivity_report,
+    sensitivity_threshold,
 )
 from lottery.models.baseline import expected_main_matches, most_frequent_pick
 from lottery.models.common import (
@@ -236,10 +264,97 @@ HELP = {
                      "que da el azar (0.58 de 5). Los picos por encima y por debajo son varianza normal.",
     "summary_chart": "Aciertos promedio de cada modelo contra el promedio del azar puro. Si las barras se ven "
                      "casi iguales, ese es el resultado esperado y correcto para una lotería justa.",
+    "effect_ci": "La ventaja observada con su intervalo de confianza del 95%. El p-valor dice si "
+                 "descartas el azar; el intervalo dice **con cuánta precisión** mediste. Un intervalo "
+                 "que cruza el cero y es ancho no significa 'no hay ventaja': significa que esta "
+                 "corrida no tuvo resolución para saberlo. Con pocas ventanas el intervalo es enorme.",
     "summary_table": "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto. "
                      "Lee la columna corregida: al probar varios modelos contra los mismos sorteos, alguno "
                      "pasa el 5% por suerte mucho más seguido de lo que ese 5% sugiere. La corrección de "
                      "Bonferroni baja el umbral a 0.05 dividido entre el número de modelos.",
+
+    # -- Potencia y sensibilidad
+    "tab_power": "Las dos preguntas que van antes de cualquier resultado: ¿qué tan grande tendría que "
+                 "ser una ventaja para que estos datos la vieran, y estas pruebas son capaces de ver "
+                 "una ventaja real cuando existe?",
+    "mde_section": "El efecto mínimo detectable (MDE): la ventaja más pequeña que este número de "
+                   "sorteos podría distinguir del azar de forma confiable. Todo lo que esté por debajo "
+                   "es invisible para tu backtest — no porque no exista, sino porque no hay datos "
+                   "suficientes. Es lo que le pone resolución a un 'no encontré nada'.",
+    "mde_draws": "Cuántos sorteos tendría la evaluación. Súbelo para ver cuánto mejora la resolución: "
+                 "el MDE cae con la raíz de N, así que cuadruplicar los datos solo lo reduce a la mitad.",
+    "mde_metric": "La ventaja más pequeña detectable, como porcentaje sobre la media del azar. Si tu "
+                  "backtest no encontró nada, lo que demostraste es 'no hay ventaja mayor que esto'.",
+    "mde_target": "El promedio de aciertos que un modelo tendría que alcanzar para que la prueba lo "
+                  "marcara, contra la media del azar de 0.58.",
+    "power_chart": "Probabilidad de detectar una ventaja según su tamaño, con la cantidad de sorteos "
+                   "elegida. La línea punteada es el 80%, el umbral convencional. A la izquierda de "
+                   "donde la curva la cruza, tu prueba es prácticamente ciega.",
+    "required_table": "Cuánta historia haría falta para detectar cada tamaño de ventaja. La columna de "
+                      "años es la que importa: varias filas superan la edad del juego, que es la "
+                      "respuesta honesta a por qué nadie ha demostrado nunca que un sistema de lotería "
+                      "funcione.",
+    "super_mde": "Lo mismo para la superbalota, que es un ensayo de Bernoulli (1 de 16) y no "
+                 "hipergeométrico, así que su varianza y su resolución son distintas.",
+    "sensitivity_section": "El espejo del panel de arriba. Ya sabes que estas pruebas dicen "
+                           "'aleatorio' sobre datos aleatorios; esto verifica que digan 'no aleatorio' "
+                           "sobre datos con un patrón plantado a propósito. Sin esta comprobación, un "
+                           "resultado nulo también podría significar que las pruebas están ciegas.",
+    "sensitivity_strengths": "Fuerza del sesgo inyectado: 3 números reciben peso (1 + fuerza) frente a "
+                             "1 de los demás. Fuerza 0 reproduce sorteos uniformes y es el control — "
+                             "ahí las tres tasas deben quedar cerca de α.",
+    "sensitivity_seeds": "Cada semilla regenera los datos y los tiquetes, así que son experimentos "
+                         "independientes, no re-tiradas del mismo dataset.",
+    "sensitivity_table": "Empieza por las filas de fuerza 0. Si algún detector dispara mucho más "
+                         "seguido que α ahí, está roto y el resto de la tabla no significa nada. "
+                         "`random` debe quedarse en el piso incluso con sesgo fuerte: un tiquete "
+                         "uniforme tiene los mismos aciertos esperados sin importar cómo estén "
+                         "pesadas las balotas, así que es el control correcto. Solo una estrategia "
+                         "que *aprenda* cuáles números salen más puede convertir el sesgo en aciertos.",
+    # -- Reparto de premios
+    "tab_split": "La única palanca real de este juego. Elegir números impopulares **no** te hace "
+                 "ganar más seguido — eso es imposible. Cambia la otra mitad del valor esperado: "
+                 "cuánta gente comparte contigo si ganas.",
+    "popularity_score": "Qué tan comúnmente se juega esa combinación, de 0 (muy rara) a 1 (muy "
+                        "jugada). Es **ordinal**: 0.6 no significa 60% de nada, solo que se juega "
+                        "más que una de 0.4. Sirve para comparar combinaciones entre sí.",
+    "tickets_sold": "Tiquetes vendidos para ese sorteo. No hay valor por defecto que sea "
+                    "autoritativo — los operadores lo publican de forma inconsistente, y "
+                    "inventarlo convertiría un orden documentado en un número falso. Ponlo tú.",
+    "multiplier": "Cuántas veces más se juega la combinación más popular frente a la menos "
+                  "popular. Es el input menos defendible de todo el modelo, por eso el resultado "
+                  "viene con banda en vez de con un solo número.",
+    "split_table": "Ordenada por lo que vale el premio mayor para cada jugada *si gana*. Todas "
+                   "ganan con la misma probabilidad: 1 en 15,401,568. Lo que cambia es entre "
+                   "cuántos repartes. Si la banda baja/alta es tan ancha que te cambiaría la "
+                   "decisión, este modelo no puede tomarla por ti.",
+    "bias_components": "Los sesgos individuales antes de ponderar, cada uno de 0 a 1. `calendar` "
+                       "es el que domina: los números 1-31 caben en una fecha y se juegan mucho "
+                       "más que el 32-43, que no son menos probables.",
+
+    # -- Registro
+    "tab_registry": "Lo único que no se puede ajustar después: una predicción escrita **antes** de "
+                    "que el sorteo existiera. Todo lo demás en este panel mira hacia atrás, y mirar "
+                    "hacia atrás siempre se puede afinar sin querer.",
+    "registry_record": "Registra una jugada contra un sorteo futuro. Queda con marca de tiempo y no "
+                       "se puede editar ni borrar desde aquí. Un sorteo que ya pasó es rechazado — "
+                       "no advertido, rechazado: una sola fila retroactiva vuelve inútil el archivo "
+                       "entero.",
+    "registry_label": "De dónde salió la jugada: el nombre del modelo, la estrategia, o 'yo'. Es lo "
+                      "que después permite comparar fuentes entre sí. Si te arrepientes, registra "
+                      "otra con etiqueta distinta — ambas quedan en el registro.",
+    "registry_pending": "Predicciones cuyo sorteo todavía no ocurre, o que aún no se han puntuado. "
+                        "Estas son las que valen: ya están escritas y todavía no sabes el resultado.",
+    "registry_summary": "Resultado de las predicciones ya puntuadas contra la línea base del azar. "
+                        "Lee primero el efecto mínimo detectable: con pocas predicciones, 'no le gana "
+                        "al azar' es una afirmación sobre el tamaño de la muestra, no sobre las "
+                        "predicciones.",
+    "registry_mde": "La ventaja más pequeña que este número de predicciones puntuadas podría "
+                    "revelar. A 3 sorteos por semana, un año son 156 observaciones, que dan para "
+                    "detectar cerca de +23% y nada más fino.",
+    "sensitivity_chart": "Tasa de detección contra fuerza del sesgo. Donde una curva cruza el 80% está "
+                         "el umbral de sensibilidad de ese detector: por debajo de eso, un resultado "
+                         "nulo suyo no descarta nada.",
 }
 
 
@@ -370,7 +485,8 @@ if is_demo:
 
 tabs = st.tabs([
     "Resumen", "Probabilidades y Valor Esperado", "Frecuencia y Gaps", "Hot / Cold",
-    "Aleatoriedad", "Forecast", "Jugadas", "Backtest vs. Azar",
+    "Aleatoriedad", "Forecast", "Jugadas", "Backtest vs. Azar", "Potencia y Sensibilidad",
+    "Registro",
 ])
 
 # ---------------------------------------------------------------- Resumen
@@ -651,7 +767,8 @@ with tabs[6]:
         "la creas: la pestaña la mide sobre tus propios datos."
     )
 
-    gen_tab, check_tab, exp_tab = st.tabs(["Generar", "Verificar", "Medir estrategias"])
+    gen_tab, check_tab, exp_tab, split_tab = st.tabs(
+        ["Generar", "Verificar", "Medir estrategias", "Reparto de premios"])
 
     # ------------------------------------------------------------- generar
     with gen_tab:
@@ -670,9 +787,18 @@ with tabs[6]:
         if "tickets" in st.session_state:
             tickets = st.session_state["tickets"]
             st.dataframe(pd.DataFrame([
-                {"#": i + 1, "Balotas": " - ".join(str(n) for n in sorted(t.main)), "Superbalota": t.super_ball}
+                {"#": i + 1, "Balotas": " - ".join(str(n) for n in sorted(t.main)),
+                 "Superbalota": t.super_ball, "Popularidad": popularity_score(t)}
                 for i, t in enumerate(tickets)
-            ]), use_container_width=True, hide_index=True)
+            ]).style.format({"Popularidad": "{:.3f}"}),
+                use_container_width=True, hide_index=True)
+            st.caption(
+                "La columna **Popularidad** no dice nada sobre tus probabilidades de ganar, que son "
+                "idénticas para toda combinación. Dice qué tan seguido juega otra gente esos "
+                "números, y por lo tanto entre cuántos repartirías. Ver la pestaña *Reparto de "
+                "premios*.",
+                help=HELP["popularity_score"],
+            )
 
             cov = portfolio_coverage(tickets)
             m1, m2, m3 = st.columns(3)
@@ -738,6 +864,7 @@ with tabs[6]:
                                help=HELP["draws_back"])
         per_draw = c2.slider("Jugadas por sorteo", 1, 50, 10, help=HELP["per_draw"])
 
+
         if st.button("Ejecutar experimento"):
             with st.spinner("Generando y puntuando jugadas..."):
                 try:
@@ -757,9 +884,12 @@ with tabs[6]:
 
             display = table.copy()
             display["¿Le gana al azar?"] = display["beats_chance_corrected"].map({True: "Sí", False: "No"})
+            display["Ventaja (IC 95%)"] = display.apply(
+                lambda r: f"{r['effect']:+.3f}  [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}]", axis=1)
             st.markdown("**Resultado por estrategia**", help=HELP["strategy_table"])
             st.dataframe(
-                display[["strategy", "n_tickets_evaluated", "avg_main_matches", "chance_avg_main_matches",
+                display[["strategy", "n_tickets_evaluated", "avg_main_matches",
+                         "chance_avg_main_matches", "Ventaja (IC 95%)",
                          "p_value_better_than_chance", "¿Le gana al azar?", "best_result"]]
                 .style.format({"avg_main_matches": "{:.4f}", "chance_avg_main_matches": "{:.4f}",
                                 "p_value_better_than_chance": "{:.4f}"}),
@@ -809,6 +939,114 @@ with tabs[6]:
                 "`random` no puede tener ventaja: es la referencia. Si otra estrategia no marca ganador "
                 "claramente más seguido que ella, no ha demostrado nada."
             )
+
+    # ------------------------------------------------------- reparto de premios
+    with split_tab:
+        section("El premio mayor se reparte", "tab_split")
+        st.markdown(
+            "Todo lo demás en este panel termina igual: nada cambia tu **probabilidad** de ganar, "
+            "porque las {combos:,} combinaciones son igual de probables. Eso sigue siendo cierto "
+            "aquí. Lo que cambia es la otra mitad del valor esperado.\n\n"
+            "El premio mayor se reparte entre todos los que tengan la combinación ganadora, y la "
+            "gente **no elige al azar**: juega cumpleaños (por eso el 1-31 va sobrecargado y el "
+            "32-43 abandonado), rachas seguidas, patrones sobre la grilla del tiquete y números de "
+            "la suerte. Una combinación popular y una impopular ganan exactamente igual de seguido; "
+            "condicionado a ganar, la popular paga una fracción de la otra.\n\n"
+            "`P(ganar)` → no la mueve nada, nunca.  \n"
+            "`E[premio | ganar]` → esto sí se puede mejorar, evitando lo que juegan los demás."
+        .format(combos=total_combinations()))
+
+        st.warning(
+            "**Qué es este modelo, con precisión.** Una función heurística sobre los sesgos que "
+            "aparecen en la literatura de elección de números, con pesos que este proyecto **no "
+            "puede calibrar**: haría falta saber qué tiquetes compró la gente, y ningún operador lo "
+            "publica. La *dirección* es sólida (las fechas se sobrejuegan, y el efecto es grande); "
+            "cualquier número concreto es una estimación gruesa. Por eso el resultado viene con "
+            "banda y no con una sola cifra."
+        )
+
+        c1, c2, c3 = st.columns(3)
+        jackpot = c1.number_input("Premio mayor acumulado (COP)", min_value=0,
+                                   value=5_000_000_000, step=100_000_000)
+        tickets_sold = c2.number_input("Tiquetes vendidos para el sorteo", min_value=1,
+                                        value=3_000_000, step=100_000, help=HELP["tickets_sold"])
+        multiplier = c3.slider("Cuánto más se juega la combinación más popular", 2.0, 25.0, 10.0,
+                                step=1.0, help=HELP["multiplier"])
+
+        default_tickets = st.session_state.get("tickets")
+        examples = [
+            Ticket(main=(3, 7, 12, 19, 25), super_ball=8),
+            Ticket(main=(1, 2, 3, 4, 5), super_ball=6),
+            Ticket(main=(5, 10, 15, 20, 25), super_ball=7),
+            Ticket(main=(33, 36, 38, 41, 43), super_ball=14),
+        ]
+        source = st.radio("Qué comparar", ["Ejemplos ilustrativos", "Mis jugadas generadas"],
+                           horizontal=True, key="split_source")
+        if source == "Mis jugadas generadas" and not default_tickets:
+            st.info("Todavía no has generado jugadas — hazlo en la pestaña *Generar*.")
+            to_compare = examples
+        else:
+            to_compare = examples if source == "Ejemplos ilustrativos" else default_tickets
+
+        table = compare_tickets(to_compare, jackpot, tickets_sold,
+                                 popularity_multiplier=multiplier)
+        fig = go.Figure()
+        fig.add_bar(x=table["ticket"], y=table["expected_jackpot_share"], name="Premio esperado",
+                    error_y=dict(type="data", symmetric=False,
+                                 array=table["share_high"] - table["expected_jackpot_share"],
+                                 arrayminus=table["expected_jackpot_share"] - table["share_low"]))
+        fig.add_hline(y=jackpot, line_dash="dash", line_color="gray",
+                       annotation_text="Premio sin repartir")
+        fig.update_layout(yaxis_title="COP si esa jugada gana", xaxis_title="")
+        chart(fig, "Cuánto vale el premio mayor para cada jugada, si gana", "split_table")
+
+        st.markdown("**Detalle por jugada**", help=HELP["split_table"])
+        display = table.copy()
+        display["Premio esperado (banda)"] = display.apply(
+            lambda r: f"{r['expected_jackpot_share']:,.0f}  "
+                      f"[{r['share_low']:,.0f} – {r['share_high']:,.0f}]", axis=1)
+        st.dataframe(
+            display[["ticket", "popularity_score", "expected_other_winners",
+                     "Premio esperado (banda)"]]
+            .rename(columns={"ticket": "Jugada", "popularity_score": "Popularidad",
+                              "expected_other_winners": "Otros ganadores esperados"})
+            .style.format({"Popularidad": "{:.3f}", "Otros ganadores esperados": "{:.3f}"}),
+            use_container_width=True, hide_index=True,
+        )
+
+        best, worst = table.iloc[0], table.iloc[-1]
+        ratio = best["expected_jackpot_share"] / worst["expected_jackpot_share"]
+        st.info(
+            f"La menos popular de estas vale **{ratio:.2f}×** lo que vale la más popular, *si gana*. "
+            f"Ambas ganan con la misma probabilidad: 1 en {total_combinations():,}. Elegir números "
+            "no cambia eso, y este panel no dice lo contrario — solo cambia entre cuántos repartes."
+        )
+        if ratio < 1.15:
+            st.caption(
+                f"Con {tickets_sold:,} tiquetes vendidos contra {total_combinations():,} "
+                "combinaciones, casi nunca hay con quién repartir, así que el efecto es pequeño. "
+                "Crece cuando se venden muchos más tiquetes — que es justo cuando el acumulado está "
+                "alto y más gente juega."
+            )
+
+        st.markdown("**Los sesgos por separado**", help=HELP["bias_components"])
+        components = table[["ticket", *popularity_components(to_compare[0]).keys()]]
+        st.dataframe(
+            components.rename(columns={
+                "ticket": "Jugada", "calendar": "Fechas (≤31)", "low_numbers": "Números bajos",
+                "consecutive": "Seguidos", "arithmetic": "Espaciado regular",
+                "lucky_numbers": "De la suerte", "round_decade": "Misma decena",
+            }).style.format({c: "{:.2f}" for c in
+                              ["Fechas (≤31)", "Números bajos", "Seguidos", "Espaciado regular",
+                               "De la suerte", "Misma decena"]}),
+            use_container_width=True, hide_index=True,
+        )
+        st.caption(
+            "`unpopular` está registrada como estrategia y aparece en *Medir estrategias*. Ahí "
+            "saldrá que **no** le gana al azar — resultado correcto y ajeno al punto: la tasa de "
+            "aciertos es estructuralmente incapaz de ver lo que esta estrategia mejora."
+        )
+
 
 # --------------------------------------------------------------- Backtest
 with tabs[7]:
@@ -941,10 +1179,13 @@ with tabs[7]:
         display = summary.copy()
         display["¿Le gana al azar? (p<0.05)"] = display["beats_chance"].map({True: "Sí", False: "No"})
         display["¿Le gana? (corregido)"] = display["beats_chance_corrected"].map({True: "Sí", False: "No"})
+        display["Ventaja (IC 95%)"] = display.apply(
+            lambda r: f"{r['effect']:+.3f}  [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}]", axis=1)
         st.markdown("**Veredicto por modelo**", help=HELP["summary_table"])
         st.dataframe(
             display[["model", "n_windows", "avg_main_hits", "chance_avg_main_hits",
-                     "p_value_better_than_chance", "¿Le gana al azar? (p<0.05)",
+                     "Ventaja (IC 95%)", "p_value_better_than_chance",
+                     "¿Le gana al azar? (p<0.05)",
                      "bonferroni_threshold", "¿Le gana? (corregido)", "super_hit_rate",
                      "chance_super_hit_rate"]]
             .style.format({
@@ -954,6 +1195,20 @@ with tabs[7]:
             }),
             use_container_width=True,
         )
+        mde = minimum_detectable_effect(int(summary["n_windows"].max()))
+        st.info(
+            f"**Resolución de esta corrida.** Con {mde['n_draws']} sorteos evaluados, esta prueba solo "
+            f"tiene 80% de probabilidad de detectar ventajas de **+{mde['relative']:.0%} o mayores** "
+            f"(un promedio de {mde['detectable_mean']:.3f} aciertos contra {mde['chance_mean']:.3f} del "
+            "azar). Un 'ningún modelo le gana al azar' aquí significa *ninguna ventaja mayor que eso* — "
+            "no *ninguna ventaja*. Mira la pestaña **Potencia y Sensibilidad** para ver cuánta historia "
+            "haría falta para afinar más."
+        )
+        st.caption(
+            "La columna **Ventaja (IC 95%)** es la que dice cuánta resolución tuvo la corrida: un "
+            "intervalo ancho que cruza el cero no es 'no hay ventaja', es 'no alcanzó a medirlo'.",
+            help=HELP["effect_ci"],
+        )
         st.caption(
             "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto "
             "(un modelo peor que el azar no cuenta como que le gana). **Lee la columna corregida**: "
@@ -962,3 +1217,325 @@ with tabs[7]:
             "Bonferroni baja el umbral a 0.05 dividido entre el número de modelos. Con pocas "
             "ventanas, incluso un modelo sin señal real puede parecer mejor o peor por pura varianza."
         )
+
+
+# ------------------------------------------------ Potencia y Sensibilidad
+with tabs[8]:
+    section("¿Qué podrían haber visto estas pruebas?", "tab_power")
+    st.markdown(
+        "Las otras pestañas responden *¿encontré una ventaja?*. Esta responde las dos preguntas que "
+        "van antes, y sin las cuales un resultado nulo no significa nada: **¿podría haberla "
+        "encontrado si existiera?** y **¿estas pruebas son capaces de detectar una ventaja real?**"
+    )
+
+    # ------------------------------------------------------------ potencia
+    section("1. Efecto mínimo detectable", "mde_section")
+    st.markdown(
+        "Con la media del azar en 0.58 aciertos y una desviación estándar de 0.68, unos pocos "
+        "cientos de sorteos solo alcanzan para revelar una ventaja bastante grande. Esto calcula "
+        "exactamente cuál, para la misma prueba z que usan el backtest y las estrategias."
+    )
+    c1, c2, c3 = st.columns(3)
+    mde_draws = c1.slider("Sorteos evaluados", 10, max(2000, n_draws), min(n_draws, 200), step=10,
+                          help=HELP["mde_draws"])
+    alpha = c2.select_slider("Nivel α", options=[0.01, 0.05, 0.10], value=0.05,
+                             help="Probabilidad de marcar una ventaja que no existe.")
+    target_power = c3.select_slider("Potencia objetivo", options=[0.50, 0.80, 0.90, 0.95], value=0.80,
+                                    help="Probabilidad de detectar la ventaja si sí existe.")
+
+    mde = minimum_detectable_effect(mde_draws, alpha=alpha, power=target_power)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Ventaja mínima detectable", f"+{mde['relative']:.0%}", help=HELP["mde_metric"])
+    m2.metric("Promedio que habría que alcanzar", f"{mde['detectable_mean']:.3f}",
+              help=HELP["mde_target"])
+    m3.metric("Media del azar", f"{mde['chance_mean']:.3f}",
+              help="5 × 5 / 43. La referencia exacta, sin simulación.")
+    st.caption(power_describe(mde_draws, alpha=alpha, power=target_power))
+
+    curve = power_curve(mde_draws, alpha=alpha)
+    fig = go.Figure()
+    fig.add_scatter(x=curve["relative_edge"] * 100, y=curve["power"], mode="lines", name="Potencia")
+    fig.add_hline(y=target_power, line_dash="dash", line_color="gray",
+                  annotation_text=f"{target_power:.0%}")
+    fig.update_layout(xaxis_title="Tamaño de la ventaja (% sobre el azar)", yaxis_title="Potencia",
+                      yaxis_tickformat=".0%")
+    chart(fig, f"Potencia con {mde_draws} sorteos", "power_chart")
+
+    st.markdown("**Cuánta historia haría falta**", help=HELP["required_table"])
+    needed = required_draws_table(alpha=alpha, power=target_power)
+    st.dataframe(
+        needed.rename(columns={
+            "relative_edge": "Ventaja", "target_mean": "Promedio objetivo",
+            "required_draws": "Sorteos necesarios", "years_of_history": "Años de historia",
+        }).style.format({
+            "Ventaja": "{:.0%}", "Promedio objetivo": "{:.4f}",
+            "Sorteos necesarios": "{:,.0f}", "Años de historia": "{:.1f}",
+        }),
+        use_container_width=True, hide_index=True,
+    )
+    super_mde = super_minimum_detectable_effect(mde_draws, alpha=alpha, power=target_power)
+    st.caption(
+        f"Superbalota: la tasa del azar es {super_mde['chance_rate']:.4f} (1 de 16) y la más pequeña "
+        f"detectable con {mde_draws} sorteos es {super_mde['detectable_rate']:.4f} "
+        f"(+{super_mde['relative']:.0%}).",
+        help=HELP["super_mde"],
+    )
+
+    st.divider()
+
+    # --------------------------------------------------------- sensibilidad
+    section("2. ¿Detectan estas pruebas una ventaja real?", "sensitivity_section")
+    st.markdown(
+        "Genera sorteos con un sesgo **plantado a propósito** (3 números salen más de la cuenta) y "
+        "mide cuántas veces lo detecta cada prueba. `pooled` mira los datos directamente; `hot` pone "
+        "a prueba toda la cadena — generación, puntuación, línea base, prueba z; `random` es el "
+        "control que **debe** quedarse en el piso incluso con sesgo, porque un tiquete uniforme no "
+        "sabe cuáles números están favorecidos."
+    )
+    c1, c2, c3 = st.columns(3)
+    sens_draws = c1.slider("Sorteos por experimento", 100, 1000, 500, step=100)
+    sens_seeds = c2.slider("Semillas", 5, 40, 10, help=HELP["sensitivity_seeds"])
+    detectors = c3.multiselect("Detectores", ["pooled", "hot", "random"],
+                               default=["pooled", "hot", "random"])
+    strengths = st.multiselect(
+        "Fuerzas del sesgo a probar", list(DEFAULT_STRENGTHS) + [3.0, 4.0],
+        default=list(DEFAULT_STRENGTHS), help=HELP["sensitivity_strengths"])
+
+    slow = [d for d in detectors if d in ("hot", "random")]
+    if slow and sens_seeds * len(strengths) * len(slow) > 100:
+        st.warning(
+            f"{len(strengths)} fuerzas × {sens_seeds} semillas × {len(slow)} detector(es) de "
+            "estrategia significa regenerar datos y tiquetes muchas veces: esto puede tardar varios "
+            "minutos. Quita `hot`/`random`, o baja las semillas, para una vista rápida — `pooled` "
+            "solo es casi instantáneo."
+        )
+
+    if st.button("Ejecutar prueba de sensibilidad"):
+        if not detectors or not strengths:
+            st.error("Elige al menos un detector y una fuerza de sesgo.")
+        elif 0.0 not in strengths:
+            st.error(
+                "Incluye la fuerza **0.0**: es el control. Sin ella no puedes saber si una tasa de "
+                "detección alta significa sensibilidad o un detector roto."
+            )
+        else:
+            with st.spinner("Generando datos sesgados y corriendo los detectores..."):
+                st.session_state["sensitivity"] = sensitivity_report(
+                    strengths=tuple(sorted(strengths)), detectors=tuple(detectors),
+                    n_draws=sens_draws, n_seeds=sens_seeds, alpha=alpha,
+                    n_draws_back=min(200, sens_draws - MIN_TRAIN_FLOOR), tickets_per_draw=5,
+                )
+
+    if "sensitivity" in st.session_state:
+        report = st.session_state["sensitivity"]
+
+        fig = go.Figure()
+        for detector, group in report.groupby("detector"):
+            group = group.sort_values("strength")
+            fig.add_scatter(x=group["strength"], y=group["detection_rate"], mode="lines+markers",
+                            name=detector)
+        fig.add_hline(y=0.80, line_dash="dash", line_color="gray", annotation_text="80%")
+        fig.add_hline(y=alpha, line_dash="dot", line_color="gray",
+                      annotation_text=f"α = {alpha:g}")
+        fig.update_layout(xaxis_title="Fuerza del sesgo inyectado", yaxis_title="Tasa de detección",
+                          yaxis_tickformat=".0%")
+        chart(fig, "¿Cuánto sesgo hace falta para que cada prueba lo vea?", "sensitivity_chart")
+
+        st.markdown("**Tasas de detección**", help=HELP["sensitivity_table"])
+        st.dataframe(
+            report.rename(columns={
+                "detector": "Detector", "strength": "Fuerza",
+                "favored_share": "% de balotas que se llevaron", "uniform_share": "% si fuera uniforme",
+                "times_detected": "Detectado", "n_seeds": "Semillas",
+                "detection_rate": "Tasa", "median_p_value": "p mediano",
+            }).style.format({
+                "% de balotas que se llevaron": "{:.2%}", "% si fuera uniforme": "{:.2%}",
+                "Tasa": "{:.0%}", "p mediano": "{:.4f}",
+            }),
+            use_container_width=True, hide_index=True,
+        )
+
+        control = report[report["strength"] == 0.0]
+        broken = control[control["detection_rate"] > 4 * alpha]
+        if not broken.empty:
+            st.warning(
+                "Sin sesgo, "
+                + ", ".join(f"`{r.detector}` disparó {r.detection_rate:.0%}" for r in broken.itertuples())
+                + f", muy por encima de α = {alpha:g}. Con pocas semillas esto puede ser ruido, pero "
+                "si se sostiene al subirlas, ese detector marca ventajas que no existen y sus "
+                "resultados positivos no son confiables."
+            )
+        else:
+            st.success(
+                f"Control sano: sin sesgo, ningún detector supera α = {alpha:g} de forma preocupante. "
+                "Las filas con sesgo sí miden sensibilidad."
+            )
+
+        for detector in report["detector"].unique():
+            threshold = sensitivity_threshold(report, detector)
+            if threshold is None:
+                st.error(
+                    f"**{detector}** nunca llegó al 80% de detección en el rango probado. Un resultado "
+                    "nulo suyo no descarta nada más pequeño que el sesgo más fuerte que probaste."
+                )
+            else:
+                st.info(
+                    f"**{detector}** alcanza el 80% de detección con fuerza {threshold['strength']:g}, "
+                    f"donde los 3 números favorecidos se llevan el {threshold['favored_share']:.2%} de "
+                    f"las balotas en vez del {threshold['uniform_share']:.2%} uniforme. Ese es su "
+                    "umbral de sensibilidad: por debajo, no puede ver nada."
+                )
+
+
+# ----------------------------------------------------------------- Registro
+with tabs[9]:
+    section("Predicciones registradas antes del sorteo", "tab_registry")
+    st.markdown(
+        "Todo lo demás en este panel es **retrospectivo**, y el análisis retrospectivo siempre se "
+        "puede ajustar después: una ventana corrida, un modelo cambiado, una corrida que no se "
+        "cuenta. Nada de eso es deshonestidad — es lo que le pasa a cualquiera que analiza datos "
+        "que ya vio. Lo único que no se puede ajustar después es una predicción escrita **antes** "
+        "de que el resultado existiera. Eso es todo lo que hace esta pestaña."
+    )
+    if is_demo:
+        st.warning(
+            "Estás sobre datos sintéticos de demostración. Puedes registrar predicciones, pero se "
+            "puntuarán contra sorteos inventados. Carga tu CSV real antes de empezar un registro "
+            "que quieras tomar en serio."
+        )
+
+    state = registry_status()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Registradas", state["n_recorded"])
+    m2.metric("Puntuadas", state["n_scored"])
+    m3.metric("Pendientes", state["n_pending"], help=HELP["registry_pending"])
+    m4.metric("Ventaja mínima detectable",
+              f"+{state['min_detectable_effect']:.0%}" if state["n_scored"] else "—",
+              help=HELP["registry_mde"])
+
+    # ------------------------------------------------------------- registrar
+    section("Registrar una jugada", "registry_record")
+    weekdays = infer_draw_weekdays(df["ds"])
+    upcoming = next_draw_dates(max(df["ds"].max(), pd.Timestamp.today().normalize()), 6,
+                               weekdays=weekdays)
+    c1, c2 = st.columns([2, 1])
+    reg_main = c1.text_input(
+        f"5 balotas ({MAIN_BALL_RANGE[0]}-{MAIN_BALL_RANGE[1]}), separadas por coma o guion",
+        "3, 12, 19, 27, 41", key="reg_main")
+    reg_super = c2.number_input("Superbalota", min_value=SUPER_BALL_RANGE[0],
+                                max_value=SUPER_BALL_RANGE[1], value=8, key="reg_super")
+    c1, c2, c3 = st.columns(3)
+    reg_date = c1.selectbox("Sorteo", upcoming, format_func=lambda d: f"{d:%Y-%m-%d (%a)}",
+                            help="Solo sorteos futuros: el registro rechaza cualquier otro.")
+    reg_label = c2.text_input("Etiqueta", "yo", help=HELP["registry_label"])
+    reg_note = c3.text_input("Nota (opcional)", "")
+
+    if st.button("Registrar predicción"):
+        try:
+            ticket = Ticket(main=tuple(int(x) for x in reg_main.replace("-", ",").split(",")
+                                       if x.strip()),
+                            super_ball=int(reg_super))
+            row = record_prediction(ticket, reg_date, reg_label.strip() or "sin etiqueta",
+                                    note=reg_note)
+        except (ValueError, TypeError) as exc:
+            st.error(f"Jugada inválida: {exc}")
+        except RegistryError as exc:
+            # The module raises in English (it is library code); this is the end-user
+            # product, so the reason gets said in Spanish and the raw detail goes
+            # underneath rather than being dropped.
+            if "already on the record" in str(exc):
+                st.error(
+                    f"Ya hay una predicción con la etiqueta `{reg_label}` para el sorteo del "
+                    f"{reg_date:%Y-%m-%d}. El registro es solo-anexar: no se sobreescribe nada. "
+                    "Si cambiaste de opinión, regístrala con otra etiqueta y quedan las dos — que "
+                    "es precisamente el punto."
+                )
+            else:
+                st.error(
+                    f"Ese sorteo ({reg_date:%Y-%m-%d}) no está en el futuro. Una predicción "
+                    "anotada después de su sorteo no demuestra nada, así que el registro no la "
+                    "acepta: cada fila del archivo tiene que haber sido falsable cuando se escribió."
+                )
+            st.caption(f"Detalle: {exc}")
+        else:
+            st.success(
+                f"Registrada **{row['main']} + {row['super_ball']}** para el sorteo del "
+                f"{row['draw_date']:%Y-%m-%d}, como `{row['label']}`, a las {row['recorded_at']}. "
+                "Ya no se puede cambiar — que es justamente lo que la vuelve evidencia."
+            )
+            st.rerun()
+
+    # -------------------------------------------------------------- puntuar
+    st.divider()
+    c1, c2 = st.columns([1, 3])
+    if c1.button("Puntuar sorteos ya ocurridos"):
+        score_pending(df, balls_expanded)
+        st.rerun()
+    c2.caption(
+        "Puntúa **todas** las predicciones cuyo sorteo ya salió, no un subconjunto: elegir cuáles "
+        "contar es exactamente el sesgo que este registro existe para evitar. Volver a correrlo es "
+        "seguro, las filas ya puntuadas no se tocan."
+    )
+
+    registry = load_registry()
+    if registry.empty:
+        st.info(
+            "El registro está vacío. Regístra una jugada arriba y vuelve después del sorteo: hasta "
+            "que una predicción sobreviva a un sorteo que no habías visto, este registro no "
+            "demuestra nada — y eso es correcto."
+        )
+    else:
+        upcoming_rows = pending_predictions(registry=registry)
+        if not upcoming_rows.empty:
+            st.markdown("**Pendientes**", help=HELP["registry_pending"])
+            shown = upcoming_rows[["draw_date", "label", "main", "super_ball", "recorded_at", "note"]].copy()
+            shown["draw_date"] = pd.to_datetime(shown["draw_date"]).dt.strftime("%Y-%m-%d")
+            st.dataframe(shown, use_container_width=True, hide_index=True)
+
+        table = registry_summary(registry=registry, by_label=True)
+        if table.empty:
+            st.caption("Nada puntuado todavía.")
+        else:
+            display = table.copy()
+            display["Ventaja (IC 95%)"] = display.apply(
+                lambda r: f"{r['effect']:+.3f}  [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}]", axis=1)
+            st.markdown("**Resultado por etiqueta**", help=HELP["registry_summary"])
+            st.dataframe(
+                display[["label", "n_scored", "avg_main_matches", "chance_avg_main_matches",
+                         "Ventaja (IC 95%)", "p_value_better_than_chance", "min_detectable_effect",
+                         "super_hit_rate", "chance_super_hit_rate"]]
+                .style.format({
+                    "avg_main_matches": "{:.3f}", "chance_avg_main_matches": "{:.3f}",
+                    "p_value_better_than_chance": "{:.3f}", "min_detectable_effect": "{:.0%}",
+                    "super_hit_rate": "{:.3f}", "chance_super_hit_rate": "{:.3f}",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+            worst = table["min_detectable_effect"].min()
+            st.caption(
+                f"Con las predicciones puntuadas hasta ahora, la ventaja más pequeña que este "
+                f"registro podría revelar es **+{worst:.0%}**. Por debajo de eso, un 'no le gana al "
+                "azar' habla del tamaño de la muestra, no de las predicciones.",
+                help=HELP["registry_mde"],
+            )
+
+            scored = registry[registry["main_matches"].notna()].copy()
+            scored["draw_date"] = pd.to_datetime(scored["draw_date"])
+            fig = go.Figure()
+            for label, group in scored.groupby("label"):
+                group = group.sort_values("draw_date")
+                fig.add_scatter(x=group["draw_date"], y=group["main_matches"].astype(float),
+                                mode="lines+markers", name=str(label))
+            fig.add_hline(y=expected_main_matches(MAIN_BALLS_DRAWN)["mean"], line_dash="dash",
+                          annotation_text="Azar esperado")
+            fig.update_layout(yaxis_title="Aciertos (de 5)")
+            chart(fig, "Aciertos por sorteo registrado", "holdout_chart")
+
+        with st.expander("Ver el registro completo"):
+            st.caption(
+                f"Se guarda en `predictions.csv`, en la raíz del repo y **no** ignorado por git. "
+                "Commitearlo pone cada predicción bajo control de versiones con una fecha encima, "
+                "que es un respaldo más fuerte que cualquier columna de timestamp que el propio "
+                "archivo se escriba."
+            )
+            st.dataframe(registry, use_container_width=True, hide_index=True)

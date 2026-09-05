@@ -51,17 +51,30 @@ The three model scripts additionally expect
 ## 3. Verification
 
 **There is a test suite; there is still no linter or CI.** Work is verified in
-three ways.
+four ways.
 
 ```mermaid
 flowchart TD
     C["Change some code"] --> S["1 · pytest<br/>the invariants must still hold"]
     S --> D["2 · Behaviour on synthetic data<br/>lottery.utils.sample_data.load_sample_and_preprocess()"]
     D --> U{"Touched the dashboard?"}
-    U -->|"no"| DONE["Done"]
+    U -->|"no"| V
     U -->|"yes"| B["3 · Drive it in a real browser<br/>Streamlit headless + Playwright"]
-    B --> DONE
+    B --> V{"Touched the docs?"}
+    V -->|"no"| DONE["Done"]
+    V -->|"yes"| L["4 · Links<br/>python -m lottery.utils.check_docs"]
+    L --> DONE
 ```
+
+There is a fifth check that applies to the statistics rather than the code:
+`lottery/analysis/sensitivity.py` plants a known bias and confirms the detectors
+fire on it. Synthetic i.i.d. data proves the tests do not cry wolf; only a planted
+signal proves they can hear one. See
+[Power and Sensitivity](power-and-sensitivity.md#2-sensitivity-lotteryanalysissensitivitypy).
+
+Note how §3.1 and that fifth check divide the work: the suite pins what the code
+*does*, the sensitivity run checks what the statistics can *see*. Neither
+substitutes for the other.
 
 ### 3.1 The test suite
 
@@ -134,6 +147,21 @@ Then drive it with Playwright (Chromium is under `/opt/pw-browsers/`; check the 
 versioned path, e.g. `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`), check
 each tab's text for `Traceback` and "This app has encountered an error", and click
 through the Forecast and Backtest buttons — those code paths only execute on click.
+
+
+### 3.4 Documentation changes
+
+```bash
+python -m lottery.utils.check_docs
+```
+
+Exits non-zero and names the near-miss anchors. It reimplements github-slugger
+exactly rather than approximating: headings here use `·` and `—`, GitHub strips
+those characters *without* collapsing the spaces they leave, and so
+`### 6 · Jugadas — generate, check, measure` anchors as
+`6--jugadas--generate-check-measure` with doubled hyphens. A checker that
+normalises runs of hyphens reports success on links that 404 in the browser —
+which is how one broken cross-reference survived several review passes here.
 
 ## 4. Conventions
 

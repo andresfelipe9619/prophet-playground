@@ -13,7 +13,7 @@ from functools import lru_cache
 import numpy as np
 from scipy.stats import hypergeom
 
-from core.significance import z_test_against_null
+from core.significance import EMPTY_RESULT, z_test_against_null
 from lottery.models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
 
 
@@ -33,14 +33,15 @@ def expected_super_match_rate(pool_size=SUPER_POOL, m_guessed=1):
     return m_guessed / pool_size
 
 
-def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAIN_BALLS_DRAWN):
+def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAIN_BALLS_DRAWN,
+                      confidence=0.95):
     """z-test: is this model's average number of matches distinguishable from pure chance?
 
     This is the lottery's half of the contract with core.significance: the
     pool resets every draw, so each historical draw is an independent
     hypergeometric trial, and this function's only job is to turn
     `m_guessed` into the per-draw mean and variance of that trial. The
-    arithmetic and both p-values come from core.
+    arithmetic, both p-values and the effect size come from core.
 
     `m_guessed` may be a single count (same every window) or a per-window
     list, since collisions between positions can make the distinct-guess
@@ -51,20 +52,43 @@ def beats_chance_test(observed_hits, m_guessed, pool_size=MAIN_POOL, n_drawn=MAI
     one-sided ("is this *better* than chance?"). Only the one-sided one may be
     used to claim a model beats chance — a model significantly worse than
     chance also gets a small two-sided p-value.
+
+    `effect` and its confidence interval come back too, because a p-value alone
+    hides precision: "no edge detected" over 15 windows and over 1,000 draws
+    read identically as p-values, while their intervals differ by an order of
+    magnitude. The interval is the honest summary of what was measured.
+
+    **The exact hypergeometric variance is used even when several tickets are
+    scored against the same draw**, and that was checked rather than assumed.
+    Sharing a draw does induce positive correlation in principle, so this test
+    was measured under the null at 1 and 5 tickets per draw: sd(z) came out at
+    0.997 and 0.927 over 60 runs, against the 1.0 a calibrated statistic gives.
+    No inflation — if anything slightly conservative at 5. A cluster-robust
+    variance was written for this and then removed, because it corrected a
+    distortion that is not there. See docs/evaluation.md for how the phantom
+    came to be believed in the first place.
     """
     observed_hits = np.asarray(observed_hits, dtype=float)
     if observed_hits.size == 0:
-        return {"z": np.nan, "p_value": np.nan, "p_value_greater": np.nan,
-                "observed_mean": np.nan, "chance_mean": np.nan}
+        return _as_chance_result(dict(EMPTY_RESULT))
 
     m_list = np.broadcast_to(np.asarray(m_guessed), observed_hits.shape)
     chance = [expected_main_matches(int(m), pool_size, n_drawn) for m in m_list.ravel()]
     means = np.array([c["mean"] for c in chance]).reshape(observed_hits.shape)
     variances = np.array([c["var"] for c in chance]).reshape(observed_hits.shape)
 
-    result = z_test_against_null(observed_hits, means, variances)
-    # `chance_mean` is this domain's name for the null mean; keep it, since
-    # every lottery surface reads that key.
+    return _as_chance_result(z_test_against_null(observed_hits, means, variances,
+                                                 confidence=confidence))
+
+
+def _as_chance_result(result):
+    """`chance_mean` is this domain's name for core's `null_mean`.
+
+    Kept as a rename rather than a second key because every lottery surface —
+    the backtest summary, the strategy table, the dashboard — reads
+    `chance_mean`, and two names for one number is how they drift apart.
+    """
+    result = dict(result)
     result["chance_mean"] = result.pop("null_mean")
     return result
 

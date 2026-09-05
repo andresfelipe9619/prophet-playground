@@ -4,10 +4,11 @@ codealike.json
 __pycache__/
 *.pyc
 venv/
+.pytest_cache/
 backtest_summary.csv
 prophet_results/
 statsforecast_*_results/
 xgboost_results/
 holdout_summary.csv
 holdout_detail.csv
-.pytest_cache/
+sensitivity_report.csv

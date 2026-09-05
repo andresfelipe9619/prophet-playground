@@ -2,7 +2,7 @@
 
 `streamlit run dashboard/app.py` — the primary surface of the project.
 
-Eight tabs. The UI text is in **Spanish** (it is the end-user-facing product); this guide and
+Ten tabs. The UI text is in **Spanish** (it is the end-user-facing product); this guide and
 all other documentation are in English.
 
 ## 1. Layout
@@ -17,7 +17,7 @@ flowchart TD
     FMT -->|"filter off"| MIX["Red banner:<br/>two games mixed,<br/>nothing below is interpretable"]
     LOAD --> T
 
-    subgraph T["Eight tabs"]
+    subgraph T["Ten tabs"]
         T0["0 · Resumen"]
         T1["1 · Probabilidades y Valor Esperado"]
         T2["2 · Frecuencia y Gaps"]
@@ -26,6 +26,8 @@ flowchart TD
         T5["5 · Forecast"]
         T6["6 · Jugadas"]
         T7["7 · Backtest vs. Azar"]
+        T8["8 · Potencia y Sensibilidad"]
+        T9["9 · Registro"]
     end
 ```
 
@@ -166,6 +168,11 @@ Two guards are built into how the verdict is reported, and both matter:
 If you only read one thing on this tab, read the stability table. A single positive
 run is the most common way people convince themselves a lottery system works.
 
+> **Jugadas** has a fourth sub-tab, **Reparto de premios**: enter the jackpot and
+> tickets sold, and compare what a win is worth for popular versus unpopular
+> combinations. Generated tickets also carry a popularity column. It changes
+> `E[payout | win]` and never `P(win)` — see [Jackpot Splitting](jackpot-splitting.md).
+
 ### 7 · Backtest vs. Azar — the verdict
 
 Walk-forward evaluation, with a radio at the top choosing **which draws to hold
@@ -202,6 +209,38 @@ shows the Bonferroni threshold next to it. Full detail in
 In the per-draw table, a row with 3 hits is not a finding: three or more of five
 from 43 comes up about 1% of the time by luck, so one such row across several
 models and a dozen draws is expected. The caption under the chart says so.
+
+### 8 · Potencia y Sensibilidad — what the verdict is worth
+
+Two panels, both answering questions that come *before* any result. Full detail
+in [Power and Sensitivity](power-and-sensitivity.md).
+
+**1. Efecto mínimo detectable.** Sliders for draw count, α and target power;
+returns the smallest edge that much data could see, a power curve, and the table
+of how much history each edge size would need. The backtest tab now prints the
+MDE of the run you just executed beside its verdict, so "no model beat chance"
+arrives with its own resolution attached.
+
+**2. ¿Detectan estas pruebas una ventaja real?** Plants a known bias and reports
+how often each detector fires. The `strength = 0` row is the control and the
+panel refuses to run without it — a detection rate far above α there means the
+detector is broken, and the tab says so in place of the usual verdict.
+
+Note the `hot` and `random` detectors regenerate data *and* tickets per seed, so
+they are slow; the panel warns when the grid gets large. `pooled` alone is
+near-instant and is the one to start with.
+
+### 9 · Registro — predictions made in advance
+
+Record a play against an upcoming draw, score what has already happened, and see
+the per-label result. The tab's value is in what it refuses: a draw date that is
+not in the future, and a second prediction under the same label. Both refusals
+render in Spanish with the module's English detail beneath, since
+`lottery/analysis/registry.py` is library code and raises in English.
+
+Every scored table carries `min_detectable_effect` beside the p-value, because a
+young registry cannot say much and should say so. Full detail in
+[The Prediction Registry](registry.md).
 
 ## 3. Explain-on-hover
 
@@ -244,8 +283,8 @@ Consequence: moving a slider in tab 6 does not re-fit anything. Only pressing
 
 ## 5. Extending the UI
 
-- Tabs are positional (`tabs[0]` … `tabs[6]`). **Inserting a tab shifts every index
-  after it** — update them all.
+- Tabs are positional (`tabs[0]` … `tabs[9]`). **Inserting a tab shifts every index
+  after it** — update them all. Appending at the end is the safe move.
 - `label_to_pos` is built once near the top and used by several tabs. Streamlit runs
   top to bottom and `with` does not create scope, so ordering matters.
 - Follow the house rule: any surface showing a model output or a heuristic also
