@@ -22,13 +22,16 @@ python StatsForecast.py AutoARIMA        # or AutoETS / AutoTheta
 python XGBoost.py
 python backtest.py --n-windows 20 --min-train 100 [--include-prophet]
 python backtest.py --cutoff 2026-07-31 --mode frozen --current-format-only
+python -m analysis.power --n-draws 1035          # what edge could this much data detect?
+python -m analysis.sensitivity --n-seeds 10      # can the tests detect a planted edge?
 ```
 
 There is no test suite, linter, or CI configured. Changes are verified by:
 
 1. `python -m py_compile <files>` for syntax.
 2. Running the affected module against synthetic data from `utils.sample_data.load_sample_and_preprocess()`, which returns the same `(df, balls_expanded)` shape as the real loader — no private CSVs needed.
-3. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium at `/opt/pw-browsers/chromium`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
+3. `python -m utils.check_docs` after any documentation change — it reimplements github-slugger exactly, because headings here use `·` and `—` and GitHub removes those without collapsing the spaces they leave (`### 6 · Jugadas — generate` anchors as `6--jugadas--generate`, doubled hyphens). A checker that normalises hyphen runs passes links that 404 in the browser.
+4. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium at `/opt/pw-browsers/chromium`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
 
 `backtest.py` with `--include-prophet` refits Prophet per position per window and is far slower than the other models; it is off by default for that reason.
 
@@ -56,6 +59,8 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 
 **Multiple comparisons are corrected everywhere.** A backtest scores k models against the same draws and `compare_strategies` scores k strategies the same way, so both emit `beats_chance` (naive, α = 0.05) *and* `beats_chance_corrected` (Bonferroni, α/k), and every surface points the reader at the corrected column. With six models the naive bar is cleared by luck ~26% of the time — "one of my six models beat chance" is exactly the sentence a lottery system gets built on. A new evaluation table that reports one uncorrected verdict has reintroduced the bug.
 
+**A null result needs its resolution attached.** `analysis/power.py` computes the minimum detectable effect for a given number of draws, and every surface reporting "nothing beat chance" should say what it could have detected: 15 windows cannot see a +75% edge, 1035 draws bottom out at +9%, and the MDE only falls with the square root of N. `analysis/sensitivity.py` is the other half — it plants a known bias and measures how often each detector fires, so "the tests found nothing" is backed by evidence that they can find something. Its `strength = 0` row is the control; a detector firing well above alpha there is broken, and that check is what caught the `tickets_per_draw` defect below.
+
 **Chance comparisons are one-sided.** `models/baseline.py:beats_chance_test` returns `p_value` (two-sided, "differs from chance") and `p_value_greater` (one-sided, "better than chance"). Only the one-sided value may back a "beats chance" claim — a model significantly *worse* than chance also gets a small two-sided p-value.
 
 ## Module layout
@@ -66,6 +71,8 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 - `models/xgboost_model.py` — chronological splits only. The original code used a shuffled `train_test_split`, leaking future draws into training; keep splits time-ordered.
 - `analysis/randomness.py` — frequency, gaps, hot/cold, chi-square (per-position and pooled), runs test, ACF/Ljung-Box.
 - `analysis/tickets.py` — generate tickets (random/hot/cold/model/portfolio), check them against draws, and `evaluate_strategy`/`stability_check`, which measure whether a generation strategy beats chance. `stability_check` exists because a single run flags a signal-free strategy ~1 time in 20; `random` is the control whose flag rate is the measured false-positive floor.
+- `analysis/power.py` — minimum detectable effect, required draws, power curves. Mirrors the z-test in `baseline.py` exactly, since the point is to characterise that test. The superbalota helper is separate because it is Bernoulli, not hypergeometric — using the wrong variance understates the required data ~3x.
+- `analysis/sensitivity.py` — plants a known bias and measures detection rates for `pooled`, `hot` and `random`. `random` must stay near alpha even on biased data (a uniform ticket's expected matches do not depend on the weighting) — that is the control, not a failure. **Known defect it surfaced:** `evaluate_strategy` treats every ticket as independent, but for history-dependent strategies the tickets of one draw are correlated, so `tickets_per_draw > 1` inflates the false-positive rate (measured: `hot` flags 17.5% at 5 tickets/draw against a nominal 5%; `random` is unaffected). Read `hot`/`cold` verdicts at `tickets_per_draw = 1` until it is fixed with a cluster-robust variance.
 - `analysis/prizes.py` — exact prize-category probabilities, expected value, RTP, breakeven jackpot. Pure combinatorics, needs no historical data. Prize amounts are caller-supplied, never hardcoded, because tiers are operator-set and the top prize accumulates.
 - `backtest.py` — walk-forward evaluation. `run_all` holds out the last N draws; `run_holdout(..., cutoff, mode=)` holds out everything after a date, either refitting per draw (`expanding`) or from one fit at the cutoff (`frozen`). Both score through the same `_score_window`, so their summaries are comparable.
 - `dashboard/app.py` — Streamlit UI, the primary surface. Inserts the repo root on `sys.path` so it can import the root-level model scripts. All explanatory tooltip copy lives in one `HELP` dict at the top and is consumed by two helpers: `section(title, key)` (a subheader with its ⓘ) and `chart(fig, title, key)` (a titled line with its ⓘ, then the figure). `chart` moves the title out of the Plotly figure because Plotly's own title has nowhere to hang a help icon — clear it with `title={"text": ""}`, since `title=None` makes Plotly render the literal string `undefined`. A bare `st.plotly_chart` outside that helper means a chart was added without an explanation.
@@ -89,5 +96,6 @@ Keep these in sync when behaviour changes:
 | [`docs/models.md`](docs/models.md) | Every predictor and how to add one |
 | [`docs/tickets.md`](docs/tickets.md) | Generating, checking and measuring ticket strategies |
 | [`docs/evaluation.md`](docs/evaluation.md) | Backtest, chance baseline, randomness tests, known past bugs |
-| [`docs/dashboard.md`](docs/dashboard.md) | The seven tabs and how to read them |
+| [`docs/power-and-sensitivity.md`](docs/power-and-sensitivity.md) | Minimum detectable effect, planted-bias detection rates |
+| [`docs/dashboard.md`](docs/dashboard.md) | The nine tabs and how to read them |
 | [`docs/development.md`](docs/development.md) | Setup, verification workflow, conventions, gotchas |

@@ -31,6 +31,14 @@ from analysis.randomness import (
     pooled_uniformity_test,
     randomness_report,
 )
+from analysis.power import (
+    DEFAULT_RELATIVE_EDGES,
+    describe as power_describe,
+    minimum_detectable_effect,
+    power_curve,
+    required_draws_table,
+    super_minimum_detectable_effect,
+)
 from analysis.prizes import (
     breakeven_jackpot,
     category_probabilities,
@@ -50,6 +58,7 @@ from analysis.tickets import (
     stability_check,
     ticket_from_predictions,
 )
+from analysis.sensitivity import DEFAULT_STRENGTHS, sensitivity_report, sensitivity_threshold
 from models.baseline import expected_main_matches, most_frequent_pick
 from models.common import (
     DEFAULT_DATA_PATH,
@@ -240,6 +249,48 @@ HELP = {
                      "Lee la columna corregida: al probar varios modelos contra los mismos sorteos, alguno "
                      "pasa el 5% por suerte mucho más seguido de lo que ese 5% sugiere. La corrección de "
                      "Bonferroni baja el umbral a 0.05 dividido entre el número de modelos.",
+
+    # -- Potencia y sensibilidad
+    "tab_power": "Las dos preguntas que van antes de cualquier resultado: ¿qué tan grande tendría que "
+                 "ser una ventaja para que estos datos la vieran, y estas pruebas son capaces de ver "
+                 "una ventaja real cuando existe?",
+    "mde_section": "El efecto mínimo detectable (MDE): la ventaja más pequeña que este número de "
+                   "sorteos podría distinguir del azar de forma confiable. Todo lo que esté por debajo "
+                   "es invisible para tu backtest — no porque no exista, sino porque no hay datos "
+                   "suficientes. Es lo que le pone resolución a un 'no encontré nada'.",
+    "mde_draws": "Cuántos sorteos tendría la evaluación. Súbelo para ver cuánto mejora la resolución: "
+                 "el MDE cae con la raíz de N, así que cuadruplicar los datos solo lo reduce a la mitad.",
+    "mde_metric": "La ventaja más pequeña detectable, como porcentaje sobre la media del azar. Si tu "
+                  "backtest no encontró nada, lo que demostraste es 'no hay ventaja mayor que esto'.",
+    "mde_target": "El promedio de aciertos que un modelo tendría que alcanzar para que la prueba lo "
+                  "marcara, contra la media del azar de 0.58.",
+    "power_chart": "Probabilidad de detectar una ventaja según su tamaño, con la cantidad de sorteos "
+                   "elegida. La línea punteada es el 80%, el umbral convencional. A la izquierda de "
+                   "donde la curva la cruza, tu prueba es prácticamente ciega.",
+    "required_table": "Cuánta historia haría falta para detectar cada tamaño de ventaja. La columna de "
+                      "años es la que importa: varias filas superan la edad del juego, que es la "
+                      "respuesta honesta a por qué nadie ha demostrado nunca que un sistema de lotería "
+                      "funcione.",
+    "super_mde": "Lo mismo para la superbalota, que es un ensayo de Bernoulli (1 de 16) y no "
+                 "hipergeométrico, así que su varianza y su resolución son distintas.",
+    "sensitivity_section": "El espejo del panel de arriba. Ya sabes que estas pruebas dicen "
+                           "'aleatorio' sobre datos aleatorios; esto verifica que digan 'no aleatorio' "
+                           "sobre datos con un patrón plantado a propósito. Sin esta comprobación, un "
+                           "resultado nulo también podría significar que las pruebas están ciegas.",
+    "sensitivity_strengths": "Fuerza del sesgo inyectado: 3 números reciben peso (1 + fuerza) frente a "
+                             "1 de los demás. Fuerza 0 reproduce sorteos uniformes y es el control — "
+                             "ahí las tres tasas deben quedar cerca de α.",
+    "sensitivity_seeds": "Cada semilla regenera los datos y los tiquetes, así que son experimentos "
+                         "independientes, no re-tiradas del mismo dataset.",
+    "sensitivity_table": "Empieza por las filas de fuerza 0. Si algún detector dispara mucho más "
+                         "seguido que α ahí, está roto y el resto de la tabla no significa nada. "
+                         "`random` debe quedarse en el piso incluso con sesgo fuerte: un tiquete "
+                         "uniforme tiene los mismos aciertos esperados sin importar cómo estén "
+                         "pesadas las balotas, así que es el control correcto. Solo una estrategia "
+                         "que *aprenda* cuáles números salen más puede convertir el sesgo en aciertos.",
+    "sensitivity_chart": "Tasa de detección contra fuerza del sesgo. Donde una curva cruza el 80% está "
+                         "el umbral de sensibilidad de ese detector: por debajo de eso, un resultado "
+                         "nulo suyo no descarta nada.",
 }
 
 
@@ -370,7 +421,7 @@ if is_demo:
 
 tabs = st.tabs([
     "Resumen", "Probabilidades y Valor Esperado", "Frecuencia y Gaps", "Hot / Cold",
-    "Aleatoriedad", "Forecast", "Jugadas", "Backtest vs. Azar",
+    "Aleatoriedad", "Forecast", "Jugadas", "Backtest vs. Azar", "Potencia y Sensibilidad",
 ])
 
 # ---------------------------------------------------------------- Resumen
@@ -738,6 +789,20 @@ with tabs[6]:
                                help=HELP["draws_back"])
         per_draw = c2.slider("Jugadas por sorteo", 1, 50, 10, help=HELP["per_draw"])
 
+        # Measured, not assumed: see docs/power-and-sensitivity.md. The p-value below
+        # is optimistic for hot/cold whenever this is above 1, so the slider says so
+        # rather than leaving a silently wrong number on screen.
+        if per_draw > 1:
+            st.warning(
+                f"Con {per_draw} jugadas por sorteo, el p-valor de `hot` y `cold` queda **optimista**. "
+                "Las jugadas de un mismo sorteo se concentran en los mismos números calientes, así que "
+                "cuando esos números salen aciertan todas juntas: están correlacionadas y la prueba las "
+                "cuenta como independientes. Medido sobre datos sin ningún sesgo, `hot` marca ganador "
+                "el **17.5%** de las veces con 5 jugadas por sorteo, no el 5% nominal. `random` no se "
+                "ve afectada. Para un veredicto confiable pon **1 jugada por sorteo**, o usa la tasa "
+                "que mide *¿El resultado se sostiene?* como tu piso real."
+            )
+
         if st.button("Ejecutar experimento"):
             with st.spinner("Generando y puntuando jugadas..."):
                 try:
@@ -954,6 +1019,15 @@ with tabs[7]:
             }),
             use_container_width=True,
         )
+        mde = minimum_detectable_effect(int(summary["n_windows"].max()))
+        st.info(
+            f"**Resolución de esta corrida.** Con {mde['n_draws']} sorteos evaluados, esta prueba solo "
+            f"tiene 80% de probabilidad de detectar ventajas de **+{mde['relative']:.0%} o mayores** "
+            f"(un promedio de {mde['detectable_mean']:.3f} aciertos contra {mde['chance_mean']:.3f} del "
+            "azar). Un 'ningún modelo le gana al azar' aquí significa *ninguna ventaja mayor que eso* — "
+            "no *ninguna ventaja*. Mira la pestaña **Potencia y Sensibilidad** para ver cuánta historia "
+            "haría falta para afinar más."
+        )
         st.caption(
             "El p-valor es de una cola: mide si el modelo es *mejor* que el azar, no solo distinto "
             "(un modelo peor que el azar no cuenta como que le gana). **Lee la columna corregida**: "
@@ -962,3 +1036,171 @@ with tabs[7]:
             "Bonferroni baja el umbral a 0.05 dividido entre el número de modelos. Con pocas "
             "ventanas, incluso un modelo sin señal real puede parecer mejor o peor por pura varianza."
         )
+
+
+# ------------------------------------------------ Potencia y Sensibilidad
+with tabs[8]:
+    section("¿Qué podrían haber visto estas pruebas?", "tab_power")
+    st.markdown(
+        "Las otras pestañas responden *¿encontré una ventaja?*. Esta responde las dos preguntas que "
+        "van antes, y sin las cuales un resultado nulo no significa nada: **¿podría haberla "
+        "encontrado si existiera?** y **¿estas pruebas son capaces de detectar una ventaja real?**"
+    )
+
+    # ------------------------------------------------------------ potencia
+    section("1. Efecto mínimo detectable", "mde_section")
+    st.markdown(
+        "Con la media del azar en 0.58 aciertos y una desviación estándar de 0.68, unos pocos "
+        "cientos de sorteos solo alcanzan para revelar una ventaja bastante grande. Esto calcula "
+        "exactamente cuál, para la misma prueba z que usan el backtest y las estrategias."
+    )
+    c1, c2, c3 = st.columns(3)
+    mde_draws = c1.slider("Sorteos evaluados", 10, max(2000, n_draws), min(n_draws, 200), step=10,
+                          help=HELP["mde_draws"])
+    alpha = c2.select_slider("Nivel α", options=[0.01, 0.05, 0.10], value=0.05,
+                             help="Probabilidad de marcar una ventaja que no existe.")
+    target_power = c3.select_slider("Potencia objetivo", options=[0.50, 0.80, 0.90, 0.95], value=0.80,
+                                    help="Probabilidad de detectar la ventaja si sí existe.")
+
+    mde = minimum_detectable_effect(mde_draws, alpha=alpha, power=target_power)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Ventaja mínima detectable", f"+{mde['relative']:.0%}", help=HELP["mde_metric"])
+    m2.metric("Promedio que habría que alcanzar", f"{mde['detectable_mean']:.3f}",
+              help=HELP["mde_target"])
+    m3.metric("Media del azar", f"{mde['chance_mean']:.3f}",
+              help="5 × 5 / 43. La referencia exacta, sin simulación.")
+    st.caption(power_describe(mde_draws, alpha=alpha, power=target_power))
+
+    curve = power_curve(mde_draws, alpha=alpha)
+    fig = go.Figure()
+    fig.add_scatter(x=curve["relative_edge"] * 100, y=curve["power"], mode="lines", name="Potencia")
+    fig.add_hline(y=target_power, line_dash="dash", line_color="gray",
+                  annotation_text=f"{target_power:.0%}")
+    fig.update_layout(xaxis_title="Tamaño de la ventaja (% sobre el azar)", yaxis_title="Potencia",
+                      yaxis_tickformat=".0%")
+    chart(fig, f"Potencia con {mde_draws} sorteos", "power_chart")
+
+    st.markdown("**Cuánta historia haría falta**", help=HELP["required_table"])
+    needed = required_draws_table(alpha=alpha, power=target_power)
+    st.dataframe(
+        needed.rename(columns={
+            "relative_edge": "Ventaja", "target_mean": "Promedio objetivo",
+            "required_draws": "Sorteos necesarios", "years_of_history": "Años de historia",
+        }).style.format({
+            "Ventaja": "{:.0%}", "Promedio objetivo": "{:.4f}",
+            "Sorteos necesarios": "{:,.0f}", "Años de historia": "{:.1f}",
+        }),
+        use_container_width=True, hide_index=True,
+    )
+    super_mde = super_minimum_detectable_effect(mde_draws, alpha=alpha, power=target_power)
+    st.caption(
+        f"Superbalota: la tasa del azar es {super_mde['chance_rate']:.4f} (1 de 16) y la más pequeña "
+        f"detectable con {mde_draws} sorteos es {super_mde['detectable_rate']:.4f} "
+        f"(+{super_mde['relative']:.0%}).",
+        help=HELP["super_mde"],
+    )
+
+    st.divider()
+
+    # --------------------------------------------------------- sensibilidad
+    section("2. ¿Detectan estas pruebas una ventaja real?", "sensitivity_section")
+    st.markdown(
+        "Genera sorteos con un sesgo **plantado a propósito** (3 números salen más de la cuenta) y "
+        "mide cuántas veces lo detecta cada prueba. `pooled` mira los datos directamente; `hot` pone "
+        "a prueba toda la cadena — generación, puntuación, línea base, prueba z; `random` es el "
+        "control que **debe** quedarse en el piso incluso con sesgo, porque un tiquete uniforme no "
+        "sabe cuáles números están favorecidos."
+    )
+    c1, c2, c3 = st.columns(3)
+    sens_draws = c1.slider("Sorteos por experimento", 100, 1000, 500, step=100)
+    sens_seeds = c2.slider("Semillas", 5, 40, 10, help=HELP["sensitivity_seeds"])
+    detectors = c3.multiselect("Detectores", ["pooled", "hot", "random"],
+                               default=["pooled", "hot", "random"])
+    strengths = st.multiselect(
+        "Fuerzas del sesgo a probar", list(DEFAULT_STRENGTHS) + [3.0, 4.0],
+        default=list(DEFAULT_STRENGTHS), help=HELP["sensitivity_strengths"])
+
+    slow = [d for d in detectors if d in ("hot", "random")]
+    if slow and sens_seeds * len(strengths) * len(slow) > 100:
+        st.warning(
+            f"{len(strengths)} fuerzas × {sens_seeds} semillas × {len(slow)} detector(es) de "
+            "estrategia significa regenerar datos y tiquetes muchas veces: esto puede tardar varios "
+            "minutos. Quita `hot`/`random`, o baja las semillas, para una vista rápida — `pooled` "
+            "solo es casi instantáneo."
+        )
+
+    if st.button("Ejecutar prueba de sensibilidad"):
+        if not detectors or not strengths:
+            st.error("Elige al menos un detector y una fuerza de sesgo.")
+        elif 0.0 not in strengths:
+            st.error(
+                "Incluye la fuerza **0.0**: es el control. Sin ella no puedes saber si una tasa de "
+                "detección alta significa sensibilidad o un detector roto."
+            )
+        else:
+            with st.spinner("Generando datos sesgados y corriendo los detectores..."):
+                st.session_state["sensitivity"] = sensitivity_report(
+                    strengths=tuple(sorted(strengths)), detectors=tuple(detectors),
+                    n_draws=sens_draws, n_seeds=sens_seeds, alpha=alpha,
+                    n_draws_back=min(200, sens_draws - MIN_TRAIN_FLOOR), tickets_per_draw=5,
+                )
+
+    if "sensitivity" in st.session_state:
+        report = st.session_state["sensitivity"]
+
+        fig = go.Figure()
+        for detector, group in report.groupby("detector"):
+            group = group.sort_values("strength")
+            fig.add_scatter(x=group["strength"], y=group["detection_rate"], mode="lines+markers",
+                            name=detector)
+        fig.add_hline(y=0.80, line_dash="dash", line_color="gray", annotation_text="80%")
+        fig.add_hline(y=alpha, line_dash="dot", line_color="gray",
+                      annotation_text=f"α = {alpha:g}")
+        fig.update_layout(xaxis_title="Fuerza del sesgo inyectado", yaxis_title="Tasa de detección",
+                          yaxis_tickformat=".0%")
+        chart(fig, "¿Cuánto sesgo hace falta para que cada prueba lo vea?", "sensitivity_chart")
+
+        st.markdown("**Tasas de detección**", help=HELP["sensitivity_table"])
+        st.dataframe(
+            report.rename(columns={
+                "detector": "Detector", "strength": "Fuerza",
+                "favored_share": "% de balotas que se llevaron", "uniform_share": "% si fuera uniforme",
+                "times_detected": "Detectado", "n_seeds": "Semillas",
+                "detection_rate": "Tasa", "median_p_value": "p mediano",
+            }).style.format({
+                "% de balotas que se llevaron": "{:.2%}", "% si fuera uniforme": "{:.2%}",
+                "Tasa": "{:.0%}", "p mediano": "{:.4f}",
+            }),
+            use_container_width=True, hide_index=True,
+        )
+
+        control = report[report["strength"] == 0.0]
+        broken = control[control["detection_rate"] > 4 * alpha]
+        if not broken.empty:
+            st.warning(
+                "Sin sesgo, "
+                + ", ".join(f"`{r.detector}` disparó {r.detection_rate:.0%}" for r in broken.itertuples())
+                + f", muy por encima de α = {alpha:g}. Con pocas semillas esto puede ser ruido, pero "
+                "si se sostiene al subirlas, ese detector marca ventajas que no existen y sus "
+                "resultados positivos no son confiables."
+            )
+        else:
+            st.success(
+                f"Control sano: sin sesgo, ningún detector supera α = {alpha:g} de forma preocupante. "
+                "Las filas con sesgo sí miden sensibilidad."
+            )
+
+        for detector in report["detector"].unique():
+            threshold = sensitivity_threshold(report, detector)
+            if threshold is None:
+                st.error(
+                    f"**{detector}** nunca llegó al 80% de detección en el rango probado. Un resultado "
+                    "nulo suyo no descarta nada más pequeño que el sesgo más fuerte que probaste."
+                )
+            else:
+                st.info(
+                    f"**{detector}** alcanza el 80% de detección con fuerza {threshold['strength']:g}, "
+                    f"donde los 3 números favorecidos se llevan el {threshold['favored_share']:.2%} de "
+                    f"las balotas en vez del {threshold['uniform_share']:.2%} uniforme. Ese es su "
+                    "umbral de sensibilidad: por debajo, no puede ver nada."
+                )

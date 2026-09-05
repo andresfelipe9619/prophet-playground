@@ -2,7 +2,7 @@
 
 `streamlit run dashboard/app.py` — the primary surface of the project.
 
-Eight tabs. The UI text is in **Spanish** (it is the end-user-facing product); this guide and
+Nine tabs. The UI text is in **Spanish** (it is the end-user-facing product); this guide and
 all other documentation are in English.
 
 ## 1. Layout
@@ -17,7 +17,7 @@ flowchart TD
     FMT -->|"filter off"| MIX["Red banner:<br/>two games mixed,<br/>nothing below is interpretable"]
     LOAD --> T
 
-    subgraph T["Eight tabs"]
+    subgraph T["Nine tabs"]
         T0["0 · Resumen"]
         T1["1 · Probabilidades y Valor Esperado"]
         T2["2 · Frecuencia y Gaps"]
@@ -26,6 +26,7 @@ flowchart TD
         T5["5 · Forecast"]
         T6["6 · Jugadas"]
         T7["7 · Backtest vs. Azar"]
+        T8["8 · Potencia y Sensibilidad"]
     end
 ```
 
@@ -203,6 +204,26 @@ In the per-draw table, a row with 3 hits is not a finding: three or more of five
 from 43 comes up about 1% of the time by luck, so one such row across several
 models and a dozen draws is expected. The caption under the chart says so.
 
+### 8 · Potencia y Sensibilidad — what the verdict is worth
+
+Two panels, both answering questions that come *before* any result. Full detail
+in [Power and Sensitivity](power-and-sensitivity.md).
+
+**1. Efecto mínimo detectable.** Sliders for draw count, α and target power;
+returns the smallest edge that much data could see, a power curve, and the table
+of how much history each edge size would need. The backtest tab now prints the
+MDE of the run you just executed beside its verdict, so "no model beat chance"
+arrives with its own resolution attached.
+
+**2. ¿Detectan estas pruebas una ventaja real?** Plants a known bias and reports
+how often each detector fires. The `strength = 0` row is the control and the
+panel refuses to run without it — a detection rate far above α there means the
+detector is broken, and the tab says so in place of the usual verdict.
+
+Note the `hot` and `random` detectors regenerate data *and* tickets per seed, so
+they are slow; the panel warns when the grid gets large. `pooled` alone is
+near-instant and is the one to start with.
+
 ## 3. Explain-on-hover
 
 Every section header, chart, metric and control carries a small ⓘ that explains
@@ -244,8 +265,8 @@ Consequence: moving a slider in tab 6 does not re-fit anything. Only pressing
 
 ## 5. Extending the UI
 
-- Tabs are positional (`tabs[0]` … `tabs[6]`). **Inserting a tab shifts every index
-  after it** — update them all.
+- Tabs are positional (`tabs[0]` … `tabs[8]`). **Inserting a tab shifts every index
+  after it** — update them all. Appending at the end is the safe move.
 - `label_to_pos` is built once near the top and used by several tabs. Streamlit runs
   top to bottom and `with` does not create scope, so ordering matters.
 - Follow the house rule: any surface showing a model output or a heuristic also

@@ -182,13 +182,27 @@ All three land near the 5% floor. That is the expected — and correct — resul
 ### Note on `tickets_per_draw`
 
 For history-dependent strategies (`hot`, `cold`), tickets generated for the same
-draw are correlated with each other, so those rows carry slightly less information
-than the raw ticket count suggests. `random` is unaffected: its match distribution
-does not depend on which numbers were drawn, so tickets stay independent.
+draw are correlated with each other: they all concentrate on the same hot numbers,
+so when those numbers come up the tickets *all* score high together. `random` is
+unaffected — its match distribution does not depend on which numbers were drawn,
+so its tickets stay independent.
+
+> **This is worse than "slightly less information", and it is now measured.**
+> `evaluate_strategy` feeds every ticket to `beats_chance_test` as an independent
+> observation, so the positive within-draw correlation understates the standard
+> error and inflates z. On data with **no bias at all**, `hot` flags a winner
+> 17.5% of the time at 5 tickets per draw, against a nominal α of 5% — while
+> `random` stays at 0%. See
+> [Power and Sensitivity](power-and-sensitivity.md#what-this-found-tickets_per_draw-inflates-the-false-positive-rate).
+>
+> Until it is fixed, read `hot`/`cold` verdicts at `tickets_per_draw = 1`, or take
+> `stability_check`'s measured flag rate — not α — as the floor. The principled
+> fix is a cluster-robust variance: treat each draw as one cluster and estimate
+> the variance from across-draw variation.
 
 ## 6. In the dashboard
 
-The **Jugadas** tab wraps all of this — see [Dashboard](dashboard.md#6-jugadas-generate-check-measure).
+The **Jugadas** tab wraps all of this — see [Dashboard](dashboard.md#6--jugadas--generate-check-measure).
 
 ## 7. Adding a strategy
 
