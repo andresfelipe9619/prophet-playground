@@ -36,12 +36,17 @@ pytest                                  # the invariant suite
 pytest -m "not slow"                    # skip runs that fit real models (~2s)
 ```
 
-There is a pytest suite in `tests/`; there is still no linter or CI. Changes are verified by:
+CI runs on every push to `master` and every pull request ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)): a `static` job that byte-compiles every module and checks the documentation links, and a `tests` job running the full suite on Python 3.11, 3.12 and 3.13. There is still no linter.
+
+CI installs [`requirements-test.txt`](requirements-test.txt), not `requirements.txt` — the suite never imports prophet, streamlit, plotly, matplotlib, seaborn, requests or beautifulsoup4, which are reached only from the dashboard, the scripts, or lazily from inside a function body. Pulling prophet and cmdstanpy into CI would dominate the job to exercise code no test touches. **If a new test needs one of them, add it to both files** — it will fail loudly with an ImportError rather than skipping quietly.
+
+Changes are verified by:
 
 1. `pytest`. The suite is deterministic (everything is built from the seeded generator in `lottery/utils/sample_data.py`) and pins the invariants listed below rather than chasing coverage — those are what a refactor breaks silently. Add to it when you add an invariant. `python -m py_compile <files>` still helps for files the suite does not import.
 2. Running the affected module against synthetic data from `lottery.utils.sample_data.load_sample_and_preprocess()`, which returns the same `(df, balls_expanded)` shape as the real loader — no private CSVs needed.
 3. `python -m lottery.utils.check_docs` after any documentation change — it reimplements github-slugger exactly, because headings here use `·` and `—` and GitHub removes those without collapsing the spaces they leave (`### 6 · Jugadas — generate` anchors as `6--jugadas--generate`, doubled hyphens). A checker that normalises hyphen runs passes links that 404 in the browser.
-4. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium is under `/opt/pw-browsers/`, at a versioned path such as `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
+4. The `static` CI job byte-compiles `dashboard/app.py` and everything under `scripts/`, which pytest never imports — a syntax error there passes the whole suite and is caught only here.
+5. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium is under `/opt/pw-browsers/`, at a versioned path such as `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
 
 `lottery/backtest.py` with `--include-prophet` refits Prophet per position per window and is far slower than the other models; it is off by default for that reason.
 
@@ -128,4 +133,4 @@ Keep these in sync when behaviour changes:
 | [`docs/power-and-sensitivity.md`](docs/power-and-sensitivity.md) | Minimum detectable effect, planted-bias detection rates |
 | [`docs/football.md`](docs/football.md) | The second domain: the market baseline, the odds contract, synthetic seasons |
 | [`docs/dashboard.md`](docs/dashboard.md) | The ten tabs and how to read them |
-| [`docs/development.md`](docs/development.md) | Setup, the test suite, verification workflow, conventions, gotchas |
+| [`docs/development.md`](docs/development.md) | Setup, the test suite, CI, verification workflow, conventions, gotchas |

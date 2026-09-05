@@ -1,5 +1,7 @@
 # Baloto Analytics
 
+[![Tests](https://github.com/andresfelipe9619/prophet-playground/actions/workflows/tests.yml/badge.svg)](https://github.com/andresfelipe9619/prophet-playground/actions/workflows/tests.yml)
+
 Analysis, forecasting and expected-value tooling for the Colombian **Baloto**
 lottery — 5 balls from 1–43 plus a superbalota from 1–16, drawn Monday, Wednesday
 and Saturday.

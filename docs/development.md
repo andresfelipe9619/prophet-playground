@@ -50,8 +50,9 @@ The three model scripts additionally expect
 
 ## 3. Verification
 
-**There is a test suite; there is still no linter or CI.** Work is verified in
-four ways.
+**There is a test suite and CI; there is still no linter.** Work is verified in
+four ways locally, and CI re-runs the first and the fourth on every push to
+`master` and every pull request.
 
 ```mermaid
 flowchart TD
@@ -122,6 +123,11 @@ A syntax-only check is still occasionally useful on files the suite does not imp
 python -m py_compile $(find core lottery football scripts dashboard tests -name '*.py')
 ```
 
+This is not redundant with the suite: pytest imports `core/`, `lottery/` and
+`football/`, but never `dashboard/app.py` or the entry points under `scripts/`.
+A syntax error in either passes all 357 tests. The `static` CI job runs exactly
+this command for that reason.
+
 ### 3.2 Behaviour, against synthetic data
 
 `lottery.utils.sample_data.load_sample_and_preprocess()` returns the same
@@ -176,6 +182,49 @@ those characters *without* collapsing the spaces they leave, and so
 `6--jugadas--generate-check-measure` with doubled hyphens. A checker that
 normalises runs of hyphens reports success on links that 404 in the browser —
 which is how one broken cross-reference survived several review passes here.
+
+### 3.5 Continuous integration
+
+[`.github/workflows/tests.yml`](../.github/workflows/tests.yml) runs on every
+push to `master` and every pull request. A push to a branch with an open PR
+arrives as `pull_request: synchronize`, so listing both triggers does not
+double-run the suite on feature branches.
+
+Two jobs:
+
+| Job | What it does | Needs installing |
+| --- | --- | --- |
+| `static` | Byte-compiles every module; verifies documentation links | Nothing — both are pure standard library, so it reports in about a second |
+| `tests` | The full suite, `slow` markers included, on Python 3.11 / 3.12 / 3.13 | `requirements-test.txt` |
+
+#### Why CI installs a different requirements file
+
+[`requirements-test.txt`](../requirements-test.txt) is deliberately smaller than
+`requirements.txt`. The suite never imports prophet, streamlit, plotly,
+matplotlib, seaborn, requests or beautifulsoup4 — those are reached only from
+the dashboard, from `scripts/`, or lazily from inside a function body
+(`lottery/models/prophet_model.py` is imported on demand by
+`lottery/backtest.py`, which is also why it is named that rather than
+`Prophet.py`). Installing prophet and cmdstanpy in CI would dominate the job's
+runtime to exercise code no test touches.
+
+**If a future test needs one of them, add it to both files.** It fails loudly
+with an `ImportError` rather than skipping quietly, which is the intended
+behaviour — a silently skipped test is worse than a red build.
+
+#### The version matrix
+
+3.11 is the developed-on version. 3.12 and 3.13 were each run green against the
+full suite before being added to the matrix, rather than assumed to work.
+`fail-fast: false` so one version failing still reports the others.
+
+#### What CI does not do
+
+No linter, no coverage gate, no deployment. The dashboard is run locally
+(§3.3), and the Playwright check is **not** in CI — it needs a browser and a
+running Streamlit server, and the value it adds is a human looking at the
+result. Treat it as a pre-merge step for dashboard changes, not something the
+build will catch for you.
 
 ## 4. Conventions
 

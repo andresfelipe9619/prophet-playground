@@ -40,6 +40,7 @@ until you have read it, and the football half only makes sense against it.
 | How do I generate and check tickets? | [Tickets](tickets.md) |
 | My strategy beat chance once — is it real? | [Tickets §5](tickets.md#5-measuring-the-accuracy-system) |
 | What does the test suite actually pin? | [Development §3.1](development.md#31-the-test-suite) |
+| What runs in CI, and why not the full requirements? | [Development §3.5](development.md#35-continuous-integration) |
 | What broke before, so I don't repeat it? | [Evaluation §8](evaluation.md#8-known-failure-modes-we-have-already-hit) |
 | What does a football model have to beat? | [Football §2](football.md#2-the-baseline-is-the-closing-line) |
 | Why are odds not probabilities? | [Football: odds are not probabilities](football.md#odds-are-not-probabilities) |
