@@ -86,7 +86,7 @@ pytest -m "not slow"        # skip the runs that fit real models (~2s)
 
 Every test builds its data from a seeded generator — `lottery/utils/sample_data.py`
 for uniform draws, `lottery/analysis/sensitivity.py:biased_draws` where a planted
-bias is needed, `football/sample_data.py` for match results with a known truth, `cycling/sample_data.py` for stage races with a known rider strength — so the suite is deterministic and needs no private CSV. Tests
+bias is needed, `football/sample_data.py` for match results with a known truth, `cycling/sample_data.py` for stage races with a known rider strength — so the suite is deterministic and needs no private CSV. The one exception is `tests/test_dashboard_help.py`, which reads the dashboard's *source* with `ast` rather than importing it: the dashboard needs streamlit and plotly, which are deliberately absent from `requirements-test.txt`, and reading the source is also the only way to check `dashboard/app.py` at all. Tests
 that fit real models, or that repeat an experiment across many seeds, are marked
 `slow`.
 
@@ -122,6 +122,8 @@ docs — the ones a refactor breaks silently and no reader would notice:
 | An unknown rank marker raises | Defaulting to "not ranked" is how a changed page quietly loses riders |
 | A results table is found by its headers | A CSS selector that misses returns zero rows instead of failing |
 | An HTML error page is never written as a CSV | `pd.read_csv` turns one into a plausible one-column frame |
+| Every HELP key a dashboard page asks for exists | A missing one is a KeyError raised from inside a tab nobody opened for months |
+| No page calls `st.plotly_chart` directly | `ui.chart()` requires a HELP key; a bare call is a chart with no explanation |
 
 A syntax-only check is still occasionally useful on files the suite does not import:
 
@@ -176,6 +178,11 @@ Then drive it with Playwright (Chromium is under `/opt/pw-browsers/`; check the 
 versioned path, e.g. `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`), check
 each tab's text for `Traceback` and "This app has encountered an error", and click
 through the Forecast and Backtest buttons — those code paths only execute on click.
+
+**Drive all three domains, not just the one you changed.** The sidebar selector
+decides which page module is even imported, so an error in `cycling_page.py` is
+invisible from the Baloto page. The radio's `<input>` is covered by its label, so
+click the label: `page.locator('label:has-text("Ciclismo")').first.click()`.
 
 
 ### 3.4 Documentation changes

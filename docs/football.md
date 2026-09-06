@@ -219,7 +219,18 @@ the home-win rate lands near 45%. The parser raises on a broken date and warns
 on a soft or incomplete market, so a file that produces neither is probably
 fine — but a first look costs a minute and this code has never seen reality.
 
-## 6. What is not built yet
+## 6. The dashboard page
+
+`streamlit run dashboard/app.py`, then pick **⚽ Fútbol** in the sidebar. Three
+tabs — **Datos**, **Mercado**, **Resultados** — and the limit is stated on all of
+them: there is no model here and no scoring rule, so **nothing on that page
+compares a forecast against the market**. It shows which odds source a file
+resolved to, how big the margin is, that the market is calibrated, and how the
+three de-margining methods differ on one match. Selecting season files that resolve
+to different odds sources renders the refusal instead of merging them. Details in
+[Dashboard §3](dashboard.md#3-fútbol-the-data-contract-and-the-market).
+
+## 7. What is not built yet
 
 This is the data layer only. Still to come, in order:
 
@@ -231,7 +242,9 @@ This is the data layer only. Still to come, in order:
    score) falls out of one fitted model.
 4. **Evaluation** through `core/`, comparing every model against the market
    with the corrected verdict, exactly as the lottery backtest does.
-5. **Dashboard tabs.**
+5. **The evaluation tabs**, once there is something to evaluate. The page exists;
+   what it lacks is a model column, and it will not get one before there is a
+   scoring rule behind it.
 
 ---
 

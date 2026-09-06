@@ -2,10 +2,45 @@
 
 `streamlit run dashboard/app.py` — the primary surface of the project.
 
-Ten tabs. The UI text is in **Spanish** (it is the end-user-facing product); this guide and
-all other documentation are in English.
+**One app, three domains, chosen from the sidebar.** The UI text is in **Spanish**
+(it is the end-user-facing product); this guide and all other documentation are in
+English.
 
-## 1. Layout
+## 0. The three domains
+
+The sidebar's first control picks the domain, and each page then adds its own data
+controls below it. The three are **not equally built**, and the selector says so —
+the caption under each option names what exists there today:
+
+| Domain | Page | What is there | What is not |
+| --- | --- | --- | --- |
+| 🎯 Baloto | `dashboard/baloto_page.py` | Ten tabs: models, the chance baseline, backtest, tickets, power, registry | — |
+| ⚽ Fútbol | `dashboard/football_page.py` | Three tabs: the data contract, the market baseline, descriptive results | No model, no scoring rule — so **nothing is scored** |
+| 🚴 Ciclismo | `dashboard/cycling_page.py` | Three tabs: the result contract, attrition, gaps | No baseline, no model |
+
+Listing them as peers would imply three finished products. Baloto can answer "did
+this beat chance?"; the other two can only show you their data and their baseline,
+and both pages say that in their first line rather than leaving it to be inferred
+from an absence.
+
+The shell (`dashboard/app.py`) owns the page config, the selector and the dispatch,
+and **imports each page lazily** — Baloto's pulls in statsforecast and xgboost, and
+there is no reason to pay for that while looking at cycling results.
+
+```
+dashboard/
+  app.py            # the shell: page config, domain selector, dispatch
+  ui.py             # the single HELP dict + section() / chart() / verdict_badge()
+  baloto_page.py    # render(): the ten Baloto tabs
+  football_page.py  # render(): Datos · Mercado · Resultados
+  cycling_page.py   # render(): Datos · Abandonos · Tiempos
+```
+
+The `_page` suffix is not decoration. Streamlit puts the script's own directory on
+`sys.path`, so a `dashboard/football.py` would shadow the `football/` package it
+imports — the same trap `lottery/models/prophet_model.py` is named around.
+
+## 1. Baloto: layout
 
 ```mermaid
 flowchart TD
@@ -41,7 +76,7 @@ many were dropped and from when. Turning it off on a mixed file swaps that banne
 for a red one: every tab below is then computed over two different games, and the
 warning says so rather than letting the numbers look ordinary.
 
-## 2. Tab guide
+## 2. Baloto tab guide
 
 ### 0 · Resumen — start here
 
@@ -242,12 +277,55 @@ Every scored table carries `min_detectable_effect` beside the p-value, because a
 young registry cannot say much and should say so. Full detail in
 [The Prediction Registry](registry.md).
 
-## 3. Explain-on-hover
+## 3. Fútbol: the data contract and the market
+
+Three tabs, and the honest limit stated on all of them: **there is no football model
+in this repository, and no scoring rule for a three-way outcome, so nothing here
+compares a forecast against the market.**
+
+| Tab | Shows | The point |
+| --- | --- | --- |
+| **Datos** | Match count, date span, resolved odds source, closing-or-opening, price coverage, first rows | Which odds source a file resolved to is the thing that decides whether it can serve as a baseline at all. It is invisible in the frame, so it is a metric here. |
+| **Mercado** | Overround distribution, the calibration curve for home wins, the three de-margining methods side by side on one match | The margin has to come off before prices mean anything, and how it comes off is a modelling choice. If a conclusion flips between methods, it is about the margin model. |
+| **Resultados** | Outcome shares, goals per side, observed rates against the market's mean probabilities | Descriptive. The last chart carries its own disclaimer: two matching bars are not a result — the market gets the aggregate right effortlessly, and the question that matters is match by match. |
+
+Loading is where the domain's guard shows up in the UI. The sidebar lists the season
+files in `exported_data/football/` and lets you select several; selecting two that
+resolve to **different odds sources** does not silently merge them — `load_seasons`
+raises, and the page renders the refusal with a Spanish explanation and the original
+message as technical detail. That is the
+[opening/closing trap](football.md#the-trap-never-mix-opening-and-closing-odds) made
+visible at the moment someone would otherwise walk into it.
+
+With no files present the page falls back to a synthetic season and says so, exactly
+as the Baloto page does.
+
+## 4. Ciclismo: the result contract
+
+Three tabs, and the same limit, one step earlier: **no models, and not even the
+ranking baseline a model would have to beat.** What this page is for is the part
+that costs most when it goes unnoticed — the three invariants the contract protects
+are all invisible in the shape of a frame, so they are put on screen.
+
+| Tab | Shows | The point |
+| --- | --- | --- |
+| **Datos** | Rows, result kind, races, riders, non-finishers, rows with no time, **time-order violations** | The kind is a metric because a file holds exactly one; the violation count is a metric because a column of gaps stored as totals looks completely normal otherwise. |
+| **Abandonos** | Counts per status, the peloton shrinking stage by stage, abandons per stage | Abandons are kept, not dropped, and the caption says why: they concentrate among the riders in worst form, so filtering them makes every accuracy figure optimistic. |
+| **Tiempos** | Seconds behind the leader by placing, the leader's own time, how many share it | A flat opening stretch is a bunch finish; a step is where the race split. **If the curve ever goes down, the times are wrong** — which is what the violation metric counts. |
+
+Selecting a stage-results file and a general-classification file together is refused
+the same way football's mixed sources are, for the same reason: one `rank` column
+cannot mean a day's placing and a three-week standing at once.
+
+The "hide non-finishers" checkbox filters the table **after** the checks have run, so
+the "not one abandon in the whole file" warning still fires on the file as published
+rather than on the filtered view.
+
+## 5. Explain-on-hover
 
 Every section header, chart, metric and control carries a small ⓘ that explains
-what you are looking at on hover. The copy lives in one place — the `HELP` dict at
-the top of `dashboard/app.py` — rather than inline at each call site, and two
-helpers consume it:
+what you are looking at on hover. The copy lives in one place — the one `HELP` dict in
+`dashboard/ui.py` — rather than inline at each call site, and two helpers consume it:
 
 ```python
 section("Sorteo por sorteo", "holdout_detail")   # st.subheader + its ⓘ
@@ -260,19 +338,25 @@ same typography and the same affordance this way. Note that clearing the figure
 title needs `title={"text": ""}` — passing `title=None` leaves Plotly rendering the
 literal string `undefined` above the plot.
 
+Splitting the pages into modules was exactly the moment this rule was easiest to
+lose, which is why the dict did not move into the pages: three files with their own
+inline strings cannot be reviewed as a whole. Keys are prefixed `fb_` and `cy_` for
+the two newer domains.
+
 Keeping the texts together is what makes them reviewable as a set. The house rule
 is that no chart or table appears without saying what it does *not* mean, and that
 is only checkable when the copy sits in one block. When adding a surface, add its
 key to `HELP` and route it through `section()` or `chart()`; a plain
 `st.plotly_chart` call is the signal that one was missed.
 
-## 4. Performance notes
+## 6. Performance notes
 
 Streamlit re-executes every tab on every interaction. The design keeps that cheap:
 
 | Work | Strategy |
 | --- | --- |
-| Loading and preprocessing | `@st.cache_data` on `load_data`, which also derives `position_series` so the frames are never re-hashed as arguments |
+| Loading and preprocessing | `@st.cache_data` on each page's loader (`load_data`, `load_matches`, `load_results`); Baloto's also derives `position_series` so the frames are never re-hashed as arguments |
+| Importing a domain's stack | The shell imports the chosen page only, so cycling never pays for statsforecast |
 | Six randomness reports | `@st.cache_data` on `randomness_reports` |
 | Gap table, pooled tests | `@st.cache_data` |
 | ACF for the selected position | Reused from the cached report, not recomputed |
@@ -281,10 +365,13 @@ Streamlit re-executes every tab on every interaction. The design keeps that chea
 Consequence: moving a slider in tab 6 does not re-fit anything. Only pressing
 **Ejecutar backtest** does.
 
-## 5. Extending the UI
+## 7. Extending the UI
 
-- Tabs are positional (`tabs[0]` … `tabs[9]`). **Inserting a tab shifts every index
-  after it** — update them all. Appending at the end is the safe move.
+- Tabs are positional (`tabs[0]` … `tabs[9]` on the Baloto page). **Inserting a tab
+  shifts every index after it** — update them all. Appending at the end is the safe move.
+- A new domain is a new `<name>_page.py` exporting `render()`, plus one entry in
+  `DOMAINS` in `app.py` naming what exists there. Keep the `_page` suffix so the
+  module cannot shadow the domain package it imports.
 - `label_to_pos` is built once near the top and used by several tabs. Streamlit runs
   top to bottom and `with` does not create scope, so ordering matters.
 - Follow the house rule: any surface showing a model output or a heuristic also

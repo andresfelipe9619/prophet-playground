@@ -21,7 +21,7 @@ make sense against it.
 | 9 | **[Registry](registry.md)** | Pre-registration: predictions written down before the draw, which is the one thing retrospective analysis can never be. |
 | 10 | **[Football](football.md)** | The second domain. The premise inverted, the closing line as the baseline, the odds contract and its opening/closing trap, synthetic seasons with a known answer. |
 | 11 | **[Cycling](cycling.md)** | The third domain. An ordering rather than an outcome, the ranking baseline, the result contract and its three traps, the scraper. |
-| 12 | **[Dashboard](dashboard.md)** | Guide to each of the ten tabs and how to read them. |
+| 12 | **[Dashboard](dashboard.md)** | One app, three domains: the sidebar selector, Baloto's ten tabs, and the data-only pages for football and cycling. |
 | 13 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
 
 ## Quick answers
@@ -51,6 +51,8 @@ make sense against it.
 | How do I scrape cycling results? | [Cycling §4](cycling.md#4-the-scraper) |
 | Why can't I mix stage results and a GC? | [Cycling §3](cycling.md#one-kind-of-result-per-frame) |
 | Why are the abandons still in my frame? | [Cycling §3](cycling.md#non-finishers-stay-in-the-frame) |
+| How do I switch the dashboard to football or cycling? | [Dashboard §0](dashboard.md#0-the-three-domains) |
+| Why does the football page not score anything? | [Dashboard §3](dashboard.md#3-fútbol-the-data-contract-and-the-market) |
 
 ## Conventions
 

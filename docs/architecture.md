@@ -19,7 +19,7 @@ plug in at exactly that seam.
 ```mermaid
 flowchart TD
     subgraph L4["Presentation"]
-        DASH["dashboard/app.py<br/><i>Streamlit UI, 7 tabs</i>"]
+        DASH["dashboard/app.py<br/><i>Streamlit shell: one app, three domains</i>"]
         CLI["scripts/*.py · lottery/backtest.py<br/><i>CLI entry points</i>"]
     end
     subgraph L3["Analysis and evaluation"]
@@ -297,7 +297,12 @@ makes it true by construction regardless.
 │   └── summary_charts.py         Legacy: original static matplotlib charts
 │
 ├── tests/                        pytest suite — the Baloto invariants
-└── dashboard/app.py              Streamlit UI — the primary surface
+└── dashboard/                    Streamlit UI — the primary surface
+    ├── app.py                    Shell: page config, domain selector, lazy dispatch
+    ├── ui.py                     ★ The single HELP dict + section() / chart()
+    ├── baloto_page.py            The ten Baloto tabs
+    ├── football_page.py          Data contract + market baseline (scores nothing)
+    └── cycling_page.py           Result contract, attrition, gaps
 ```
 
 `contants.py` was misspelled; the move to `lottery/` corrected it to

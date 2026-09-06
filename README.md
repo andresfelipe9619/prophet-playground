@@ -52,7 +52,7 @@ pip install -r requirements.txt
 streamlit run dashboard/app.py
 ```
 
-No data required — the dashboard falls back to synthetic draws and says so on
+No data required — every domain page falls back to synthetic data and says so on
 screen. To use real results:
 
 ```bash
@@ -86,7 +86,19 @@ print(compare_strategies(df, balls))                   # random vs hot vs cold, 
 
 ## The dashboard
 
-Ten tabs, Spanish UI. Full guide in **[docs/dashboard.md](docs/dashboard.md)**.
+One app, three domains, picked from the sidebar. Spanish UI. Full guide in
+**[docs/dashboard.md](docs/dashboard.md)**.
+
+| Domain | What is there |
+| --- | --- |
+| 🎯 **Baloto** | The ten tabs below: models, chance baseline, backtest, tickets, registry |
+| ⚽ **Fútbol** | Data contract and market baseline only — no model, and **nothing is scored** |
+| 🚴 **Ciclismo** | Data contract only — no baseline, no model |
+
+The selector says which is which, because listing them as peers would imply three
+finished products.
+
+### Baloto's tabs
 
 | Tab | Purpose |
 | --- | --- |
@@ -170,7 +182,12 @@ lottery/
     sample_data.py         Synthetic i.i.d. draws
 scripts/                   CLI entry points (python -m scripts.<name>)
 tests/                     pytest suite pinning the invariants
-dashboard/app.py           Streamlit UI
+dashboard/
+  app.py                   Shell: page config, domain selector, dispatch
+  ui.py                    ★ The single HELP dict + section() / chart()
+  baloto_page.py           The ten Baloto tabs
+  football_page.py         Datos · Mercado · Resultados
+  cycling_page.py          Datos · Abandonos · Tiempos
 docs/                      Full documentation
 ```
 

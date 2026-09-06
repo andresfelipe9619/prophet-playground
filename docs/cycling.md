@@ -5,7 +5,7 @@ The third domain. Read [Domain and Premise](domain-and-premise.md) and
 both, and the differences are in the shape of the target, not in the discipline.
 
 Currently a **data layer only**: the contract, the scraper, and seeded
-synthetic races. No models and no scoring rules yet — see [§6](#6-what-is-not-built-yet).
+synthetic races. No models and no scoring rules yet — see [§7](#7-what-is-not-built-yet).
 
 ## 1. Where it sits between the other two
 
@@ -195,7 +195,18 @@ between riders.
 
 `ability_true` is an answer key. Nothing outside tests may read it.
 
-## 6. What is not built yet
+## 6. The dashboard page
+
+`streamlit run dashboard/app.py`, then pick **🚴 Ciclismo** in the sidebar. Three
+tabs — **Datos**, **Abandonos**, **Tiempos** — and no predictions of any kind,
+because there is neither a baseline nor a model. What it does is put the three
+invariants above on screen, since none of them is visible in the shape of a frame:
+which kind of result is loaded, how many riders abandoned, and how many are timed
+faster than someone placed ahead of them. Loading a stage result together with a
+general classification renders the refusal. Details in
+[Dashboard §4](dashboard.md#4-ciclismo-the-result-contract).
+
+## 7. What is not built yet
 
 In order:
 
@@ -209,7 +220,8 @@ In order:
    results), which is the natural first model for an ordering.
 4. **Evaluation** through `core/`, with the corrected verdict, exactly as the
    lottery backtest and football's market comparison do.
-5. **Dashboard tabs.**
+5. **The evaluation tabs**, once there is something to evaluate. The page exists
+   and deliberately predicts nothing.
 
 ---
 
