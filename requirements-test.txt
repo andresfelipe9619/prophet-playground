@@ -1,11 +1,17 @@
 # What the test suite alone needs.
 #
 # Deliberately smaller than requirements.txt. The suite never imports prophet,
-# streamlit, plotly, matplotlib, seaborn, requests or beautifulsoup4: those are
-# reached only from the dashboard, the scripts, or lazily from inside a
-# function body (see lottery/models/prophet_model.py, imported on demand by
-# lottery/backtest.py). Installing prophet + cmdstanpy in CI would dominate the
+# streamlit, plotly, matplotlib, seaborn or requests: those are reached only
+# from the dashboard, the scripts, or lazily from inside a function body (see
+# lottery/models/prophet_model.py, imported on demand by lottery/backtest.py,
+# and the fetch functions in football/downloader.py and cycling/scraper.py,
+# which import requests where they use it so their parsers stay testable
+# without the network). Installing prophet + cmdstanpy in CI would dominate the
 # job's runtime to exercise code no test touches.
+#
+# beautifulsoup4 *is* here: cycling/scraper.py parses HTML at module scope and
+# tests/test_cycling_scraper.py runs that parser against saved-style fixtures,
+# which is the only verification available for a site the sandbox cannot reach.
 #
 # If a future test does need one of them, it fails loudly with an ImportError
 # rather than skipping quietly — add it here and to requirements.txt.
@@ -16,4 +22,5 @@ statsmodels>=0.14.1
 statsforecast>=2.0
 xgboost>=2.0.3
 scikit-learn>=1.4.1.post1
+beautifulsoup4~=4.11.2
 pytest>=8.0

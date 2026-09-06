@@ -65,7 +65,8 @@ the margin model, not about the model.**
 ## 3. The data contract
 
 `football/processor.py` owns it. Source: [football-data.co.uk](https://www.football-data.co.uk/),
-one CSV per league per season, in `exported_data/football/`.
+one CSV per league per season, in `exported_data/football/`, fetched by
+`football/downloader.py` ([§5](#5-getting-real-data)).
 
 Required columns, stable across every season: `Date`, `HomeTeam`, `AwayTeam`,
 `FTHG`, `FTAG`. Everything else drifts as bookmakers come and go.
@@ -153,16 +154,57 @@ results when the question is about score dependence itself.
 
 ## 5. Getting real data
 
-Nothing in this repository can download it: the sandbox this was built in
-blocks football-data.co.uk at the network policy, so **the parser has never
-been run against a real file here**. It is written against the documented
-format and covered by tests built from that format, which is not the same
-thing as being validated against reality.
-
-Before trusting it on a real season, eyeball one file:
+`football/downloader.py` fetches the season files. football-data publishes CSV
+directly, so this downloads rather than scrapes — hence `downloader`, not
+`scraper` — but it keeps the [lottery scraper's posture](data-pipeline.md#31-design-principle-fail-loudly):
+fail loudly.
 
 ```bash
-# https://www.football-data.co.uk/mmz4281/2324/E0.csv  -> exported_data/football/E0_2324.csv
+# Always look first.
+python -m football.downloader --seasons 2019/20..2024/25 --leagues E0 --dry-run
+
+python -m football.downloader --seasons 2019/20..2024/25 --leagues E0
+python -m football.downloader --seasons 2324 --leagues E0,SP1,I1,D1,F1
+python -m football.downloader --seasons 2015-2024 --leagues E0 --closing-odds-only
+```
+
+Seasons are written as `2324`, `2023/24`, `2023-24` or `2023`; ranges use `..`,
+or `-` between two four-digit years (both bounds are season *start* years).
+Files land in `exported_data/football/E0_2324.csv`.
+
+Four decisions in it are worth knowing:
+
+- **The file is written exactly as downloaded** — no column pruning, no
+  renaming. `processor.py` owns the contract, and a downloader that pre-selected
+  columns would become a second, weaker owner of it.
+- **It is validated at download time anyway.** Every file goes through
+  `preprocess_matches` before it is written, and the resolved odds source is
+  printed per file. A format change is cheapest to notice now, and the summary
+  says up front when two seasons resolve to different sources — those cannot
+  later be loaded together, and finding that out mid-evaluation is worse.
+- **An HTML error page never reaches disk under a `.csv` name.** A wrong path
+  can come back as HTML with a 200, and `pd.read_csv` will happily turn that
+  into a one-column frame. The response is sniffed before it is parsed.
+- **A longer file is never replaced by a shorter one** without `--force`. An
+  in-progress season legitimately grows on every re-download; coming back
+  smaller is a truncated transfer.
+
+The "extra league" files for the rest of the world (`new/ARG.csv` and friends)
+use a **different contract** — `Home`/`Away`/`HG`/`AG`, several leagues stacked
+in one file — and nothing in `football/` reads them, so the downloader refuses
+those codes by name rather than fetching something the processor would reject.
+
+### The limit of this verification
+
+The sandbox this was built in blocks football-data.co.uk at the network policy,
+so **neither the parser nor the downloader has ever run against a real file
+here.** Both are written against the documented format and covered by tests
+built from that format, which is not the same thing as being validated against
+reality.
+
+So after the first real download, eyeball one file:
+
+```bash
 python -c "
 from football.processor import load_and_preprocess
 from football.market import market_probabilities
@@ -177,7 +219,18 @@ the home-win rate lands near 45%. The parser raises on a broken date and warns
 on a soft or incomplete market, so a file that produces neither is probably
 fine — but a first look costs a minute and this code has never seen reality.
 
-## 6. What is not built yet
+## 6. The dashboard page
+
+`streamlit run dashboard/app.py`, then pick **⚽ Fútbol** in the sidebar. Three
+tabs — **Datos**, **Mercado**, **Resultados** — and the limit is stated on all of
+them: there is no model here and no scoring rule, so **nothing on that page
+compares a forecast against the market**. It shows which odds source a file
+resolved to, how big the margin is, that the market is calibrated, and how the
+three de-margining methods differ on one match. Selecting season files that resolve
+to different odds sources renders the refusal instead of merging them. Details in
+[Dashboard §3](dashboard.md#3-fútbol-the-data-contract-and-the-market).
+
+## 7. What is not built yet
 
 This is the data layer only. Still to come, in order:
 
@@ -189,8 +242,10 @@ This is the data layer only. Still to come, in order:
    score) falls out of one fitted model.
 4. **Evaluation** through `core/`, comparing every model against the market
    with the corrected verdict, exactly as the lottery backtest does.
-5. **Dashboard tabs.**
+5. **The evaluation tabs**, once there is something to evaluate. The page exists;
+   what it lacks is a model column, and it will not get one before there is a
+   scoring rule behind it.
 
 ---
 
-**Next:** [Architecture](architecture.md) · [Evaluation](evaluation.md) · [Development](development.md)
+**Next:** [Cycling](cycling.md) · [Architecture](architecture.md) · [Evaluation](evaluation.md) · [Development](development.md)
