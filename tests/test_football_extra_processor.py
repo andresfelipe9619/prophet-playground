@@ -22,7 +22,9 @@ FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "new_COL_sample.cs
 
 
 def test_maps_extra_columns_onto_the_tidy_shape():
-    matches = load_extra(FIXTURE, league="Colombia Primera A")
+    # The opening-odds warning is load-bearing (the baseline is soft) — pin it.
+    with pytest.warns(UserWarning, match="opening"):
+        matches = load_extra(FIXTURE, league="Colombia Primera A")
     assert list(matches.columns[:6]) == ["ds", "home_team", "away_team",
                                          "home_goals", "away_goals", "outcome"]
     assert (matches["home_team"].iloc[0], matches["away_team"].iloc[0]) == ("Millonarios", "Nacional")
@@ -31,7 +33,8 @@ def test_maps_extra_columns_onto_the_tidy_shape():
 
 
 def test_odds_source_is_opening_and_never_closing():
-    matches = load_extra(FIXTURE, league="Colombia Primera A")
+    with pytest.warns(UserWarning, match="opening"):
+        matches = load_extra(FIXTURE, league="Colombia Primera A")
     assert matches.attrs["odds_source"].endswith("_opening")
     assert matches.attrs["odds_source"] not in CLOSING_SOURCES
     assert matches.attrs["odds_are_closing"] is False

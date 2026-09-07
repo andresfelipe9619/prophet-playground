@@ -43,6 +43,24 @@ def test_strictly_better_model_beats_the_market():
     assert result["beats_market_corrected"] is True
 
 
+def test_a_model_worse_than_the_market_does_not_beat_it():
+    # One-sidedness is the invariant: a model strictly worse on every match must
+    # land p_value_greater near 1.0, not a small two-sided p-value read as a win.
+    rng = np.random.default_rng(7)
+    n = 400
+    outcomes = _outcomes(rng, n)
+    truth = np.zeros((n, 3))
+    truth[np.arange(n), [{"H": 0, "D": 1, "A": 2}[o] for o in outcomes]] = 1.0
+    uniform = np.full((n, 3), 1 / 3)
+    model = 0.30 * truth + 0.70 * uniform
+    market = 0.60 * truth + 0.40 * uniform
+    result = beats_market_test(model, market, outcomes, metric="rps")
+    assert result["skill_score"] < 0
+    assert result["p_value_greater"] > 0.99
+    assert result["beats_market"] is False
+    assert result["beats_market_corrected"] is False
+
+
 def test_both_verdict_keys_always_present_even_on_empty_input():
     result = beats_market_test(np.empty((0, 3)), np.empty((0, 3)), [])
     assert "beats_market" in result and "beats_market_corrected" in result

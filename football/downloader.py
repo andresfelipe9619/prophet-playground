@@ -363,14 +363,17 @@ def _write_unless_shorter(path, text, count_rows, force=False, dry_run=False):
     file with half of one is unrecoverable once the original is gone. `--force`
     exists for the case where the site really did drop rows.
 
-    `count_rows(text) -> int` turns file text into a comparable row count. It
-    differs by contract — a season file is parsed through `read_season_csv`, an
-    extra file through a plain `pd.read_csv` — so the caller supplies it.
+    `count_rows(text, label) -> int` turns file text into a comparable row
+    count. It differs by contract — a season file is parsed through
+    `read_season_csv`, an extra file through a plain `pd.read_csv` — so the
+    caller supplies it. `label` is threaded through so a parse error names the
+    right file: the incoming download versus the existing one already on disk.
     """
-    incoming = count_rows(text)
+    incoming = count_rows(text, f"{os.path.basename(path)} (download)")
 
     if os.path.exists(path) and not force:
-        existing = count_rows(open(path, encoding="utf-8", errors="replace").read())
+        existing = count_rows(open(path, encoding="utf-8", errors="replace").read(),
+                              f"{os.path.basename(path)} (on disk)")
         if incoming < existing:
             raise DownloadError(
                 f"{path} already holds {existing} rows and the download has {incoming}. "
@@ -389,7 +392,7 @@ def write_season(text, path, force=False):
     """Write a downloaded season file, refusing to shrink an existing one."""
     return _write_unless_shorter(
         path, text,
-        lambda t: len(read_season_csv(t, label=os.path.basename(path))),
+        lambda t, label: len(read_season_csv(t, label=label)),
         force=force,
     )
 
@@ -484,9 +487,12 @@ def download_extra(codes, out_dir=DEFAULT_DATA_DIR, dry_run=False, force=False, 
     These are the "extra" leagues (COL, ARG, ...): one file per country, many
     competitions and seasons stacked inside, a different column set. The file is
     written verbatim to `out_dir/{code}.csv` — `football/extra_processor.py`
-    owns the contract — but it is routed through `preprocess_extra` first with
-    `league=None` so a broken contract fails here rather than mid-analysis. The
-    multi-league frame is only *checked*, never filtered, at download time.
+    owns the contract — but it is routed through `preprocess_extra` first so a
+    broken contract (wrong columns, unparseable dates) fails here rather than
+    mid-analysis. Every real extra file is multi-league, and `preprocess_extra`
+    refuses a multi-league frame with `league=None`, so the check is run against
+    one league (the first alphabetically); the file is still written whole and
+    `load_extra` picks the league at read time.
     """
     from football.extra_processor import preprocess_extra  # lazy, like fetch_csv
 
@@ -517,13 +523,18 @@ def download_extra(codes, out_dir=DEFAULT_DATA_DIR, dry_run=False, force=False, 
             )
 
         frame = pd.read_csv(io.StringIO(text))
-        checked = preprocess_extra(frame, league=None, validate=True)  # raises on a broken contract
-        leagues = sorted(frame["League"].dropna().unique().tolist()) if "League" in frame else []
+        leagues = (sorted(frame["League"].dropna().unique().tolist())
+                   if "League" in frame.columns else [])
+        # Validate ONE league, not the whole file: every real extra file stacks
+        # several leagues and preprocess_extra refuses that with league=None.
+        # The point here is to catch a broken contract, not to filter.
+        checked = preprocess_extra(
+            frame, league=(leagues[0] if leagues else None), validate=True)
 
         path = os.path.join(out_dir, f"{code}.csv")
         print(f"  {len(frame)} rows, {len(leagues)} league(s): {', '.join(leagues)}; "
               f"odds {checked.attrs.get('odds_source')} (opening only)", flush=True)
-        _write_unless_shorter(path, text, lambda t: len(pd.read_csv(io.StringIO(t))),
+        _write_unless_shorter(path, text, lambda t, label: len(pd.read_csv(io.StringIO(t))),
                               force=force, dry_run=dry_run)
 
         rows.append({

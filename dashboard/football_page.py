@@ -1,19 +1,19 @@
-"""The football page: the data layer and the market baseline, and nothing more.
+"""The football page: the data layer, the market baseline, and Dixon-Coles.
 
 Run through `dashboard/app.py`, which owns the sidebar's domain selector.
 
-**What this page deliberately does not do.** There is no football model in this
-repository yet, and no scoring rule for a three-way outcome, so nothing here
-compares a forecast against the market. Every number on this page describes
-either the data or the baseline itself. That distinction is the whole point of
-the football half of the project: the bar is the closing line, and a page that
-implied otherwise — by showing a "model" column, or by scoring anything — would
-be claiming a result that does not exist.
+**How the model is shown.** The Pronóstico tab puts Dixon-Coles beside the
+de-margined market for a single match — never a bare "model" column implying it
+is good on its own. The Resultados tab runs the walk-forward backtest and shows
+the measured verdict (naive and Bonferroni-corrected) against the closing line;
+that verdict is the only number on the page that says whether the model is
+worth anything. Everything else describes the data or the baseline itself: the
+bar is the closing line, and beating chance is not the bar here.
 
-What it *is* useful for: seeing which odds source a file resolved to before you
-build anything on it, seeing how big the bookmaker's margin is, and seeing that
-the market is calibrated — which is what makes it a hard baseline rather than a
-convenient one.
+What the data/baseline half is useful for: seeing which odds source a file
+resolved to before you build anything on it, seeing how big the bookmaker's
+margin is, and seeing that the market is calibrated — which is what makes it a
+hard baseline rather than a convenient one.
 """
 
 import io
@@ -120,17 +120,18 @@ def _run_backtest(cache_key, _matches, n_windows, half_life, method):
     """
     from football.backtest import run_all
 
-    min_train = max(100, len(_matches) - n_windows - 1)
-    return run_all(_matches, n_windows=n_windows, min_train=min_train,
+    # Floor on the training set; window_bounds already takes max(min_train,
+    # n - n_windows), so this is just "never fit on fewer than 100 matches".
+    return run_all(_matches, n_windows=n_windows, min_train=100,
                    half_life=half_life, method=method)
 
 
 def render():
     st.title("⚽ Fútbol")
     st.caption(
-        "Capa de datos y línea base del mercado. La barra que un modelo de fútbol tiene que superar "
-        "es la **cuota de cierre**, no un Elo ni un 50/50 — y todavía no hay ningún modelo en este "
-        "repositorio, así que nada de esta página compara un pronóstico contra el mercado."
+        "Datos, línea base del mercado y un modelo Dixon-Coles. La barra que tiene que superar "
+        "es la **cuota de cierre**, no un Elo ni un 50/50. El modelo se muestra junto al mercado "
+        "en **Pronóstico**; el veredicto medido, fuera de muestra y corregido, está en **Resultados**."
     )
 
     with st.sidebar:
@@ -335,7 +336,7 @@ def render():
                     figure.update_layout(
                         xaxis_title="Probabilidad del modelo (gana el local)",
                         yaxis_title="Frecuencia observada", height=380)
-                    chart(figure, "Calibración del modelo (victoria local)", "fb_model_calibration")
+                    chart(figure, "Curva de calibración del modelo", "fb_model_calibration_curve")
                     st.dataframe(m_summary.reset_index().astype({"bucket": str}),
                                  use_container_width=True)
                     st.caption(
@@ -403,9 +404,9 @@ def render():
             chart(figure, "Observado contra la media del mercado", "fb_observed_vs_market")
             st.caption(
                 "Dos barras casi iguales es lo esperado, y no es un resultado: el mercado acierta la "
-                "frecuencia global de cada resultado sin esfuerzo. La pregunta que importa — si un "
-                "modelo le gana **partido a partido** — necesita una regla de puntuación y un modelo, "
-                "y ninguno de los dos existe todavía."
+                "frecuencia global de cada resultado sin esfuerzo. La regla de puntuación y el modelo "
+                "ya existen; este gráfico sigue mostrando solo frecuencias globales. El veredicto "
+                "**partido a partido** está en la sección «¿Le gana este modelo al mercado?» de abajo."
             )
 
         section("¿Le gana este modelo al mercado?", "fb_eval_tab")

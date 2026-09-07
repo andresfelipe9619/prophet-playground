@@ -319,8 +319,8 @@ HELP = {
                 "y 1,19 del visitante.",
     "fb_observed_vs_market": "La media de las probabilidades del mercado frente a la frecuencia "
                              "observada. Que coincidan no es un resultado: el mercado acierta el "
-                             "agregado sin esfuerzo. La pregunta que importa es partido a partido, "
-                             "y para eso hacen falta una regla de puntuación y un modelo.",
+                             "agregado sin esfuerzo. El veredicto partido a partido, con regla de "
+                             "puntuación y modelo, está en «¿Le gana este modelo al mercado?».",
 
     "fb_source_toggle": (
         "Europa usa los archivos de liga de football-data.co.uk (cuotas de cierre desde "
@@ -336,7 +336,7 @@ HELP = {
         "Historial y forma reciente. Es descriptivo: no es una predicción, y una racha corta "
         "es en su mayor parte ruido."
     ),
-    "fb_form": "Últimos partidos de cada equipo antes de esta fecha. W/E/D desde la óptica del equipo.",
+    "fb_form": "Últimos partidos de cada equipo antes de esta fecha. V/E/D desde la óptica del equipo.",
     "fb_model_1x2": (
         "Probabilidad de local / empate / visitante según Dixon-Coles ajustado a las temporadas "
         "cargadas. No incorpora lesiones, alineaciones ni el mercado."
@@ -376,6 +376,10 @@ HELP = {
     "fb_model_calibration": (
         "Cuando el modelo dice 60% de victoria local, ¿gana el local ~60% de las veces? "
         "Con una temporada cada punto tiene pocos partidos, así que la dispersión es ruido."
+    ),
+    "fb_model_calibration_curve": (
+        "Cada punto agrupa los partidos por la probabilidad que el modelo le dio al local y "
+        "compara esa media con la frecuencia real. Ajustado dentro de muestra: favorece al modelo."
     ),
 
     # -- Ciclismo

@@ -241,8 +241,10 @@ process with real signal, and it is judged against the market, not chance — se
 | `mu` | baseline log scoring rate |
 | `home_advantage` | additive home boost in log space |
 | `attack[team]` | per-team attacking strength, constrained to sum to zero |
-| `defence[team]` | per-team defensive strength, constrained to sum to zero |
+| `defence[team]` | per-team defensive term, constrained to sum to zero |
 | `rho` | low-score dependence, bounded to ±0.4 |
+
+Sign convention: `lambda_home = exp(mu + home_advantage + attack[home] + defence[away])`, so `defence` is *added* to the opponent's scoring rate — a **higher** `defence` value means a **leakier** defence, the opposite of the usual "defensive strength" reading.
 
 `_tau` is the **Dixon-Coles correction**: it multiplies the 0–0, 1–0, 0–1 and 1–1
 cells of the independent-Poisson scoreline grid by a factor in `rho`, then the
