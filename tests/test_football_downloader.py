@@ -99,6 +99,15 @@ def test_every_known_league_has_a_name_for_the_error_message():
     assert all(LEAGUES.values())
 
 
+def test_extra_code_rejected_without_the_flag():
+    with pytest.raises(ValueError):
+        parse_leagues("COL")  # extra flag not set
+
+
+def test_extra_codes_parse_with_the_flag():
+    assert parse_leagues("COL,ARG", extra=True) == ["COL", "ARG"]
+
+
 # ------------------------------------------------------------------ the guard
 
 def test_an_html_error_page_is_never_parsed_as_a_season():

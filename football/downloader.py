@@ -31,9 +31,11 @@ beats discovering it in the middle of an evaluation.
 
 The "extra leagues" files football-data publishes for the rest of the world
 (`new/ARG.csv` and friends) are a **different contract** — `Home`/`Away`/`HG`/`AG`
-instead of `HomeTeam`/`FTHG`, several leagues stacked in one file — and nothing
-in `football/` reads them. This module refuses them by name rather than
-downloading something the processor would reject.
+instead of `HomeTeam`/`FTHG`, several leagues stacked in one file, opening odds
+only. `football/extra_processor.py` owns that contract; `--extra` here fetches
+those files (`download_extra`), routing each through `preprocess_extra` before
+writing. Without `--extra` the extra codes are refused by name rather than
+downloading something `football/processor.py` would reject.
 """
 
 import argparse
@@ -56,6 +58,21 @@ from football.processor import (
 )
 
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
+
+EXTRA_URL = "https://www.football-data.co.uk/new/{code}.csv"
+
+# The "extra" files football-data publishes for the rest of the world
+# (new/COL.csv, new/ARG.csv, ...). A different contract — Home/Away/HG/AG,
+# many leagues and seasons stacked per file, opening odds only — read by
+# football/extra_processor.py rather than football/processor.py. Reached with
+# the --extra flag; without it these codes are refused by name below.
+EXTRA_LEAGUES = {
+    "COL": "Colombia — Primera A / Primera B",
+    "ARG": "Argentina — Liga Profesional",
+    "BRA": "Brazil — Serie A",
+    "MEX": "Mexico — Liga MX",
+    "USA": "USA — MLS",
+}
 
 # The main-league files, which all share the contract in football/processor.py.
 # Codes are football-data's own; the names are here so an error message can say
@@ -192,18 +209,27 @@ def parse_seasons(spec):
     return sorted(dict.fromkeys(codes), key=season_start_year)
 
 
-def parse_leagues(spec):
-    """'E0,SP1' -> ['E0', 'SP1'], rejecting codes this contract does not cover."""
+def parse_leagues(spec, extra=False):
+    """'E0,SP1' -> ['E0', 'SP1'], rejecting codes this contract does not cover.
+
+    With `extra=True` the codes are validated against `EXTRA_LEAGUES`
+    (COL, ARG, ...) instead, for the `--extra` download path.
+    """
     codes = [c.strip().upper() for c in spec.split(",") if c.strip()]
     if not codes:
         raise ValueError(f"No leagues named in {spec!r}.")
 
-    unknown = [c for c in codes if c not in LEAGUES]
+    known = EXTRA_LEAGUES if extra else LEAGUES
+    unknown = [c for c in codes if c not in known]
     if unknown:
+        if extra:
+            raise ValueError(
+                f"Unknown extra code(s) {unknown}. Known codes: {', '.join(sorted(EXTRA_LEAGUES))}."
+            )
         raise ValueError(
             f"Unknown league code(s) {unknown}. Known codes: {', '.join(sorted(LEAGUES))}. "
             "The 'extra' files for other countries (ARG, BRA, MEX, ...) use a different "
-            "column set that football/processor.py does not read."
+            "column set that football/processor.py does not read — pass --extra to fetch them."
         )
     return list(dict.fromkeys(codes))
 
@@ -216,12 +242,8 @@ def season_label(code):
 
 # ------------------------------------------------------------------- network
 
-def fetch_csv(season, league, session=None, timeout=30, retries=3, backoff=2.0):
-    """Fetch one season file's text, retrying transient failures.
-
-    Returns None on 404 — football-data simply has no file for that league and
-    season (a league that did not exist yet, or a season not yet started), and
-    that is missing data rather than something to retry or die on.
+def _fetch_text(url, session=None, timeout=30, retries=3, backoff=2.0):
+    """Fetch one URL's text, retrying transient failures. Returns None on 404.
 
     `requests` is imported here rather than at module scope so the pure parts
     of this module — season specs, the CSV guard, the merge — can be imported
@@ -230,7 +252,6 @@ def fetch_csv(season, league, session=None, timeout=30, retries=3, backoff=2.0):
     import requests  # noqa: PLC0415 — see the docstring
 
     session = session or requests.Session()
-    url = BASE_URL.format(season=season, league=league)
 
     last_error = None
     for attempt in range(retries):
@@ -250,7 +271,27 @@ def fetch_csv(season, league, session=None, timeout=30, retries=3, backoff=2.0):
     raise DownloadError(f"Could not fetch {url} after {retries} attempts: {last_error}")
 
 
+def fetch_csv(season, league, session=None, timeout=30, retries=3, backoff=2.0):
+    """Fetch one season file's text, retrying transient failures.
+
+    Returns None on 404 — football-data simply has no file for that league and
+    season (a league that did not exist yet, or a season not yet started), and
+    that is missing data rather than something to retry or die on.
+    """
+    return _fetch_text(BASE_URL.format(season=season, league=league),
+                       session=session, timeout=timeout, retries=retries, backoff=backoff)
+
+
 # -------------------------------------------------------------- the CSV guard
+
+def _looks_like_html(text):
+    """A misspelled path on football-data comes back as an HTML error page with
+    a 200, and pd.read_csv turns one into a plausible one-column frame. Both the
+    season files and the extra files are sniffed for this before anything else.
+    """
+    head = text.lstrip()[:200].lower()
+    return head.startswith("<") or "<html" in head
+
 
 def read_season_csv(text, label=""):
     """Parse downloaded text as a season file, raising on anything that is not one.
@@ -261,8 +302,7 @@ def read_season_csv(text, label=""):
     a `.csv` full of `<!DOCTYPE html>` ends up on disk and stays there.
     """
     where = f" for {label}" if label else ""
-    head = text.lstrip()[:200].lower()
-    if head.startswith("<") or "<html" in head:
+    if _looks_like_html(text):
         raise DownloadError(
             f"The response{where} is HTML, not CSV. Either the league/season path does not "
             "exist or the site is serving an error page with a 200; open the URL in a browser."
@@ -314,32 +354,44 @@ def season_path(season, league, out_dir=DEFAULT_DATA_DIR):
     return os.path.join(out_dir, f"{league}_{season}.csv")
 
 
-def write_season(text, path, force=False):
-    """Write a downloaded season file, refusing to shrink an existing one.
+def _write_unless_shorter(path, text, count_rows, force=False, dry_run=False):
+    """Write `text` to `path`, refusing to replace a longer file with a shorter one.
 
     An in-progress season legitimately grows on every re-download, so
     overwriting is the normal case. Coming back *smaller* is not: that is a
     truncated transfer or a site-side regression, and quietly replacing a full
-    season with half of one is unrecoverable once the original is gone.
-    `--force` exists for the case where the site really did drop rows.
+    file with half of one is unrecoverable once the original is gone. `--force`
+    exists for the case where the site really did drop rows.
+
+    `count_rows(text) -> int` turns file text into a comparable row count. It
+    differs by contract — a season file is parsed through `read_season_csv`, an
+    extra file through a plain `pd.read_csv` — so the caller supplies it.
     """
-    incoming = read_season_csv(text, label=os.path.basename(path))
+    incoming = count_rows(text)
 
     if os.path.exists(path) and not force:
-        existing = read_season_csv(open(path, encoding="utf-8", errors="replace").read(),
-                                   label=f"the existing {path}")
-        if len(incoming) < len(existing):
+        existing = count_rows(open(path, encoding="utf-8", errors="replace").read())
+        if incoming < existing:
             raise DownloadError(
-                f"{path} already holds {len(existing)} rows and the download has "
-                f"{len(incoming)}. Refusing to overwrite a longer file with a shorter one — "
-                "that is usually a truncated transfer. Pass --force if the source really "
-                "did lose rows."
+                f"{path} already holds {existing} rows and the download has {incoming}. "
+                "Refusing to overwrite a longer file with a shorter one — that is usually a "
+                "truncated transfer. Pass --force if the source really did lose rows."
             )
 
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(text)
-    return len(incoming)
+    if not dry_run:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+    return incoming
+
+
+def write_season(text, path, force=False):
+    """Write a downloaded season file, refusing to shrink an existing one."""
+    return _write_unless_shorter(
+        path, text,
+        lambda t: len(read_season_csv(t, label=os.path.basename(path))),
+        force=force,
+    )
 
 
 # ------------------------------------------------------------------ the driver
@@ -424,13 +476,87 @@ def download_seasons(seasons, leagues, out_dir=DEFAULT_DATA_DIR, delay=1.0,
     return pd.DataFrame(rows)
 
 
+# --------------------------------------------------------------- extra files
+
+def download_extra(codes, out_dir=DEFAULT_DATA_DIR, dry_run=False, force=False, session=None):
+    """Fetch football-data.co.uk new/{code}.csv files. Opening odds only.
+
+    These are the "extra" leagues (COL, ARG, ...): one file per country, many
+    competitions and seasons stacked inside, a different column set. The file is
+    written verbatim to `out_dir/{code}.csv` — `football/extra_processor.py`
+    owns the contract — but it is routed through `preprocess_extra` first with
+    `league=None` so a broken contract fails here rather than mid-analysis. The
+    multi-league frame is only *checked*, never filtered, at download time.
+    """
+    from football.extra_processor import preprocess_extra  # lazy, like fetch_csv
+
+    os.makedirs(out_dir, exist_ok=True)
+    rows, missing = [], []
+
+    first = True
+    for code in codes:
+        if code not in EXTRA_LEAGUES:
+            raise ValueError(
+                f"Unknown extra code {code!r}. Known: {', '.join(sorted(EXTRA_LEAGUES))}."
+            )
+        if not first:
+            time.sleep(1.0)
+        first = False
+
+        url = EXTRA_URL.format(code=code)
+        print(f"Fetching {code} ({EXTRA_LEAGUES[code]})...", flush=True)
+        text = _fetch_text(url, session=session)
+        if text is None:
+            print("  no file published", flush=True)
+            missing.append(code)
+            continue
+        if _looks_like_html(text):
+            raise DownloadError(
+                f"The response for {code} is HTML, not CSV. Either new/{code}.csv does not "
+                "exist or the site is serving an error page with a 200; open the URL in a browser."
+            )
+
+        frame = pd.read_csv(io.StringIO(text))
+        checked = preprocess_extra(frame, league=None, validate=True)  # raises on a broken contract
+        leagues = sorted(frame["League"].dropna().unique().tolist()) if "League" in frame else []
+
+        path = os.path.join(out_dir, f"{code}.csv")
+        print(f"  {len(frame)} rows, {len(leagues)} league(s): {', '.join(leagues)}; "
+              f"odds {checked.attrs.get('odds_source')} (opening only)", flush=True)
+        _write_unless_shorter(path, text, lambda t: len(pd.read_csv(io.StringIO(t))),
+                              force=force, dry_run=dry_run)
+
+        rows.append({
+            "code": code,
+            "name": EXTRA_LEAGUES[code],
+            "leagues": ", ".join(leagues),
+            "rows": len(frame),
+            "odds_source": checked.attrs.get("odds_source"),
+            "odds_are_closing": False,
+            "path": "" if dry_run else path,
+        })
+
+    if not rows:
+        raise DownloadError(
+            f"Nothing was obtained for extra codes {list(codes)}. Either none of those files "
+            "exists (check against https://www.football-data.co.uk/) or the path changed."
+        )
+    if missing:
+        print(f"\nNo file published for: {', '.join(missing)}", flush=True)
+    return pd.DataFrame(rows)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--seasons", required=True,
-                        help="e.g. 2324, 2023/24, 2019/20..2024/25 or 2019-2024")
+    parser.add_argument("--seasons",
+                        help="e.g. 2324, 2023/24, 2019/20..2024/25 or 2019-2024; "
+                             "ignored with --extra (extra files are not per-season)")
     parser.add_argument("--leagues", default="E0",
                         help=f"comma-separated codes; known: {', '.join(sorted(LEAGUES))}")
+    parser.add_argument("--extra", action="store_true",
+                        help="fetch the new/ 'extra' files (COL, ARG, ...) instead of league "
+                             "files; opening odds only, several competitions stacked per file")
     parser.add_argument("--out-dir", default=DEFAULT_DATA_DIR)
     parser.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
     parser.add_argument("--dry-run", action="store_true",
@@ -442,20 +568,40 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        summary = download_seasons(
-            parse_seasons(args.seasons),
-            parse_leagues(args.leagues),
-            out_dir=args.out_dir,
-            delay=args.delay,
-            dry_run=args.dry_run,
-            closing_odds_only=args.closing_odds_only,
-            force=args.force,
-        )
+        if args.extra:
+            if args.seasons:
+                print("Note: --seasons is ignored with --extra; extra files are not per-season.",
+                      file=sys.stderr)
+            summary = download_extra(
+                parse_leagues(args.leagues, extra=True),
+                out_dir=args.out_dir,
+                dry_run=args.dry_run,
+                force=args.force,
+            )
+        else:
+            if not args.seasons:
+                raise ValueError("--seasons is required unless --extra is given.")
+            summary = download_seasons(
+                parse_seasons(args.seasons),
+                parse_leagues(args.leagues),
+                out_dir=args.out_dir,
+                delay=args.delay,
+                dry_run=args.dry_run,
+                closing_odds_only=args.closing_odds_only,
+                force=args.force,
+            )
     except (DownloadError, MatchFormatError, ValueError) as exc:
         print(f"\nDownload failed: {exc}", file=sys.stderr)
         raise SystemExit(1)
 
     print()
+    if args.extra:
+        print(summary.to_string(index=False))
+        print("\nExtra files carry opening odds only, so odds_are_closing is always False: "
+              "the market baseline they give is the soft one and no corrected edge claim "
+              "is possible on this data.")
+        raise SystemExit(0)
+
     print(summary.drop(columns="league_name").to_string(index=False))
 
     if summary["odds_source"].nunique(dropna=False) > 1:
