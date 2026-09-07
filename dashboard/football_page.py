@@ -110,6 +110,21 @@ def _fit_dixon_coles(_matches, cache_key):
     return DixonColes.fit(_matches, half_life=half_life or None)
 
 
+@st.cache_data(show_spinner=False)
+def _run_backtest(cache_key, _matches, n_windows, half_life, method):
+    """Walk-forward model-vs-market backtest, cached on the cheap `cache_key`.
+
+    `_matches` is underscore-prefixed so Streamlit does not try to hash the
+    frame (it carries `.attrs`); identity comes from `cache_key` plus the
+    parameters. Slow: it refits Dixon-Coles once per evaluated match.
+    """
+    from football.backtest import run_all
+
+    min_train = max(100, len(_matches) - n_windows - 1)
+    return run_all(_matches, n_windows=n_windows, min_train=min_train,
+                   half_life=half_life, method=method)
+
+
 def render():
     st.title("⚽ Fútbol")
     st.caption(
@@ -282,6 +297,55 @@ def render():
                 "así que la dispersión es ruido, no señal."
             )
 
+            section("Calibración del modelo (victoria local)", "fb_model_calibration")
+            if len(matches) < 150:
+                st.info(
+                    "Hacen falta ~150 partidos para ajustar el modelo y medir su calibración; "
+                    "carga más temporadas."
+                )
+            else:
+                model_cache_key = (
+                    len(matches),
+                    str(matches["ds"].min()),
+                    str(matches["ds"].max()),
+                    int(matches["home_goals"].sum()),
+                    int(matches["away_goals"].sum()),
+                    0,
+                )
+                try:
+                    model = _fit_dixon_coles(matches, model_cache_key)
+                    model_probs = model.predict_matches(priced)
+                    p_home_model = pd.Series(model_probs[:, 0], index=priced.index)
+                    observed_model = (priced["outcome"] == "H").astype(float)
+                    m_buckets = pd.cut(p_home_model, bins=list(CALIBRATION_BINS),
+                                       include_lowest=True)
+                    m_grouped = pd.DataFrame(
+                        {"p": p_home_model, "y": observed_model, "bucket": m_buckets})
+                    m_summary = m_grouped.groupby("bucket", observed=True).agg(
+                        predicha=("p", "mean"), observada=("y", "mean"), partidos=("y", "size"))
+
+                    figure = go.Figure()
+                    figure.add_trace(go.Scatter(
+                        x=[0, 1], y=[0, 1], mode="lines", name="Calibración perfecta",
+                        line=dict(dash="dash")))
+                    figure.add_trace(go.Scatter(
+                        x=m_summary["predicha"], y=m_summary["observada"], mode="markers+lines",
+                        name="Modelo",
+                        text=[f"{n} partidos" for n in m_summary["partidos"]]))
+                    figure.update_layout(
+                        xaxis_title="Probabilidad del modelo (gana el local)",
+                        yaxis_title="Frecuencia observada", height=380)
+                    chart(figure, "Calibración del modelo (victoria local)", "fb_model_calibration")
+                    st.dataframe(m_summary.reset_index().astype({"bucket": str}),
+                                 use_container_width=True)
+                    st.caption(
+                        "Ajustado sobre las mismas temporadas que se muestran (dentro de muestra), "
+                        "así que esto favorece al modelo. El veredicto fuera de muestra está en "
+                        "**Resultados**."
+                    )
+                except Exception as exc:  # noqa: BLE001 - a fit warning must not kill the page
+                    st.warning(f"No se pudo ajustar el modelo para la curva de calibración: {exc}")
+
             section("Los tres métodos, lado a lado", "fb_tab_metodos")
             options = [
                 f"{r.ds:%Y-%m-%d} · {r.home_team} vs {r.away_team}"
@@ -343,6 +407,59 @@ def render():
                 "modelo le gana **partido a partido** — necesita una regla de puntuación y un modelo, "
                 "y ninguno de los dos existe todavía."
             )
+
+        section("¿Le gana este modelo al mercado?", "fb_eval_tab")
+        if source is None:
+            st.warning("Sin cuotas no hay contra qué medir el modelo.")
+        elif len(matches) < 150:
+            st.info(
+                "Hacen falta ~150 partidos para un backtest con sentido; carga más temporadas."
+            )
+        else:
+            if source not in CLOSING_SOURCES:
+                st.warning(
+                    "La línea base de estos datos es de **apertura**. Cualquier ventaja que "
+                    "aparezca aquí es contra un mercado blando y no es prueba de una ventaja real."
+                )
+            n_windows = st.slider("Partidos a evaluar (walk-forward)", 20, 200, 40, step=10)
+            half_life = st.number_input(
+                "Vida media (días), 0 = sin decaimiento",
+                min_value=0, value=180, step=30, help=HELP["fb_half_life"])
+            eval_key = (
+                len(matches),
+                str(matches["ds"].min()),
+                str(matches["ds"].max()),
+                int(matches["home_goals"].sum()),
+                int(matches["away_goals"].sum()),
+                source,
+                n_windows,
+                int(half_life),
+                method,
+            )
+            if st.button("Correr backtest"):
+                with st.spinner("Reajustando el modelo por ventana…"):
+                    result = _run_backtest(
+                        eval_key, matches, n_windows, int(half_life) or None, method)
+                v1, v2, v3 = st.columns(3)
+                v1.metric("Skill score (RPS)", f"{result['skill_score']:+.3f}",
+                          help=HELP["fb_skill_score"])
+                v2.metric("Efecto", f"{result['effect']:+.4f}",
+                          help=f"IC 95%: [{result['ci_low']:+.4f}, {result['ci_high']:+.4f}]")
+                v3.metric("Partidos", result["n_windows_scored"])
+                b1, b2 = st.columns(2)
+                b1.metric("Supera al mercado (naive)",
+                          "Sí" if result["beats_market"] else "No", help=HELP["fb_beats_market"])
+                b2.metric("Supera al mercado (corregido)",
+                          "Sí" if result["beats_market_corrected"] else "No")
+                st.dataframe(pd.DataFrame({
+                    "Métrica": ["RPS"],
+                    "Modelo": [f"{result.get('model_score', float('nan')):.4f}"],
+                    "Mercado": [f"{result.get('market_score', float('nan')):.4f}"],
+                }), use_container_width=True, hide_index=True)
+                st.caption(
+                    "Mira la columna **corregida**. Un skill score positivo con IC que cruza 0 "
+                    "no es una ventaja: es ruido con el signo favorable."
+                )
 
 
 def render_forecast_tab(matches, method):
@@ -420,6 +537,11 @@ def render_forecast_tab(matches, method):
     m1, m2, m3 = st.columns(3)
     for col, label, value in zip((m1, m2, m3), ("Local", "Empate", "Visitante"), p_model):
         col.metric(label, f"{value:.1%}")
+    if not all(o > 1.0 for o in (odd_home, odd_draw, odd_away)):
+        st.caption(
+            "Estas cifras son solo el modelo: no hay cuotas para este partido, así que no hay "
+            "mercado contra el que contrastarlas."
+        )
 
     figure = go.Figure(go.Heatmap(
         z=grid, x=list(range(grid.shape[1])), y=list(range(grid.shape[0])), colorscale="Blues"))
