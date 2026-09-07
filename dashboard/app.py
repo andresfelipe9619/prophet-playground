@@ -9,8 +9,9 @@ and there is no reason to pay for that while looking at cycling results.
 
 **The three domains are not equally built, and the shell says so** rather than
 presenting them as peers. Baloto has models, a chance baseline and a backtest;
-football has its data contract and the market baseline but no model and no
-scoring rule; cycling has its data contract and nothing above it. A launcher
+football has its data contract, the market baseline, a Dixon-Coles model, a
+proper scoring rule and a walk-forward backtest (only an Elo baseline is still
+missing); cycling has its data contract and nothing above it. A launcher
 that listed them identically would imply three finished products, which is
 exactly the kind of quiet overclaim the rest of this project is built to avoid.
 """
@@ -35,7 +36,7 @@ DOMAINS = {
     ),
     "⚽ Fútbol": (
         "dashboard.football_page",
-        "Solo datos y línea base del mercado. Sin modelos todavía.",
+        "Datos, línea base del mercado, modelo Dixon-Coles y backtest. Falta el Elo.",
     ),
     "🚴 Ciclismo": (
         "dashboard.cycling_page",

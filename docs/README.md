@@ -19,9 +19,9 @@ make sense against it.
 | 7 | **[Jackpot Splitting](jackpot-splitting.md)** | The only lever that changes anything: unpopular combinations do not win more often, they split less. |
 | 8 | **[Power and Sensitivity](power-and-sensitivity.md)** | What an edge would have to look like for this much data to see it, and whether the tests fire on a planted one. The two questions that make a null result mean something. |
 | 9 | **[Registry](registry.md)** | Pre-registration: predictions written down before the draw, which is the one thing retrospective analysis can never be. |
-| 10 | **[Football](football.md)** | The second domain. The premise inverted, the closing line as the baseline, the odds contract and its opening/closing trap, synthetic seasons with a known answer. |
+| 10 | **[Football](football.md)** | The second domain. The premise inverted, the closing line as the baseline, the odds contract and its opening/closing trap, synthetic seasons with a known answer, the Dixon-Coles model and its walk-forward evaluation against the market. |
 | 11 | **[Cycling](cycling.md)** | The third domain. An ordering rather than an outcome, the ranking baseline, the result contract and its three traps, the scraper. |
-| 12 | **[Dashboard](dashboard.md)** | One app, three domains: the sidebar selector, Baloto's ten tabs, and the data-only pages for football and cycling. |
+| 12 | **[Dashboard](dashboard.md)** | One app, three domains: the sidebar selector, Baloto's ten tabs, football's four (data, market, the two-team forecast, the measured verdict), and the data-only cycling page. |
 | 13 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
 
 ## Quick answers
@@ -52,7 +52,8 @@ make sense against it.
 | Why can't I mix stage results and a GC? | [Cycling §3](cycling.md#one-kind-of-result-per-frame) |
 | Why are the abandons still in my frame? | [Cycling §3](cycling.md#non-finishers-stay-in-the-frame) |
 | How do I switch the dashboard to football or cycling? | [Dashboard §0](dashboard.md#0-the-three-domains) |
-| Why does the football page not score anything? | [Dashboard §3](dashboard.md#3-fútbol-the-data-contract-and-the-market) |
+| How does the football model get scored against the market? | [Football §8](football.md#8-the-model-and-the-two-team-view) · [Evaluation §9](evaluation.md#9-football-dixon-coles-vs-the-market) |
+| How do I use the Colombian league data? | [Data Pipeline §5.1](data-pipeline.md#51-footballs-extra-files) |
 
 ## Conventions
 

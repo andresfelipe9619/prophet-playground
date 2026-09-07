@@ -1,0 +1,5 @@
+Country,League,Season,Date,Time,Home,Away,HG,AG,Res,PH,PD,PA,MaxH,MaxD,MaxA,AvgH,AvgD,AvgA
+Colombia,Colombia Primera A,2023,04/02/2023,00:00,Millonarios,Nacional,2,1,H,2.35,3.10,3.20,2.45,3.25,3.40,2.30,3.05,3.10
+Colombia,Colombia Primera A,2023,05/02/2023,00:00,Junior,America de Cali,0,0,D,2.10,3.20,3.80,2.20,3.35,3.95,2.05,3.15,3.70
+Colombia,Colombia Primera A,2023,11/02/2023,00:00,Tolima,Millonarios,1,2,A,2.55,3.05,2.95,2.65,3.15,3.10,2.50,3.00,2.85
+Colombia,Colombia Primera B,2023,04/02/2023,00:00,Cucuta,Real Cartagena,3,1,H,1.90,3.30,4.20,2.00,3.45,4.40,1.85,3.25,4.10

@@ -347,6 +347,37 @@ a page or file that is simply absent is skipped and named in the summary, while
 anything structural — a changed table, an unknown marker, a response that is
 not a CSV — raises from the first row that shows it.
 
+### 5.1 Football's "extra" files
+
+football-data.co.uk publishes the rest of the world (Colombia, Argentina,
+Brazil, Mexico, USA, ...) as `new/COL.csv` and siblings, on a **different
+contract** from the main league files:
+
+| | Main league file | Extra file |
+| --- | --- | --- |
+| Teams / goals | `HomeTeam` / `AwayTeam` / `FTHG` / `FTAG` | `Home` / `Away` / `HG` / `AG` |
+| Scope | one league, one season per file | many leagues **and** seasons stacked, with `League` / `Season` columns |
+| Odds | closing from 2019/20 (`AvgCH`, `B365CH`) | **opening only** (`AvgH` / `PH` / `B365H`) |
+
+`football/extra_processor.py` owns this contract — `preprocess_extra`,
+`load_extra`, `available_leagues` — and maps it onto the same tidy frame
+(`MATCH_COLUMNS` + `odds_home/draw/away`) as `football/processor.py`, so the
+model, market, scoring and dashboard consume it unchanged. Two rules are
+enforced hard:
+
+- **One league per load.** A file with more than one `League` value raises
+  `MatchFormatError` unless `league=` names one — stacking two competitions is
+  the same mistake as [merging two odds sources](football.md#the-trap-never-mix-opening-and-closing-odds).
+- **`odds_are_closing` is always `False`.** An extra file can never resolve to
+  a closing source; `odds_source` is always an `extra_*_opening` name.
+
+`python -m football.downloader --leagues COL --extra` fetches these (writing
+`exported_data/football/COL.csv` verbatim, validated through `preprocess_extra`
+first); `--seasons` is ignored on that path. Without `--extra` the codes are
+refused by name. **The limit:** opening odds mean the market baseline is the
+soft one, so no corrected edge claim is possible on Colombian data — a model
+that beats these prices has probably beaten a bookmaker's first guess.
+
 ## 6. Legacy ingestion
 
 `lottery/utils/csv_merger.py` concatenates hand-exported yearly CSVs from `exported_data/`.

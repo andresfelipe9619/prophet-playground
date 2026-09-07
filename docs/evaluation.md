@@ -424,6 +424,63 @@ Three things to take from it:
    experiment, and the newest code in it — the measuring apparatus — is the
    likeliest suspect, not the code it was pointed at.
 
+## 9. Football: Dixon-Coles vs the market
+
+The football domain reuses every piece of `core/` unchanged. What it swaps in is
+the null and the score:
+
+| Layer | Lottery | Football |
+| --- | --- | --- |
+| The null the domain supplies | exact hypergeometric mean/variance per draw | the market's de-margined probabilities, per match |
+| The score | set-based main-ball hits | a proper score — RPS by default ([Football §8](football.md#the-scoring-rule)) |
+| The comparison | model hits vs chance hits | **per match, `market_score − model_score`** |
+
+`football/evaluation.py:beats_market_test(model_probs, market_probs, outcomes,
+metric="rps", n_comparisons=1)` computes the per-match score for each side, takes
+the difference `market − model` (positive means the model scored lower, i.e.
+better, on that match), and feeds it to `core/significance.py:z_test_against_null`
+with `null_means=0.0`. A model that only matches the market averages a difference
+of zero; beating it means a difference reliably above zero.
+
+The verdict keys are renamed for the domain but mean the same thing:
+
+| Key | Meaning |
+| --- | --- |
+| `beats_market` | naive one-sided verdict at α = 0.05 — **the one that misleads** |
+| `bonferroni_threshold` | α / `n_comparisons` |
+| `beats_market_corrected` | the verdict to read — bump `n_comparisons` when scoring several models against the same matches |
+
+Only the one-sided p-value backs a "beats the market" claim, exactly as for
+[the chance baseline](#one-sided-vs-two-sided-this-matters); `effect`, `ci_low`/`ci_high` and
+`relative_effect` travel with it.
+
+### `football/backtest.py`
+
+The walk-forward harness, mirroring `lottery/backtest.py` and scoring through the
+same `beats_market_test`:
+
+```bash
+python -m football.backtest --seasons E0_2324.csv,E0_2223.csv --n-windows 30
+python -m football.backtest --seasons E0_2324.csv --cutoff 2024-01-01 --mode frozen
+python -m football.backtest --seasons COL.csv --extra --league "Colombia Primera A"
+```
+
+| Entry point | What it holds out | Refit |
+| --- | --- | --- |
+| `run_all(matches, n_windows=30, min_train=100)` | the last `n_windows` matches | Dixon-Coles refits before each held-out match |
+| `run_holdout(matches, cutoff, mode="expanding")` | every match after `cutoff` | refits before each held-out match |
+| `run_holdout(matches, cutoff, mode="frozen")` | every match after `cutoff` | fits **once** at the cutoff, forecasts the rest |
+
+`expanding` answers "how would this do if I refit before every match"; `frozen`
+answers "I fit this in January — what did it say about the spring?", the literal
+and harder test. Both return the same result dict, so the two are directly
+comparable. `--half-life` adds time decay; `--method` picks the de-margining
+(`multiplicative` / `additive` / `power`); `--metric` picks the score.
+
+**On Colombian (`--extra`) data the corrected verdict is off the table** — the
+market there is opening odds only ([Data Pipeline §5.1](data-pipeline.md#51-footballs-extra-files)),
+so beating it is beating a bookmaker's first guess, not the market.
+
 ---
 
 **Next:** [Dashboard](dashboard.md) · [Development](development.md)
