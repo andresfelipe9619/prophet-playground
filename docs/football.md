@@ -189,10 +189,33 @@ Four decisions in it are worth knowing:
   in-progress season legitimately grows on every re-download; coming back
   smaller is a truncated transfer.
 
-The "extra league" files for the rest of the world (`new/ARG.csv` and friends)
-use a **different contract** — `Home`/`Away`/`HG`/`AG`, several leagues stacked
-in one file — and nothing in `football/` reads them, so the downloader refuses
-those codes by name rather than fetching something the processor would reject.
+### The "extra league" files
+
+The rest of the world (`new/COL.csv`, `new/ARG.csv` and friends) is published on
+a **different contract** — `Home`/`Away`/`HG`/`AG`, several leagues and seasons
+stacked in one file, and **opening odds only** (`AvgH` / `PH` / `B365H`, never a
+`C` column). `football/processor.py` does not read them.
+
+```bash
+python -m football.downloader --leagues COL --extra          # writes exported_data/football/COL.csv
+```
+
+`football/extra_processor.py` owns this contract — `preprocess_extra(df, league=None)`,
+`load_extra(path, league=None)`, `available_leagues(path)` — and maps it onto the
+same tidy frame the main processor produces, so the model, market, scoring and
+dashboard consume it unchanged. Two rules are enforced hard:
+
+- **One league per load.** A file with more than one `League` value raises
+  `MatchFormatError` unless `league=` names one — stacking two competitions is the
+  same mistake as merging two odds sources.
+- **`odds_are_closing` is always `False`.** An extra file can never resolve to a
+  closing source; `odds_source` is always an `extra_*_opening` name.
+
+`--seasons` is ignored on the `--extra` path (these files are not per-season), and
+without `--extra` the codes are refused by name. **The limit:** opening odds mean
+the market baseline is the soft one, so **no corrected edge claim is possible on
+Colombian data** — a model that beats these prices has probably beaten a
+bookmaker's first guess rather than the market.
 
 ### The limit of this verification
 
@@ -221,30 +244,100 @@ fine — but a first look costs a minute and this code has never seen reality.
 
 ## 6. The dashboard page
 
-`streamlit run dashboard/app.py`, then pick **⚽ Fútbol** in the sidebar. Three
-tabs — **Datos**, **Mercado**, **Resultados** — and the limit is stated on all of
-them: there is no model here and no scoring rule, so **nothing on that page
-compares a forecast against the market**. It shows which odds source a file
-resolved to, how big the margin is, that the market is calibrated, and how the
-three de-margining methods differ on one match. Selecting season files that resolve
-to different odds sources renders the refusal instead of merging them. Details in
-[Dashboard §3](dashboard.md#3-fútbol-the-data-contract-and-the-market).
+`streamlit run dashboard/app.py`, then pick **⚽ Fútbol** in the sidebar. Four
+tabs — **Datos**, **Mercado**, **Pronóstico**, **Resultados** — and a
+**Europa / Colombia** source toggle at the top. Datos and Mercado are descriptive:
+which odds source a file resolved to, how big the margin is, that the market is
+calibrated, how the three de-margining methods differ on one match, plus the
+model's own calibration curve. **Pronóstico** is the two-team view
+([§8](#8-the-model-and-the-two-team-view)); **Resultados** carries a gated
+walk-forward backtest of the model against the market, with both the naive and the
+Bonferroni-corrected verdict. In Colombia mode the page shows the opening-odds
+warning, and every model surface shows the market beside it. Selecting season files
+that resolve to different odds sources renders the refusal instead of merging them.
+Details in [Dashboard §3](dashboard.md#3-fútbol-the-data-contract-the-market-and-the-model).
 
-## 7. What is not built yet
+## 7. What is built, and what is not
 
-This is the data layer only. Still to come, in order:
+The scoring rules, Dixon-Coles, the market evaluation and the forecast tab now
+exist:
 
-1. **Scoring rules** — Brier / ranked probability score for the three-way
-   outcome, log-loss for binaries. Set-based hit counting does not apply here.
-2. **Elo**, as a cheap model and a second baseline.
-3. **Dixon-Coles** — attack/defence strengths with the low-score correction,
-   from which every market (1X2, over/under, both teams to score, correct
-   score) falls out of one fitted model.
-4. **Evaluation** through `core/`, comparing every model against the market
-   with the corrected verdict, exactly as the lottery backtest does.
-5. **The evaluation tabs**, once there is something to evaluate. The page exists;
-   what it lacks is a model column, and it will not get one before there is a
-   scoring rule behind it.
+- **`football/scoring.py`** — Brier, ranked probability score and log-loss for the
+  three-way outcome, plus a skill score. RPS is the default because H–D–A is
+  ordered ([§8](#the-scoring-rule)).
+- **`football/dixon_coles.py`** — attack/defence strengths with the low-score
+  correction, optional time decay, one fitted model feeding 1X2, correct score,
+  over/under and both-teams-to-score.
+- **`football/h2h.py`** — recent form and head-to-head, descriptive only.
+- **`football/evaluation.py`** — `beats_market_test`, a paired one-sided
+  proper-score test against the market through `core/significance.py`, naive and
+  corrected verdict together.
+- **`football/backtest.py`** — walk-forward (`run_all`) and date-cutoff
+  (`run_holdout`, `expanding` / `frozen`) evaluation.
+
+**Elo is deliberately skipped.** It was listed as a cheap model and a second
+baseline, but it only produces a 1X2 vector, and the scoreline forecast (correct
+score, O/U, BTTS) needed a goals model regardless. Dixon-Coles gives both, so a
+separate Elo would only add a weaker duplicate of one of its outputs.
+
+## 8. The model and the two-team view
+
+### The model
+
+`football/dixon_coles.py`. One maximum-likelihood fit on a tidy match frame
+produces five things: a baseline scoring rate `mu`, a `home_advantage`, an
+`attack` and a `defence` strength per team (each constrained to sum to zero), and
+`rho`, the low-score dependence parameter.
+
+```python
+from football.dixon_coles import DixonColes
+model = DixonColes.fit(matches, half_life=None)      # half_life in days → exponential time decay
+model.predict_outcome("Team A", "Team B")            # (P_home, P_draw, P_away), H-D-A order
+model.scoreline_matrix("Team A", "Team B")           # the full goals grid
+model.most_likely_scores(...); model.over_under(..., line=2.5); model.both_teams_to_score(...)
+model.predict_matches(frame)                         # (n, 3) for a whole frame
+```
+
+`DixonColes.fit` takes `matches` and optional `half_life` and `max_iter=200`; an
+unknown team at prediction time raises `UnknownTeamError`.
+
+**The low-score correction.** Two independent Poisson goal counts
+(`independent_poisson_matrix`) under-produce the 0–0, 1–0, 0–1 and 1–1 scorelines
+that real football clusters on. `_tau` multiplies exactly those four cells of the
+grid by a factor in `rho` before renormalising; `rho` is bounded to ±0.4 and the
+fit warns if it hits the bound (the correction is then at its limit and the model
+is straining).
+
+**Time decay.** With `half_life` set, each historical match is weighted
+`0.5 ** (age_in_days / half_life)` in the likelihood, so a season-old result
+counts for less than last week's. Left off, every match counts equally.
+
+### The scoring rule
+
+`football/scoring.py`. The outcome H–D–A is **ordered** — a forecast that put its
+mass on H when the result was A is more wrong than one that favoured D. Ranked
+probability score charges for that distance; Brier does not. So **RPS is the
+verdict** and Brier is a diagnostic, the same shape as the lottery's "the pooled
+test is the verdict". `METRICS = ("brier", "rps", "log_loss")`;
+`per_match_scores(probs, outcomes, metric)` and `skill_score` are the entry
+points.
+
+### Pronóstico: model beside market
+
+The tab takes two teams and, optionally, the three current decimal prices. It
+shows head-to-head and recent form (descriptive), then the Dixon-Coles 1X2
+vector, a scoreline heatmap, over/under and BTTS. **The model-vs-market columns
+appear only when odds are entered** — a de-margined market vector next to the
+model's, and their difference. No forecast is shown on its own.
+
+### Resultados: the measured verdict
+
+A gated section runs `football/backtest.py` walk-forward and reports
+`beats_market` and `beats_market_corrected` (corrected emphasised), the model and
+market scores, the effect size and its interval — exactly as the lottery backtest
+does, and through the same `core/` machinery. The evaluation is a
+**paired-difference** test: per match, `market_score − model_score`, tested
+one-sided against a null mean of 0. See [Evaluation](evaluation.md#9-football-dixon-coles-vs-the-market).
 
 ---
 

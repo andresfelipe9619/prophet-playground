@@ -227,6 +227,58 @@ predictor only maps `(position_series, t) → {model_name: {position: prediction
 returning `None` for a window it cannot predict. **Never return the actual draw as
 a fallback** — that scores free hits into the chance test.
 
+## 8. Football: Dixon-Coles
+
+The only model in the `football/` domain. Unlike the lottery models it predicts a
+process with real signal, and it is judged against the market, not chance — see
+[Football §8](football.md#8-the-model-and-the-two-team-view) and
+[Evaluation §9](evaluation.md#9-football-dixon-coles-vs-the-market).
+
+`football/dixon_coles.py`. One MLE fit yields a full parameter set:
+
+| Parameter | Meaning |
+| --- | --- |
+| `mu` | baseline log scoring rate |
+| `home_advantage` | additive home boost in log space |
+| `attack[team]` | per-team attacking strength, constrained to sum to zero |
+| `defence[team]` | per-team defensive strength, constrained to sum to zero |
+| `rho` | low-score dependence, bounded to ±0.4 |
+
+`_tau` is the **Dixon-Coles correction**: it multiplies the 0–0, 1–0, 0–1 and 1–1
+cells of the independent-Poisson scoreline grid by a factor in `rho`, then the
+grid is renormalised. Two independent Poisson counts under-produce exactly those
+scorelines; `rho` pulls them back. The fit warns if `rho` hits its bound.
+
+```python
+from football.dixon_coles import DixonColes, independent_poisson_matrix
+
+model = DixonColes.fit(matches, half_life=None, max_iter=200)
+# half_life (days): match weight = 0.5 ** (age_days / half_life) in the likelihood
+
+model.predict_outcome("Team A", "Team B")     # (P_home, P_draw, P_away) — OUTCOMES order
+model.scoreline_matrix("Team A", "Team B")    # the goals grid
+model.most_likely_scores("Team A", "Team B", n=5)
+model.over_under("Team A", "Team B", line=2.5)
+model.both_teams_to_score("Team A", "Team B")
+model.predict_matches(frame)                  # (n, 3) for a whole frame
+```
+
+An unknown team raises `UnknownTeamError`.
+
+### Adding another football model
+
+1. Produce `(n, 3)` outcome probabilities in `football.common.OUTCOMES` order
+   (`home`, `draw`, `away`) — transposing two is a bug no range check catches.
+2. Score it with `football/scoring.py` — `per_match_scores(probs, outcomes,
+   metric)`. Use `metric="rps"`: the outcome is ordered, so RPS is the verdict
+   and Brier is a diagnostic.
+3. Evaluate it with `football/evaluation.py:beats_market_test(model_probs,
+   market_probs, outcomes)` — a paired one-sided test against the de-margined
+   market. When several models are scored against the same matches, bump
+   `n_comparisons` so the Bonferroni threshold reflects it.
+4. The model is never shown without the market beside it — that is a
+   [cross-cutting invariant](../CLAUDE.md).
+
 ---
 
 **Next:** [Evaluation](evaluation.md) · [Dashboard](dashboard.md)

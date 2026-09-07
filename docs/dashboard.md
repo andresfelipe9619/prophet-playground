@@ -15,13 +15,14 @@ the caption under each option names what exists there today:
 | Domain | Page | What is there | What is not |
 | --- | --- | --- | --- |
 | 🎯 Baloto | `dashboard/baloto_page.py` | Ten tabs: models, the chance baseline, backtest, tickets, power, registry | — |
-| ⚽ Fútbol | `dashboard/football_page.py` | Three tabs: the data contract, the market baseline, descriptive results | No model, no scoring rule — so **nothing is scored** |
-| 🚴 Ciclismo | `dashboard/cycling_page.py` | Three tabs: the result contract, attrition, gaps | No baseline, no model |
+| ⚽ Fútbol | `dashboard/football_page.py` | Four tabs: the data contract, the market baseline, a two-team Dixon-Coles forecast, and a walk-forward verdict against the market | — |
+| 🚴 Ciclismo | `dashboard/cycling_page.py` | Three tabs: the result contract, attrition, gaps | No baseline, no model — **nothing is scored** |
 
-Listing them as peers would imply three finished products. Baloto can answer "did
-this beat chance?"; the other two can only show you their data and their baseline,
-and both pages say that in their first line rather than leaving it to be inferred
-from an absence.
+Listing them as peers would still overstate cycling. Baloto and Fútbol can both
+answer "did this beat the baseline?" — chance for one, the closing line for the
+other. Cycling can only show you its data and the invariants its contract
+protects, and its page says so in its first line rather than leaving it to be
+inferred from an absence.
 
 The shell (`dashboard/app.py`) owns the page config, the selector and the dispatch,
 and **imports each page lazily** — Baloto's pulls in statsforecast and xgboost, and
@@ -32,7 +33,7 @@ dashboard/
   app.py            # the shell: page config, domain selector, dispatch
   ui.py             # the single HELP dict + section() / chart() / verdict_badge()
   baloto_page.py    # render(): the ten Baloto tabs
-  football_page.py  # render(): Datos · Mercado · Resultados
+  football_page.py  # render(): Datos · Mercado · Pronóstico · Resultados
   cycling_page.py   # render(): Datos · Abandonos · Tiempos
 ```
 
@@ -277,17 +278,26 @@ Every scored table carries `min_detectable_effect` beside the p-value, because a
 young registry cannot say much and should say so. Full detail in
 [The Prediction Registry](registry.md).
 
-## 3. Fútbol: the data contract and the market
+## 3. Fútbol: the data contract, the market and the model
 
-Three tabs, and the honest limit stated on all of them: **there is no football model
-in this repository, and no scoring rule for a three-way outcome, so nothing here
-compares a forecast against the market.**
+Four tabs, and a **Europa / Colombia** source toggle at the top: *Europa
+(football-data)* loads the per-league season files through `football/processor.py`;
+*Colombia (archivo extra)* loads a `new/COL.csv`-style file through
+`football/extra_processor.py`. Colombia mode is always opening odds, and every
+model surface in that mode carries a banner saying so — an edge against those
+prices is against a soft market, not a finding.
 
 | Tab | Shows | The point |
 | --- | --- | --- |
 | **Datos** | Match count, date span, resolved odds source, closing-or-opening, price coverage, first rows | Which odds source a file resolved to is the thing that decides whether it can serve as a baseline at all. It is invisible in the frame, so it is a metric here. |
-| **Mercado** | Overround distribution, the calibration curve for home wins, the three de-margining methods side by side on one match | The margin has to come off before prices mean anything, and how it comes off is a modelling choice. If a conclusion flips between methods, it is about the margin model. |
-| **Resultados** | Outcome shares, goals per side, observed rates against the market's mean probabilities | Descriptive. The last chart carries its own disclaimer: two matching bars are not a result — the market gets the aggregate right effortlessly, and the question that matters is match by match. |
+| **Mercado** | Overround distribution, the market's calibration curve for home wins, **the Dixon-Coles model's own calibration curve** (in-sample, and it says so), the three de-margining methods side by side on one match | The margin has to come off before prices mean anything, and how it comes off is a modelling choice. The model curve is fit on the seasons shown, so it flatters the model — the out-of-sample verdict is in **Resultados**. |
+| **Pronóstico** | Two team pickers, optional current decimal odds; head-to-head and recent form (descriptive), then the Dixon-Coles 1X2 vector, a scoreline heatmap, over/under and BTTS | The two-team view. Model probabilities appear **only beside the de-margined market**, or under an explicit "no baseline for this match" caption — never alone. The model-vs-market columns show only when odds are entered. |
+| **Resultados** | Outcome shares, goals per side, observed rates against the market's mean probabilities, then a gated **walk-forward backtest of the model against the market** | The descriptive charts carry the usual disclaimer — two matching bars are not a result. The backtest section is the verdict: it reports `beats_market` and `beats_market_corrected` (corrected emphasised), the skill score, and the effect with its 95% interval, through the same `core/` machinery as the lottery backtest. |
+
+The backtest is behind a button and needs ~150 matches; it exposes a
+walk-forward window count and a half-life for time decay. On opening-odds data it
+prints the soft-market warning in place of a corrected claim. See
+[Evaluation §9](evaluation.md#9-football-dixon-coles-vs-the-market).
 
 Loading is where the domain's guard shows up in the UI. The sidebar lists the season
 files in `exported_data/football/` and lets you select several; selecting two that
@@ -295,7 +305,8 @@ resolve to **different odds sources** does not silently merge them — `load_sea
 raises, and the page renders the refusal with a Spanish explanation and the original
 message as technical detail. That is the
 [opening/closing trap](football.md#the-trap-never-mix-opening-and-closing-odds) made
-visible at the moment someone would otherwise walk into it.
+visible at the moment someone would otherwise walk into it. Colombia mode enforces
+its own version: one `League` value per file, or `MatchFormatError`.
 
 With no files present the page falls back to a synthetic season and says so, exactly
 as the Baloto page does.
