@@ -22,12 +22,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from football.common import DEFAULT_DATA_DIR, ODDS_COLUMNS, OUTCOMES, PROBABILITY_COLUMNS
-from football.market import METHODS, compare_methods, market_probabilities, overround
+from football.dixon_coles import UnknownTeamError
+from football.extra_processor import available_leagues, load_extra
+from football.h2h import head_to_head, team_form
+from football.market import (
+    METHODS,
+    compare_methods,
+    implied_probabilities,
+    market_probabilities,
+    overround,
+)
 from football.processor import (
     CLOSING_SOURCES,
     MatchFormatError,
@@ -79,6 +89,27 @@ def load_matches(uploaded_bytes, paths, closing_odds_only):
     return matches, is_demo, check_match_format(matches)
 
 
+@st.cache_data(show_spinner=False)
+def load_extra_cached(path, league):
+    """Load one football-data 'extra' file (Colombia and friends: opening odds only)."""
+    return load_extra(path, league=league)
+
+
+@st.cache_resource(show_spinner="Ajustando el modelo…")
+def _fit_dixon_coles(_matches, cache_key):
+    """Fit Dixon-Coles once per (data, half_life).
+
+    Streamlit cannot reliably hash a match frame carrying `.attrs`, so the frame
+    is passed underscore-prefixed (unhashed) and the cache is keyed on
+    `cache_key` — a cheap tuple the caller builds from the frame's fingerprint
+    and the half-life.
+    """
+    from football.dixon_coles import DixonColes
+
+    half_life = cache_key[-1]
+    return DixonColes.fit(_matches, half_life=half_life or None)
+
+
 def render():
     st.title("⚽ Fútbol")
     st.caption(
@@ -89,40 +120,74 @@ def render():
 
     with st.sidebar:
         st.header("Datos")
-        uploaded = st.file_uploader("CSV de football-data.co.uk", type="csv")
-        directory = st.text_input("Carpeta de temporadas", value=DEFAULT_DATA_DIR)
-        available = season_files(directory)
-        chosen = st.multiselect(
-            "Temporadas", available, default=available[-1:],
-            help=HELP["fb_seasons"],
+        source_kind = st.radio(
+            "Fuente", ["Europa (football-data)", "Colombia (archivo extra)"],
+            help=HELP["fb_source_toggle"],
         )
-        closing_odds_only = st.checkbox(
-            "Solo temporadas con cuotas de cierre", value=False, help=HELP["fb_closing_only"])
+        colombia = source_kind.startswith("Colombia")
         method = st.selectbox(
             "Método para quitar el margen", METHODS, index=0, help=HELP["fb_method"])
 
-    paths = tuple(os.path.join(directory, name) for name in chosen) if not uploaded else ()
+        col_path = chosen_league = None
+        uploaded = None
+        directory = DEFAULT_DATA_DIR
+        chosen = []
+        closing_odds_only = False
+        if colombia:
+            col_path = st.text_input(
+                "Archivo COL.csv", value=os.path.join(DEFAULT_DATA_DIR, "COL.csv"))
+            try:
+                leagues = available_leagues(col_path)
+            except (FileNotFoundError, OSError, ValueError, KeyError):
+                leagues = []
+            chosen_league = st.selectbox("Liga", leagues) if leagues else None
+        else:
+            uploaded = st.file_uploader("CSV de football-data.co.uk", type="csv")
+            directory = st.text_input("Carpeta de temporadas", value=DEFAULT_DATA_DIR)
+            available = season_files(directory)
+            chosen = st.multiselect(
+                "Temporadas", available, default=available[-1:],
+                help=HELP["fb_seasons"],
+            )
+            closing_odds_only = st.checkbox(
+                "Solo temporadas con cuotas de cierre", value=False, help=HELP["fb_closing_only"])
 
-    try:
-        matches, is_demo, report = load_matches(
-            uploaded.getvalue() if uploaded else None, paths, closing_odds_only)
-    except MatchFormatError as exc:
-        st.error(
-            "**No se pudieron cargar estos archivos juntos.** Cada archivo resuelve a una sola "
-            "fuente de cuotas, y juntar dos fuentes distintas pondría un precio de cierre y uno de "
-            "apertura en la misma columna: todo lo que se midiera ahí se estaría comparando contra "
-            "dos barras a la vez. Elige las temporadas que comparten fuente, o marca **Solo "
-            "temporadas con cuotas de cierre**."
-        )
-        # The original message names the sources involved; it is English because
-        # it comes from the domain layer, where everything is.
-        st.caption(f"Detalle: {exc}")
-        st.stop()
-    except FileNotFoundError as exc:
-        st.error(str(exc))
-        st.stop()
+    if colombia:
+        try:
+            matches = load_extra_cached(col_path, chosen_league)
+            is_demo = False
+        except FileNotFoundError:
+            matches = preprocess_matches(
+                generate_matches(seed=0).drop(columns=["TrueH", "TrueD", "TrueA"]), validate=False)
+            is_demo = True
+            st.info(
+                f"No se encontró el archivo **{col_path}** — mostrando **datos sintéticos**. "
+                "Descárgalo con `python -m football.downloader --extra --leagues COL`."
+            )
+        report = check_match_format(matches)
+    else:
+        paths = tuple(os.path.join(directory, name) for name in chosen) if not uploaded else ()
 
-    if is_demo:
+        try:
+            matches, is_demo, report = load_matches(
+                uploaded.getvalue() if uploaded else None, paths, closing_odds_only)
+        except MatchFormatError as exc:
+            st.error(
+                "**No se pudieron cargar estos archivos juntos.** Cada archivo resuelve a una sola "
+                "fuente de cuotas, y juntar dos fuentes distintas pondría un precio de cierre y uno de "
+                "apertura en la misma columna: todo lo que se midiera ahí se estaría comparando contra "
+                "dos barras a la vez. Elige las temporadas que comparten fuente, o marca **Solo "
+                "temporadas con cuotas de cierre**."
+            )
+            # The original message names the sources involved; it is English because
+            # it comes from the domain layer, where everything is.
+            st.caption(f"Detalle: {exc}")
+            st.stop()
+        except FileNotFoundError as exc:
+            st.error(str(exc))
+            st.stop()
+
+    if is_demo and not colombia:
         st.info(
             "No hay archivos de temporada en la carpeta indicada ni se subió uno — mostrando "
             "**datos sintéticos** (una temporada generada con fuerzas de ataque y defensa por equipo "
@@ -153,7 +218,7 @@ def render():
     priced = matches.dropna(subset=list(ODDS_COLUMNS)) if source else matches.iloc[:0]
     with_probabilities = market_probabilities(priced, method=method) if len(priced) else priced
 
-    tabs = st.tabs(["Datos", "Mercado", "Resultados"])
+    tabs = st.tabs(["Datos", "Mercado", "Pronóstico", "Resultados"])
 
     # ------------------------------------------------------------------ Datos
     with tabs[0]:
@@ -235,8 +300,12 @@ def render():
                 "cambiarlo. **Si cambia, el hallazgo es sobre el modelo de margen, no sobre el modelo.**"
             )
 
-    # -------------------------------------------------------------- Resultados
+    # ------------------------------------------------------------- Pronóstico
     with tabs[2]:
+        render_forecast_tab(matches, method)
+
+    # -------------------------------------------------------------- Resultados
+    with tabs[3]:
         section("Cómo terminaron los partidos", "fb_tab_resultados")
         counts = matches["outcome"].value_counts()
         shares = [float(counts.get(outcome, 0)) / max(len(matches), 1) for outcome in OUTCOMES]
@@ -274,3 +343,123 @@ def render():
                 "modelo le gana **partido a partido** — necesita una regla de puntuación y un modelo, "
                 "y ninguno de los dos existe todavía."
             )
+
+
+def render_forecast_tab(matches, method):
+    """A single-match forecast: head-to-head, then Dixon-Coles beside the market.
+
+    Model probabilities are only ever shown next to the de-margined market
+    prices, or under an explicit "no baseline for this match" caption — never on
+    their own implying the model is good by itself.
+    """
+    section("Pronóstico de un partido", "fb_forecast_tab")
+    teams = sorted(set(matches["home_team"]) | set(matches["away_team"]))
+    if len(teams) < 2:
+        st.warning("Hacen falta al menos dos equipos en los datos cargados.")
+        return
+
+    c1, c2, c3 = st.columns([2, 2, 1])
+    home_team = c1.selectbox("Local", teams, index=0)
+    away_team = c2.selectbox("Visitante", teams, index=1)
+    half_life = c3.number_input("Vida media (días)", min_value=0, value=180, step=30,
+                                help=HELP["fb_half_life"])
+    if home_team == away_team:
+        st.warning("Elige dos equipos distintos.")
+        return
+
+    with st.form("odds_form"):
+        st.markdown("**Cuotas actuales (opcional)**", help=HELP["fb_your_odds"])
+        o1, o2, o3 = st.columns(3)
+        odd_home = o1.number_input("Local", min_value=0.0, value=0.0, step=0.05)
+        odd_draw = o2.number_input("Empate", min_value=0.0, value=0.0, step=0.05)
+        odd_away = o3.number_input("Visitante", min_value=0.0, value=0.0, step=0.05)
+        submitted = st.form_submit_button("Calcular pronóstico")
+
+    if not submitted:
+        st.info("Elige los equipos y pulsa **Calcular pronóstico**.")
+        return
+
+    # --- head to head ---
+    section("Cómo llegan", "fb_h2h")
+    h2h = head_to_head(matches, home_team, away_team)
+    fc, ac = st.columns(2)
+    for col, team in ((fc, home_team), (ac, away_team)):
+        form = team_form(matches, team, last_n=5)
+        col.metric(team,
+                   "".join({"W": "V", "D": "E", "L": "D"}[r] for r in form["results"]) or "—",
+                   help=HELP["fb_form"])
+        col.caption(f"{form['wins']}V {form['draws']}E {form['losses']}D · "
+                    f"{form['goals_for']}-{form['goals_against']} goles · {form['points']} pts")
+    st.caption(
+        f"{h2h['meetings']} enfrentamientos: {h2h['home_wins']} {home_team}, "
+        f"{h2h['draws']} empates, {h2h['away_wins']} {away_team}. "
+        f"Media de goles {h2h['avg_goals']:.2f}." if h2h["meetings"] else "Sin enfrentamientos previos."
+    )
+
+    # --- model ---
+    cache_key = (
+        len(matches),
+        str(matches["ds"].min()),
+        str(matches["ds"].max()),
+        int(matches["home_goals"].sum()),
+        int(matches["away_goals"].sum()),
+        int(half_life),
+    )
+    try:
+        model = _fit_dixon_coles(matches, cache_key)
+        p_model = model.predict_outcome(home_team, away_team)
+        grid = model.scoreline_matrix(home_team, away_team, max_goals=6)
+        scores = model.most_likely_scores(home_team, away_team, n=5)
+        p_over, p_under = model.over_under(home_team, away_team, 2.5)
+        p_btts = model.both_teams_to_score(home_team, away_team)
+    except UnknownTeamError as exc:
+        st.error(f"El modelo no conoce a ese equipo en las temporadas cargadas. Detalle: {exc}")
+        return
+
+    section("El modelo", "fb_model_1x2")
+    m1, m2, m3 = st.columns(3)
+    for col, label, value in zip((m1, m2, m3), ("Local", "Empate", "Visitante"), p_model):
+        col.metric(label, f"{value:.1%}")
+
+    figure = go.Figure(go.Heatmap(
+        z=grid, x=list(range(grid.shape[1])), y=list(range(grid.shape[0])), colorscale="Blues"))
+    figure.update_layout(xaxis_title=f"Goles {away_team}", yaxis_title=f"Goles {home_team}",
+                         height=380)
+    chart(figure, "Probabilidad de cada marcador", "fb_scoreline_grid")
+
+    st.markdown("**Marcadores más probables**", help=HELP["fb_most_likely_scores"])
+    st.dataframe(pd.DataFrame(
+        [{"Marcador": f"{h}-{a}", "Probabilidad": f"{p:.1%}"} for (h, a), p in scores]),
+        use_container_width=True, hide_index=True)
+
+    ou1, ou2, ou3 = st.columns(3)
+    ou1.metric("Más de 2.5", f"{p_over:.1%}", help=HELP["fb_over_under"])
+    ou2.metric("Menos de 2.5", f"{p_under:.1%}")
+    ou3.metric("Ambos marcan", f"{p_btts:.1%}", help=HELP["fb_btts"])
+
+    # --- market ---
+    odds = (odd_home, odd_draw, odd_away)
+    if all(o > 1.0 for o in odds):
+        section("Modelo contra mercado", "fb_model_vs_market")
+        p_market = implied_probabilities(np.array(odds), method=method)
+        figure = go.Figure()
+        figure.add_trace(go.Bar(x=["Local", "Empate", "Visitante"], y=p_model, name="Modelo"))
+        figure.add_trace(go.Bar(x=["Local", "Empate", "Visitante"], y=p_market, name="Mercado"))
+        figure.update_layout(barmode="group", yaxis_tickformat=".0%", height=340)
+        chart(figure, "Probabilidades: modelo y mercado", "fb_model_vs_market")
+        st.dataframe(pd.DataFrame({
+            "Resultado": ["Local", "Empate", "Visitante"],
+            "Modelo": [f"{p:.1%}" for p in p_model],
+            "Mercado": [f"{p:.1%}" for p in p_market],
+            "Modelo − Mercado": [f"{m - k:+.1%}" for m, k in zip(p_model, p_market)],
+        }), use_container_width=True, hide_index=True)
+        st.caption(
+            "Un partido, comparación **sin corregir**. Si el modelo se desvía mucho del mercado "
+            "aquí, lo interesante es por qué, no que tenga razón. El veredicto medido está en "
+            "**Resultados**."
+        )
+    else:
+        st.info(
+            "Sin cuotas para este partido no hay línea base para este partido: el pronóstico de "
+            "arriba es solo el modelo. Pega las tres cuotas decimales para compararlo con el mercado."
+        )

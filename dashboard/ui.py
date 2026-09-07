@@ -322,6 +322,62 @@ HELP = {
                              "agregado sin esfuerzo. La pregunta que importa es partido a partido, "
                              "y para eso hacen falta una regla de puntuación y un modelo.",
 
+    "fb_source_toggle": (
+        "Europa usa los archivos de liga de football-data.co.uk (cuotas de cierre desde "
+        "2019/20). Colombia usa el archivo «extra» new/COL.csv: mismo deporte, pero solo "
+        "cuotas de apertura — la línea base es blanda y ninguna ventaja medida ahí está probada."
+    ),
+    "fb_forecast_tab": (
+        "Un pronóstico para un partido concreto. Las probabilidades del modelo se muestran "
+        "siempre junto a las del mercado; el modelo por sí solo no dice si acierta — eso lo "
+        "responde la pestaña Resultados, sobre muchos partidos y con corrección."
+    ),
+    "fb_h2h": (
+        "Historial y forma reciente. Es descriptivo: no es una predicción, y una racha corta "
+        "es en su mayor parte ruido."
+    ),
+    "fb_form": "Últimos partidos de cada equipo antes de esta fecha. W/E/D desde la óptica del equipo.",
+    "fb_model_1x2": (
+        "Probabilidad de local / empate / visitante según Dixon-Coles ajustado a las temporadas "
+        "cargadas. No incorpora lesiones, alineaciones ni el mercado."
+    ),
+    "fb_scoreline_grid": (
+        "Probabilidad de cada marcador exacto. El más probable rara vez pasa del 10-12%: sirve "
+        "para ver la forma de la distribución, no para apostar a un resultado exacto."
+    ),
+    "fb_most_likely_scores": "Los marcadores con más probabilidad. Suman una fracción pequeña del total.",
+    "fb_over_under": "Probabilidad de más/menos de 2.5 goles, derivada de la misma matriz de marcadores.",
+    "fb_btts": "Probabilidad de que ambos equipos marquen.",
+    "fb_your_odds": (
+        "Cuotas decimales actuales de una casa de apuestas para este partido. Si las pones, se "
+        "les quita el margen y se comparan con el modelo. Es un partido y una comparación sin "
+        "corregir: no es un veredicto."
+    ),
+    "fb_model_vs_market": (
+        "Modelo contra mercado para este partido. Una diferencia a favor del modelo en un "
+        "partido no significa nada — hace falta la evaluación de la pestaña Resultados."
+    ),
+    "fb_half_life": (
+        "Vida media en días del peso temporal: un partido de hace tantos días pesa la mitad. "
+        "Más bajo = más peso a la forma reciente. 0 = todos los partidos pesan igual."
+    ),
+    "fb_eval_tab": (
+        "Puntuación fuera de muestra del modelo contra la cuota de cierre, con el veredicto "
+        "naive y el corregido. Es el único número de esta página que dice si el modelo vale algo."
+    ),
+    "fb_skill_score": (
+        "1 − score(modelo)/score(mercado). Positivo = el modelo puntuó mejor. En una sola "
+        "temporada un valor positivo pequeño está dentro del ruido."
+    ),
+    "fb_beats_market": (
+        "Veredicto de una prueba pareada de una cola. Mira siempre la columna corregida: con "
+        "varios métodos de de-margen probados a la vez, la naive se supera por azar."
+    ),
+    "fb_model_calibration": (
+        "Cuando el modelo dice 60% de victoria local, ¿gana el local ~60% de las veces? "
+        "Con una temporada cada punto tiene pocos partidos, así que la dispersión es ruido."
+    ),
+
     # -- Ciclismo
     "cy_files": "Archivos de resultados de la carpeta indicada. Un archivo contiene un solo tipo de "
                 "resultado, y no se pueden cargar juntos tipos distintos: un puesto en una etapa y "
