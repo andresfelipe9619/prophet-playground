@@ -12,6 +12,10 @@ round robin is a noisy read of the truth and lands too close to even a soft
 market for the positive control to be anything but flaky; a larger league and
 more training data give the model enough signal to separate the two markets
 reliably at ``seed=0``.
+
+The positive control deliberately uses a very soft, unrealistic book
+(``market_noise=1.3``, far beyond a real opening line). The assertion is only
+that a real model beats a demonstrably soft market, not a realistic one.
 """
 
 import pytest
@@ -20,14 +24,7 @@ from football.backtest import run_all, run_holdout
 from football.sample_data import generate_matches
 from football.processor import preprocess_matches
 
-# The synthetic generator draws goals as two independent Poisson variables, so
-# there is no low-score dependence for Dixon-Coles's rho to find and the fit
-# drives it to its bound on every window. That is a property of the test bed,
-# not of the backtest, so the model's own warning about it is silenced here.
-pytestmark = [
-    pytest.mark.slow,
-    pytest.mark.filterwarnings("ignore:rho hit its bound:UserWarning"),
-]
+pytestmark = pytest.mark.slow
 
 
 def _matches(market_noise, seed=0, n_teams=16):

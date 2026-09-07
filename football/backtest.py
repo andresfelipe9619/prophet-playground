@@ -18,6 +18,7 @@ Fitting Dixon-Coles per window is the slow part; `--n-windows` defaults low and
 """
 
 import argparse
+import os
 
 import numpy as np
 import pandas as pd
@@ -123,7 +124,6 @@ def main():
     parser.add_argument("--league", default=None, help="league to pick from an --extra file")
     args = parser.parse_args()
 
-    import os
     paths = [os.path.join(args.data_dir, name) for name in args.seasons.split(",")]
     if args.extra:
         from football.extra_processor import load_extra
