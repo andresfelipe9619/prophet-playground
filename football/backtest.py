@@ -1,20 +1,30 @@
-"""Walk-forward evaluation of a football model against the closing line.
+"""Walk-forward evaluation of the football models against the closing line.
 
 The football counterpart of lottery/backtest.py, and it shares the shape on
-purpose. `run_all` holds out the last N matches and refits Dixon-Coles before
-each one (expanding window, one step ahead). `run_holdout` holds out everything
-after a date, either refitting per match (`expanding`) or fitting once at the
-cutoff (`frozen`) — the frozen mode is the fast, concrete "train in March,
-predict the rest of the season" run.
+purpose. `run_all` holds out the last N matches and refits before each one
+(expanding window, one step ahead). `run_holdout` holds out everything after a
+date, either refitting per match (`expanding`) or fitting once at the cutoff
+(`frozen`) — the frozen mode is the fast, concrete "train in March, predict the
+rest of the season" run. `compare_models` runs several models over the *same*
+held-out matches and returns one row each.
 
-Both paths end in the same place: `football.evaluation.beats_market_test` over
-every (model probs, market probs, outcome) triple collected, so the summaries
-are directly comparable. A window whose held-out fixture involves a team the
-training slice never saw is skipped, never scored — exactly as the lottery
-skips a window a model could not predict.
+Every path ends in the same place: `football.evaluation.beats_market_test` over
+the (model probs, market probs, outcome) triples collected, so the summaries are
+directly comparable. A window whose held-out fixture involves a team *any*
+requested model never saw is skipped for all of them, never scored — that is
+what keeps a multi-model comparison paired, since two models scored on different
+matches are not comparable at all. It mirrors the lottery skipping a window a
+model could not predict.
 
-Fitting Dixon-Coles per window is the slow part; `--n-windows` defaults low and
-`--cutoff ... --mode frozen` avoids the refit loop entirely.
+**Multiple models means the corrected verdict is the one that counts.**
+`compare_models` passes `n_comparisons = len(models)` into every test it runs,
+so three models scored against the same matches face a threshold of 0.05/3. A
+table that reported one uncorrected verdict per model would reintroduce exactly
+the bug the lottery side is built around.
+
+Fitting Dixon-Coles per window is the slow part — Elo is a single pass and the
+blend is arithmetic on probabilities already computed, so adding them to a run
+costs almost nothing. `--cutoff ... --mode frozen` avoids the refit loop.
 """
 
 import argparse
@@ -24,12 +34,26 @@ import numpy as np
 import pandas as pd
 
 from core.windows import cutoff_bounds, window_bounds
-from football.common import ODDS_COLUMNS, PROBABILITY_COLUMNS
-from football.dixon_coles import DixonColes, UnknownTeamError
+from football.common import ODDS_COLUMNS, PROBABILITY_COLUMNS, UnknownTeamError
+from football.dixon_coles import DixonColes
+from football.elo import Elo
+from football.ensemble import POOLS, blend
 from football.evaluation import beats_market_test
 from football.market import market_probabilities
 
 MIN_TRAIN = 100
+
+# The models this module can score. "blend" is not a third fit: it is
+# Dixon-Coles pooled with the market, which is why it is derived after
+# collection rather than fitted inside the window loop.
+BASE_MODELS = ("dixon_coles", "elo")
+MODEL_NAMES = ("dixon_coles", "elo", "blend")
+DEFAULT_BLEND_WEIGHT = 0.5
+
+_FITTERS = {
+    "dixon_coles": lambda train, half_life: DixonColes.fit(train, half_life=half_life),
+    "elo": lambda train, half_life: Elo.fit(train),
+}
 
 
 def _market_row_probs(match_row, method):
@@ -46,41 +70,117 @@ def _score(model_probs, market_probs, outcomes, metric, n_comparisons=1):
                              metric=metric, n_comparisons=n_comparisons)
 
 
-def _collect(train_for, matches, indices, half_life, method, frozen_model=None):
-    """Fit-and-predict over `indices`, returning the three aligned lists plus a skip count."""
-    model_probs, market_probs, outcomes = [], [], []
+def _base_models(models):
+    """Which models actually need fitting for this request."""
+    needed = [name for name in models if name in BASE_MODELS]
+    if "blend" in models and "dixon_coles" not in needed:
+        needed.append("dixon_coles")  # the blend's model half
+    return needed
+
+
+def _collect(train_for, matches, indices, half_life, method, models=("dixon_coles",),
+             frozen=None):
+    """Fit-and-predict over `indices`.
+
+    Returns `(probs_by_model, market_probs, outcomes, skipped)`. A window is
+    skipped when *any* fitted model cannot predict it, so every model in the
+    call ends up scored on an identical set of matches.
+    """
+    needed = _base_models(models)
+    probs = {name: [] for name in needed}
+    market_probs, outcomes = [], []
     skipped = 0
+
     for t in indices:
         test = matches.iloc[t]
         try:
-            model = frozen_model if frozen_model is not None else \
-                DixonColes.fit(train_for(t), half_life=half_life)
-            p_model = model.predict_outcome(test["home_team"], test["away_team"])
+            fitted = frozen if frozen is not None else {
+                name: _FITTERS[name](train_for(t), half_life) for name in needed}
+            row = {name: fitted[name].predict_outcome(test["home_team"], test["away_team"])
+                   for name in needed}
         except UnknownTeamError:
             skipped += 1
             continue
-        model_probs.append(p_model)
+        for name, vector in row.items():
+            probs[name].append(vector)
         market_probs.append(_market_row_probs(test, method))
         outcomes.append(test["outcome"])
-    return model_probs, market_probs, outcomes, skipped
+
+    return probs, market_probs, outcomes, skipped
+
+
+def _with_blend(probs, market_probs, models, weight, pool):
+    """Derive the blended series from the already-collected Dixon-Coles one."""
+    if "blend" not in models:
+        return probs
+    if not probs.get("dixon_coles"):
+        return {**probs, "blend": []}
+    blended = blend(np.array(probs["dixon_coles"]), np.array(market_probs),
+                    weight=weight, pool=pool)
+    return {**probs, "blend": list(blended)}
+
+
+def _summarise(probs, market_probs, outcomes, models, metric, skipped, mode, method,
+               half_life, weight, pool):
+    """One row per model, all sharing the same Bonferroni threshold."""
+    rows = []
+    for name in models:
+        result = _score(probs[name], market_probs, outcomes, metric,
+                        n_comparisons=len(models))
+        rows.append({"model": name, "n_windows_scored": len(outcomes),
+                     "n_windows_skipped": skipped, "mode": mode, "method": method,
+                     "half_life": half_life,
+                     "blend_weight": weight if name == "blend" else None,
+                     "pool": pool if name == "blend" else None,
+                     **result})
+    return pd.DataFrame(rows)
+
+
+def compare_models(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
+                   method="multiplicative", metric="rps", models=MODEL_NAMES,
+                   blend_weight=DEFAULT_BLEND_WEIGHT, pool="linear"):
+    """Score several models over the same held-out matches, corrected together.
+
+    Returns one row per model. Read `beats_market_corrected`: the threshold is
+    already divided by the number of models in the call, because scoring three
+    models against one set of matches gives three chances for luck to clear an
+    uncorrected 5%.
+    """
+    models = tuple(models)
+    unknown = [name for name in models if name not in MODEL_NAMES]
+    if unknown:
+        raise ValueError(f"Unknown models {unknown}. Expected from {list(MODEL_NAMES)}.")
+    if pool not in POOLS:
+        raise ValueError(f"Unknown pool {pool!r}. Expected one of {sorted(POOLS)}.")
+
+    matches = matches.sort_values("ds").reset_index(drop=True)
+    start, total = window_bounds(len(matches), n_windows, min_train)
+    probs, market_probs, outcomes, skipped = _collect(
+        lambda t: matches.iloc[:t], matches, range(start, total), half_life, method, models)
+    probs = _with_blend(probs, market_probs, models, blend_weight, pool)
+
+    return _summarise(probs, market_probs, outcomes, models, metric, skipped,
+                      "expanding_last_n", method, half_life, blend_weight, pool)
 
 
 def run_all(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
-            method="multiplicative", metric="rps"):
-    """Hold out the last `n_windows` matches, refitting Dixon-Coles before each."""
+            method="multiplicative", metric="rps", model="dixon_coles"):
+    """Hold out the last `n_windows` matches, refitting `model` before each."""
     matches = matches.sort_values("ds").reset_index(drop=True)
     start, total = window_bounds(len(matches), n_windows, min_train)
-    model_probs, market_probs, outcomes, skipped = _collect(
-        lambda t: matches.iloc[:t], matches, range(start, total), half_life, method)
+    probs, market_probs, outcomes, skipped = _collect(
+        lambda t: matches.iloc[:t], matches, range(start, total), half_life, method, (model,))
+    probs = _with_blend(probs, market_probs, (model,), DEFAULT_BLEND_WEIGHT, "linear")
 
-    result = _score(model_probs, market_probs, outcomes, metric)
-    result.update({"n_windows_scored": len(outcomes), "n_windows_skipped": skipped,
-                   "mode": "expanding_last_n", "method": method, "half_life": half_life})
+    result = _score(probs[model], market_probs, outcomes, metric)
+    result.update({"model": model, "n_windows_scored": len(outcomes),
+                   "n_windows_skipped": skipped, "mode": "expanding_last_n",
+                   "method": method, "half_life": half_life})
     return result
 
 
 def run_holdout(matches, cutoff, mode="expanding", half_life=None,
-                method="multiplicative", metric="rps"):
+                method="multiplicative", metric="rps", model="dixon_coles"):
     """Hold out every match after `cutoff`.
 
     `mode='expanding'` refits before each held-out match; `mode='frozen'` fits
@@ -92,17 +192,20 @@ def run_holdout(matches, cutoff, mode="expanding", half_life=None,
     matches = matches.sort_values("ds").reset_index(drop=True)
     n_train, n_holdout = cutoff_bounds(matches["ds"], cutoff)
 
-    frozen_model = None
+    frozen = None
     if mode == "frozen":
-        frozen_model = DixonColes.fit(matches.iloc[:n_train], half_life=half_life)
+        train = matches.iloc[:n_train]
+        frozen = {name: _FITTERS[name](train, half_life) for name in _base_models((model,))}
 
-    model_probs, market_probs, outcomes, skipped = _collect(
+    probs, market_probs, outcomes, skipped = _collect(
         lambda t: matches.iloc[:t], matches, range(n_train, n_train + n_holdout),
-        half_life, method, frozen_model=frozen_model)
+        half_life, method, (model,), frozen=frozen)
+    probs = _with_blend(probs, market_probs, (model,), DEFAULT_BLEND_WEIGHT, "linear")
 
-    result = _score(model_probs, market_probs, outcomes, metric)
-    result.update({"n_windows_scored": len(outcomes), "n_windows_skipped": skipped,
-                   "mode": mode, "method": method, "half_life": half_life})
+    result = _score(probs[model], market_probs, outcomes, metric)
+    result.update({"model": model, "n_windows_scored": len(outcomes),
+                   "n_windows_skipped": skipped, "mode": mode, "method": method,
+                   "half_life": half_life})
     return result
 
 
@@ -120,6 +223,12 @@ def main():
     parser.add_argument("--method", choices=("multiplicative", "additive", "power"),
                         default="multiplicative")
     parser.add_argument("--metric", choices=("brier", "rps", "log_loss"), default="rps")
+    parser.add_argument("--models", default=None,
+                        help=f"comma-separated, from {list(MODEL_NAMES)}; scores them together "
+                             "with the Bonferroni threshold divided by how many")
+    parser.add_argument("--blend-weight", type=float, default=DEFAULT_BLEND_WEIGHT,
+                        help="weight on the model in 'blend'; 0 is the market itself")
+    parser.add_argument("--pool", choices=tuple(POOLS), default="linear")
     parser.add_argument("--extra", action="store_true", help="load via the extra-file contract")
     parser.add_argument("--league", default=None, help="league to pick from an --extra file")
     args = parser.parse_args()
@@ -132,6 +241,21 @@ def main():
     else:
         from football.processor import load_seasons
         matches = load_seasons(paths)
+
+    if args.models:
+        table = compare_models(
+            matches, n_windows=args.n_windows, min_train=args.min_train,
+            half_life=args.half_life, method=args.method, metric=args.metric,
+            models=tuple(name.strip() for name in args.models.split(",")),
+            blend_weight=args.blend_weight, pool=args.pool)
+        columns = ["model", "n_windows_scored", "model_score", "market_score", "skill_score",
+                   "effect", "ci_low", "ci_high", "p_value_greater", "bonferroni_threshold",
+                   "beats_market", "beats_market_corrected"]
+        print(table[columns].to_string(index=False))
+        print("\nRead beats_market_corrected, not beats_market: "
+              f"{len(table)} models scored against the same matches means "
+              f"{len(table)} chances for one of them to clear an uncorrected 5% by luck.")
+        return
 
     if args.cutoff:
         result = run_holdout(matches, cutoff=args.cutoff, mode=args.mode,

@@ -26,6 +26,16 @@ DEFAULT_DATA_DIR = "exported_data/football"
 MATCH_COLUMNS = ["ds", "home_team", "away_team", "home_goals", "away_goals", "outcome"]
 
 
+class UnknownTeamError(ValueError):
+    """A prediction was asked for a team the model was never fitted on.
+
+    Lives here rather than beside any one model because every model in this
+    package raises it and the backtest catches it once, for all of them, to skip
+    a window rather than score a guess. A per-model copy would give the backtest
+    two exception types to catch and one of them would eventually be forgotten.
+    """
+
+
 def outcome_from_goals(home_goals, away_goals):
     """The three-way result of a finished match."""
     if home_goals > away_goals:
