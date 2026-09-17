@@ -8,12 +8,13 @@ imported lazily, because Baloto's page alone pulls in statsforecast and xgboost
 and there is no reason to pay for that while looking at cycling results.
 
 **The three domains are not equally built, and the shell says so** rather than
-presenting them as peers. Baloto has models, a chance baseline and a backtest;
-football has its data contract, the market baseline, a Dixon-Coles model, a
-proper scoring rule and a walk-forward backtest (only an Elo baseline is still
-missing); cycling has its data contract and nothing above it. A launcher
-that listed them identically would imply three finished products, which is
-exactly the kind of quiet overclaim the rest of this project is built to avoid.
+presenting them as peers. All three now have a baseline, a scoring rule and a
+walk-forward evaluation, but they are not the same bar and the caption under the
+selector names each one: chance for Baloto, the closing price for football, the
+pre-race ranking for cycling. A launcher that listed them identically would
+imply three interchangeable products, which is exactly the kind of quiet
+overclaim the rest of this project is built to avoid — the domains differ in
+what can be found there at all, not in how far the code has got.
 """
 
 import importlib
@@ -36,11 +37,11 @@ DOMAINS = {
     ),
     "⚽ Fútbol": (
         "dashboard.football_page",
-        "Datos, línea base del mercado, modelo Dixon-Coles y backtest. Falta el Elo.",
+        "Mercado, Dixon-Coles, Elo, mezcla con el mercado, backtest y valor.",
     ),
     "🚴 Ciclismo": (
         "dashboard.cycling_page",
-        "Solo datos. Sin línea base ni modelos todavía.",
+        "Datos, línea base del ranking, modelo Plackett-Luce y evaluación.",
     ),
 }
 
