@@ -32,21 +32,26 @@ def source(name):
         return handle.read()
 
 
-def help_keys():
-    """The keys of the single HELP dict in dashboard/ui.py."""
+def ui_dict(name):
+    """One of the copy dicts in dashboard/ui.py, evaluated without importing it."""
     tree = ast.parse(source("ui.py"))
     for node in ast.walk(tree):
         if (isinstance(node, ast.Assign)
-                and any(getattr(t, "id", None) == "HELP" for t in node.targets)):
-            return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
-    raise AssertionError("dashboard/ui.py no longer defines a HELP dict")
+                and any(getattr(t, "id", None) == name for t in node.targets)):
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"dashboard/ui.py no longer defines {name}")
+
+
+def help_keys():
+    """The keys of the single HELP dict in dashboard/ui.py."""
+    return set(ui_dict("HELP"))
 
 
 def keys_used(name):
     """Every HELP key a page asks for, whether directly or through the helpers."""
     text = source(name)
     used = set(re.findall(r'HELP\["([^"]+)"\]', text))
-    for call in re.finditer(r"\b(?:section|chart)\(", text):
+    for call in re.finditer(r"\b(?:section|chart|plain)\(", text):
         # The helpers take their key as the last string argument of the call, and
         # calls wrap across lines, so scan a window rather than one line.
         window = text[call.end():call.end() + 400]
@@ -59,7 +64,29 @@ def test_the_help_dict_is_the_single_one():
     # Three page modules with their own inline strings could not be reviewed as a
     # set, which is the only way the "say what it does not mean" rule is checkable.
     for name in PAGES:
-        assert "HELP = {" not in source(name), f"{name} declares a second HELP dict"
+        for dict_name in ("HELP", "PLAIN", "READ", "GLOSSARY"):
+            assert f"{dict_name} = " not in source(name), \
+                f"{name} declares a second {dict_name}; all copy lives in ui.py"
+
+
+@pytest.mark.parametrize("dict_name", ["PLAIN", "READ"])
+def test_guided_copy_hangs_off_a_real_help_key(dict_name):
+    # PLAIN and READ are keyed like HELP so one key carries every layer of
+    # explanation. An entry under a key no surface uses is copy nobody will ever
+    # read, and — worse — copy nobody will notice going stale.
+    orphans = sorted(set(ui_dict(dict_name)) - help_keys())
+    assert not orphans, f"{dict_name} has keys that are not HELP keys: {orphans}"
+
+
+def test_every_guided_box_says_what_it_does_not_mean():
+    # The "ojo" field is the whole point of the box: a surface that states a
+    # finding without its limit has misinformed whoever read it. Making the field
+    # required in the shape is what stops it being quietly dropped when copy is
+    # added in a hurry.
+    for key, entry in ui_dict("PLAIN").items():
+        assert set(entry) == {"veo", "concluyo", "ojo"}, \
+            f"PLAIN[{key!r}] must have exactly veo/concluyo/ojo, has {sorted(entry)}"
+        assert all(entry[field].strip() for field in entry), f"PLAIN[{key!r}] has an empty field"
 
 
 @pytest.mark.parametrize("name", PAGES)

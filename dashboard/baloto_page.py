@@ -77,6 +77,11 @@ from lottery.analysis.sensitivity import (
     sensitivity_report,
     sensitivity_threshold,
 )
+from lottery.analysis.structure import (
+    CALENDAR_THRESHOLD,
+    structure_report,
+    sum_percentile,
+)
 from lottery.models.baseline import expected_main_matches, most_frequent_pick
 from lottery.models.common import (
     DEFAULT_DATA_PATH,
@@ -100,7 +105,7 @@ from lottery.utils.processor import (
 )
 from lottery.utils.sample_data import load_sample_and_preprocess
 
-from dashboard.ui import HELP, chart, section, verdict_badge
+from dashboard.ui import HELP, chart, glossary, plain, plain_verdict, section, verdict_badge
 
 MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 
@@ -153,12 +158,166 @@ def cached_pooled_tests(balls_expanded, n_columns):
     )
 
 
+@st.cache_data(show_spinner=False)
+def cached_structure(balls_expanded):
+    return structure_report(balls_expanded)
+
+
+def essentials_card(n_draws, pooled_main, structure):
+    """The answer, before the ten tabs that justify it.
+
+    A dashboard that only answers questions you already know how to ask leaves a
+    newcomer to assemble the conclusion out of ten tabs of p-values, and most
+    people assemble the wrong one — they find the tab with the biggest number and
+    stop. So the conclusion goes first, in words, and the tabs become the
+    evidence for it rather than a puzzle to solve.
+
+    Everything here is read off tests computed on the loaded data; none of it is
+    a fixed string pretending to be a finding.
+    """
+    healthy = pooled_main["p_value"] > 0.05 and structure["looks_random"]
+    mde = minimum_detectable_effect(n_draws)
+
+    with st.container(border=True):
+        st.markdown("### Lo esencial, antes de entrar en detalle")
+        if healthy:
+            st.markdown(
+                f"**1. Tus datos están sanos.** Los {n_draws} sorteos cargados pasan las dos "
+                "pruebas que importan: cada número sale con la frecuencia que le toca, y las "
+                "combinaciones no se agrupan de ninguna forma rara. Es el resultado que quieres."
+            )
+        else:
+            st.markdown(
+                f"**1. Ojo con los datos.** Alguna de las pruebas sobre los {n_draws} sorteos "
+                "cargados salió marcada. Lo más probable no es que la lotería sea vencible, sino "
+                "que el archivo mezcle formatos o venga incompleto. Revisa la pestaña "
+                "**5 · ¿Es aleatorio?** antes de creerle a nada más."
+            )
+        st.markdown(
+            "**2. No hay nada que predecir, y eso no es un fallo del panel.** Un sorteo de Baloto "
+            "es independiente y uniforme por diseño: las balotas no recuerdan lo que salió antes. "
+            "Ningún modelo de esta página le gana al azar, y la pestaña **8 · ¿Le gana al azar?** "
+            "lo mide sobre tus propios datos en lugar de pedirte que lo creas."
+        )
+        st.markdown(
+            f"**3. Con {n_draws} sorteos, «no encontré nada» quiere decir "
+            f"«no hay ventaja mayor que +{mde['relative']:.0%}».** No quiere decir «no hay "
+            "ventaja». Esa distinción es la pestaña **9 · ¿Qué se podía ver?**, y es lo que "
+            "separa este panel de un sistema de lotería."
+        )
+        st.markdown(
+            "**4. Lo único que sí puedes mejorar es cuánto cobras si ganas.** Tu probabilidad de "
+            "ganar es fija e idéntica para toda combinación. Pero el premio mayor se reparte entre "
+            "todos los que acertaron, y la gente no elige al azar — juega fechas. Evitar lo que "
+            "juegan los demás no te hace ganar más seguido; te hace repartir con menos gente. "
+            "Está en **7 · Jugadas → Reparto de premios**."
+        )
+
+
+def _bucketed_sums(table, width=10):
+    """The exact sum table folded into readable buckets.
+
+    191 attainable sums over a few hundred draws puts ~2 draws in each, and a
+    191-bar chart of twos and threes shows a reader nothing but noise. Bucketing
+    the *exact* expected counts alongside the observed ones keeps the comparison
+    honest — the reference is still combinatorial, just summed over a wider bin.
+    """
+    edges = list(range(int(table["sum"].min()), int(table["sum"].max()) + width + 1, width))
+    buckets = pd.cut(table["sum"], bins=edges, right=False)
+    grouped = table.groupby(buckets, observed=True).agg(
+        observed=("observed", "sum"), expected=("expected", "sum"),
+        low=("sum", "min"), high=("sum", "max"))
+    grouped = grouped.reset_index(drop=True)
+    grouped["label"] = grouped["low"].astype(int).astype(str) + "-" + grouped["high"].astype(int).astype(str)
+    return grouped
+
+
+def render_structure(structure):
+    """The three order-agnostic summaries against their exact distributions.
+
+    Lives inside the randomness tab rather than in one of its own because it
+    answers the same question — is there anything here to exploit? — from the
+    one angle the pooled test structurally cannot reach: dependence *between*
+    the five balls rather than the frequency of each.
+    """
+    section("¿Se combinan bien las balotas, o solo se reparten bien?", "structure_section")
+
+    tests = structure["tests"]
+    c1, c2, c3 = st.columns(3)
+    for column, key, label in (
+        (c1, "sum", "Suma de las 5"),
+        (c2, "parity", "Cuántas impares"),
+        (c3, "calendar", f"Cuántas ≤ {CALENDAR_THRESHOLD}"),
+    ):
+        p_value = tests[key]["p_value"]
+        column.metric(label, "Normal" if p_value > 0.05 else "Marcada",
+                      help=HELP["structure_verdict"])
+        # Not `delta=`: Streamlit draws an up arrow next to it, and a p-value has
+        # no direction to point in.
+        column.caption(f"p = {p_value:.3f}")
+
+    plain_verdict(
+        structure["looks_random"],
+        "Las combinaciones salen como la combinatoria manda"
+        if structure["looks_random"] else
+        "Alguna de las tres pruebas salió marcada",
+        f"Suma media observada {structure['observed_mean_sum']:.1f} contra "
+        f"{structure['expected_mean_sum']:.1f} exacta, sobre {structure['n_draws']} sorteos. "
+        "Con tres pruebas a la vez, que una marque «No» le pasa a un histórico impecable "
+        "alrededor del 14% de las veces — una sola casilla no es un hallazgo.",
+    )
+
+    bucketed = _bucketed_sums(structure["sum_distribution"])
+    figure = go.Figure()
+    figure.add_bar(x=bucketed["label"], y=bucketed["observed"], name="Tus sorteos")
+    figure.add_scatter(x=bucketed["label"], y=bucketed["expected"], mode="lines+markers",
+                       name="Exacto (combinatoria)")
+    figure.update_layout(xaxis_title="Suma de las 5 balotas", yaxis_title="Sorteos", height=380)
+    chart(figure, "Suma de las balotas: tus sorteos contra lo exacto", "sum_chart")
+    st.caption(
+        f"Hay **una sola** combinación que suma {int(structure['sum_distribution']['sum'].min())} "
+        f"(1-2-3-4-5) y **{int(structure['sum_distribution']['n_combinations'].max()):,}** que suman "
+        f"{int(structure['expected_mean_sum'])}. Por eso la campana. Y sin embargo cada una de esas "
+        "combinaciones es exactamente igual de probable que 1-2-3-4-5: la campana cuenta cuántas "
+        "hay, no cuánto valen. Jugar una suma rara no mejora tu probabilidad de ganar — solo "
+        "reduce con cuánta gente repartirías."
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        parity = structure["parity_distribution"]
+        figure = go.Figure()
+        figure.add_bar(x=parity["n_odd"], y=parity["observed"], name="Tus sorteos")
+        figure.add_scatter(x=parity["n_odd"], y=parity["expected"], mode="markers",
+                           name="Exacto", marker=dict(size=11, symbol="diamond"))
+        figure.update_layout(xaxis_title="Balotas impares (de 5)", yaxis_title="Sorteos", height=320)
+        chart(figure, "Pares e impares", "parity_chart")
+    with c2:
+        calendar = structure["calendar_distribution"]
+        figure = go.Figure()
+        figure.add_bar(x=calendar["n_at_or_below"], y=calendar["observed"], name="Tus sorteos")
+        figure.add_scatter(x=calendar["n_at_or_below"], y=calendar["expected"], mode="markers",
+                           name="Exacto", marker=dict(size=11, symbol="diamond"))
+        figure.update_layout(xaxis_title=f"Balotas de {CALENDAR_THRESHOLD} o menos (de 5)",
+                             yaxis_title="Sorteos", height=320)
+        chart(figure, "Números que caben en una fecha", "calendar_chart")
+
+    st.caption(
+        f"El reparto de la derecha es el que tiene consecuencias económicas. Los números "
+        f"1-{CALENDAR_THRESHOLD} son el {calendar.attrs['pool_share']:.0%} del pool pero se juegan "
+        "muchísimo más que eso, porque caben en un cumpleaños. Un sorteo con 4 o 5 números por "
+        "encima de 31 paga igual de seguido y se reparte entre menos gente — ver "
+        "**7 · Jugadas → Reparto de premios**."
+    )
+
+
 def render():
     st.title("🎯 Baloto")
     st.caption(
-        "Panel de análisis y forecasting para Baloto. Antes de leer cualquier predicción, revisa la pestaña "
-        "**Aleatoriedad**: los sorteos de lotería son, por diseño, independientes y uniformes — el objetivo de este "
-        "panel es mostrar honestamente si hay o no señal explotable, no prometer que la hay."
+        "Panel de análisis y forecasting para Baloto. Las pestañas están numeradas en el orden en que "
+        "conviene leerlas: los sorteos de lotería son, por diseño, independientes y uniformes, así que "
+        "el objetivo de este panel es mostrar honestamente si hay o no señal explotable — no prometer "
+        "que la hay. Si una palabra no te suena, está en el **Glosario** de la barra lateral."
     )
 
     with st.sidebar:
@@ -171,6 +330,7 @@ def render():
                  "superbalota). Los dos formatos se publican igual, así que un histórico largo suele "
                  "mezclarlos. Desmarca solo si sabes lo que estás haciendo.",
         )
+    glossary()
 
     df, balls_expanded, position_series, is_demo, format_report = load_data(
         data_path, uploaded.getvalue() if uploaded else None, current_format_only
@@ -205,10 +365,18 @@ def render():
             "explorar el panel. Sube tu CSV real en la barra lateral para analizar tus datos."
         )
 
+    pooled_main, pooled_super, sorted_flag = cached_pooled_tests(balls_expanded, n_columns)
+    structure = cached_structure(balls_expanded)
+    essentials_card(n_draws, pooled_main, structure)
+
+    # The numbers are a reading order, not decoration. Ten tabs in a row with no
+    # ordering reads as ten equally good places to start, and the one a newcomer
+    # picks first is usually "Forecast" — the single tab whose output means least
+    # without the three that come before it.
     tabs = st.tabs([
-        "Resumen", "Probabilidades y Valor Esperado", "Frecuencia y Gaps", "Hot / Cold",
-        "Aleatoriedad", "Forecast", "Jugadas", "Backtest vs. Azar", "Potencia y Sensibilidad",
-        "Registro",
+        "1 · Resumen", "2 · Probabilidades", "3 · Frecuencia", "4 · Hot / Cold",
+        "5 · ¿Es aleatorio?", "6 · Pronóstico", "7 · Jugadas", "8 · ¿Le gana al azar?",
+        "9 · ¿Qué se podía ver?", "10 · Registro",
     ])
 
     # ---------------------------------------------------------------- Resumen
@@ -218,7 +386,6 @@ def render():
         col1.metric("Sorteos", n_draws, help=HELP["n_draws"])
         col2.metric("Desde", df["ds"].min().strftime("%Y-%m-%d"), help=HELP["date_from"])
         col3.metric("Hasta", df["ds"].max().strftime("%Y-%m-%d"), help=HELP["date_to"])
-        pooled_main, pooled_super, sorted_flag = cached_pooled_tests(balls_expanded, n_columns)
         col4.metric("Balotas guardadas ordenadas asc.", "Sí" if sorted_flag else "No",
                     help=HELP["sorted_flag"])
 
@@ -236,18 +403,26 @@ def render():
         )
         c1, c2 = st.columns(2)
         with c1:
-            st.metric("p-valor (balotas principales, agrupadas)", f"{pooled_main['p_value']:.3f}",
-                      help=HELP["pooled_main_p"])
-            verdict_badge(pooled_main["p_value"] > 0.05)
+            st.markdown("**Las 5 balotas principales (1-43)**", help=HELP["pooled_main_p"])
+            plain_verdict(
+                pooled_main["p_value"] > 0.05,
+                "Cada número sale las veces que le toca"
+                if pooled_main["p_value"] > 0.05 else
+                "Hay un desbalance que el azar no explica",
+                f"p-valor = {pooled_main['p_value']:.3f}. Por encima de 0.05 significa «nada raro»; "
+                "por debajo, «esto sería difícil de conseguir con un sorteo justo» — y casi siempre "
+                "apunta a un problema del archivo antes que a una lotería vencible.",
+            )
         with c2:
-            st.metric("p-valor (superbalota)", f"{pooled_super['p_value']:.3f}",
-                      help=HELP["pooled_super_p"])
-            verdict_badge(pooled_super["p_value"] > 0.05)
-        st.caption(
-            "p-valor alto (>0.05) = no hay evidencia contra la hipótesis de uniformidad, que es justamente lo "
-            "esperable en un sorteo justo. Un p-valor bajo aquí sí sería una señal real y rara — vale la pena "
-            "revisar la fuente de datos si eso pasa."
-        )
+            st.markdown("**La superbalota (1-16)**", help=HELP["pooled_super_p"])
+            plain_verdict(
+                pooled_super["p_value"] > 0.05,
+                "Sale repartida como debe"
+                if pooled_super["p_value"] > 0.05 else
+                "Hay un desbalance que el azar no explica",
+                f"p-valor = {pooled_super['p_value']:.3f}. Se evalúa aparte porque su rango es 1-16 "
+                "y no 1-43, así que no se puede agrupar con las principales.",
+            )
 
     # ------------------------------------------- Probabilidades y Valor Esperado
     with tabs[1]:
@@ -430,6 +605,9 @@ def render():
         verdict_badge(autocorr["ljung_box_p_value"] > 0.05,
                       "Sin autocorrelación detectable — no hay 'memoria' que un modelo de series de tiempo pueda explotar",
                       "Autocorrelación detectada — esto sí justificaría probar un modelo de series de tiempo")
+
+        st.divider()
+        render_structure(structure)
 
     # ------------------------------------------------------------------ Forecast
     with tabs[5]:
@@ -727,13 +905,26 @@ def render():
             display["Premio esperado (banda)"] = display.apply(
                 lambda r: f"{r['expected_jackpot_share']:,.0f}  "
                           f"[{r['share_low']:,.0f} – {r['share_high']:,.0f}]", axis=1)
+            # compare_tickets sorts its rows, so the percentile is joined by the
+            # ticket's own string rather than by position.
+            percentiles = {str(t): sum_percentile(t.main) for t in to_compare}
+            display["Percentil de la suma"] = display["ticket"].map(percentiles)
             st.dataframe(
-                display[["ticket", "popularity_score", "expected_other_winners",
-                         "Premio esperado (banda)"]]
+                display[["ticket", "popularity_score", "Percentil de la suma",
+                         "expected_other_winners", "Premio esperado (banda)"]]
                 .rename(columns={"ticket": "Jugada", "popularity_score": "Popularidad",
                                   "expected_other_winners": "Otros ganadores esperados"})
-                .style.format({"Popularidad": "{:.3f}", "Otros ganadores esperados": "{:.3f}"}),
+                .style.format({"Popularidad": "{:.3f}", "Otros ganadores esperados": "{:.3f}",
+                                "Percentil de la suma": "{:.0%}"}),
                 use_container_width=True, hide_index=True,
+            )
+            st.caption(
+                "**Percentil de la suma** es qué porcentaje de todas las combinaciones suma igual "
+                "o menos que ésta. Cerca del 50% es una suma del montón, que es donde se concentra "
+                "casi todo el mundo; cerca de 0% o 100% es una suma inusual. No cambia tu "
+                "probabilidad de ganar ni un poco — es otra vista del mismo efecto de reparto. "
+                "La distribución completa está en **5 · ¿Es aleatorio?**",
+                help=HELP["sum_percentile"],
             )
 
             best, worst = table.iloc[0], table.iloc[-1]
@@ -892,6 +1083,24 @@ def render():
 
         if "backtest_summary" in st.session_state:
             summary = st.session_state["backtest_summary"]
+            winners = summary.loc[summary["beats_chance_corrected"], "model"].tolist()
+            best = summary.loc[summary["avg_main_hits"].idxmax()]
+            # good_is_pass=False: here "nothing beat chance" is the expected and
+            # correct outcome, so it is the green one.
+            plain_verdict(
+                bool(winners),
+                f"{', '.join(winners)} superó al azar — revísalo dos veces"
+                if winners else
+                "Ningún modelo le ganó al azar, que es el resultado correcto",
+                f"El mejor fue **{best['model']}** con {best['avg_main_hits']:.2f} aciertos "
+                f"promedio contra {best['chance_avg_main_hits']:.2f} del azar puro. "
+                + ("Antes de creerlo: vuelve a correrlo con más ventanas y mira el intervalo de "
+                   "confianza de abajo. Un modelo que gana en una corrida y no en la siguiente no "
+                   "ganó."
+                   if winners else
+                   "Una diferencia pequeña en cualquier dirección es varianza, no habilidad."),
+                good_is_pass=False,
+            )
             fig = go.Figure()
             fig.add_bar(x=summary["model"], y=summary["avg_main_hits"], name="Modelo")
             fig.add_bar(x=summary["model"], y=summary["chance_avg_main_hits"], name="Azar (esperado)")
