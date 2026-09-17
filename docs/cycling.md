@@ -195,33 +195,164 @@ between riders.
 
 `ability_true` is an answer key. Nothing outside tests may read it.
 
-## 6. The dashboard page
+## 6. The baseline: `cycling/baseline.py`
 
-`streamlit run dashboard/app.py`, then pick **🚴 Ciclismo** in the sidebar. Three
-tabs — **Datos**, **Abandonos**, **Tiempos** — and no predictions of any kind,
-because there is neither a baseline nor a model. What it does is put the three
-invariants above on screen, since none of them is visible in the shape of a frame:
-which kind of result is loaded, how many riders abandoned, and how many are timed
-faster than someone placed ahead of them. Loading a stage result together with a
-general classification renders the refusal. Details in
+The thing a model has to beat, and the piece without which nothing else here
+could mean anything. It is cycling's `football/market.py`.
+
+### A uniform draw is not a baseline
+
+With ~180 starters, a uniform draw gives everyone 0.55%. Any forecast beats it by
+knowing a single name, so a model that beats it has demonstrated only that
+cycling has favourites. It is implemented as `uniform_worths` **precisely so the
+mistake has a name and a docstring**, and it appears in the dashboard's
+evaluation table where it comes out worse than the real baseline — an unnamed
+mistake is one that gets made quietly.
+
+The real baseline is the market where a price exists and otherwise the **pre-race
+ranking**: `worths_from_points` for UCI/PCS points, `worths_from_rating` for a
+strength on any log-odds-like scale, and `form_worths` to build a ranking out of
+a rider's earlier results when no points are to hand. `form_worths` takes an
+`as_of` and uses only results strictly before it — a ranking that has seen the
+race it is ranking for is not a baseline, it is an answer key.
+
+### Why Plackett-Luce
+
+The target is an ordering of ~180 riders, so a vector of win probabilities is not
+enough on its own: it says nothing about second place. Luce's rule gives each
+rider a positive **worth**, makes their win probability their share of the total,
+then removes the winner and repeats. One number per rider generates a
+distribution over whole finishing orders, which is the shape the target has.
+
+`top_n_probabilities` samples that distribution with the Gumbel-max trick — add a
+standard Gumbel to each `log(worth)`, sort descending, and you have drawn an
+exact Plackett-Luce ordering in one vectorised pass. There is no cheap exact form
+beyond first place, so the numbers are estimates and the docstring says how
+coarse they are.
+
+## 7. Scoring an ordering: `cycling/scoring.py`
+
+`METRICS = ("plackett_luce", "winner_log", "winner_brier")`, and **the
+Plackett-Luce log score is the verdict** — the same shape as "the pooled test is
+the verdict" on the lottery side and "RPS is the verdict" in football. It is the
+only rule here that is proper over the actual target, a whole ordering, rather
+than over a summary of it. Lower is better, everywhere.
+
+Rank correlations (`spearman`, `kendall_tau`) and `top_n_accuracy` are here too,
+and they decide nothing. A rank correlation rewards getting the middle of the
+bunch roughly right, which is the easy and worthless part; a forecast can score
+well on it having missed every podium place.
+
+### Non-finishers stay in the denominator, and that is structural
+
+This is the most important line in the module. The likelihood places riders one
+at a time, and at each step the denominator is the total worth of everyone **not
+yet placed** — which includes every rider who abandoned. A forecast that put its
+money on a rider who climbed off is charged for it: they were available to win
+each position and took none.
+
+Drop the abandons and the score silently improves, because the field has been
+renormalised to the riders who made it. That turns "predict the finishing order"
+into the strictly easier "predict the order among those who finished", which is
+[the thing §3 already refuses to do to the data](#non-finishers-stay-in-the-frame).
+Here the refusal is not a check anyone has to remember — it falls out of the
+arithmetic.
+
+## 8. The model: `cycling/plackett_luce.py`
+
+Cycling's Dixon-Coles, and the first thing in the package that estimates rather
+than describes. One latent strength per rider, fitted by maximum likelihood over
+the Plackett-Luce likelihood of every finishing order in the training data, using
+Hunter's minorise-maximise iteration — monotone by construction, one pass over
+the data per sweep, and unlike a generic optimiser over 180 parameters it cannot
+wander.
+
+**How it differs from the baseline it must beat.** `form_worths` scores a placing
+heuristically and sums; that is a reasonable proxy for a ranking, and it is what
+a ranking *is*. The model asks which strengths make the orderings actually
+observed most likely, which discounts beating a weak field and rewards beating a
+strong one.
+
+**The Gamma prior is not a tuning knob.** Without it the fit is not merely noisy
+on thin data, it is undefined: a rider nobody ever finished behind has a
+maximum-likelihood worth that rises without bound, and one who never finished
+ahead of anyone has one that goes to zero, which then takes a logarithm to
+negative infinity in every downstream score. `prior_strength` is measured in
+placings, so a rider with that much evidence sits halfway between the field
+average and what their own results say. On the synthetic Grand Tour it moves the
+correlation between fitted strength and the generator's own `ability_true` from
+undefined to **0.76**.
+
+An unseen rider gets the field average rather than a refusal, unlike football's
+`UnknownTeamError`. The cases are genuinely different: a fixture between two
+teams, one unheard of, cannot be predicted at all, while a 180-rider start list
+with three neo-pros in it is an ordinary Tuesday, and dropping the race over them
+would throw away the 177 riders the model does know.
+
+## 9. Evaluation: `cycling/evaluation.py`
+
+`beats_baseline_test` is the domain half of the contract with
+`core/significance.py`, exactly as `beats_market_test` is in football: score the
+forecast and the ranking with the same rule per race, take the per-race
+difference (baseline minus model, so positive means the model did better), and
+test whether its mean is greater than zero. Paired, one-sided, with the naive and
+corrected verdicts emitted together as `beats_baseline` and
+`beats_baseline_corrected`.
+
+`walk_forward` hands every forecaster only the results strictly before each race;
+`compare_forecasters` runs several against one baseline and sets `n_comparisons`
+to the number of challengers. There is **no separate backtest module** — in
+football one exists because the expensive part is refitting a goals model inside
+the window loop, while here the walk is five lines and keeping it beside the test
+is what makes it obvious that the two share an `as_of`.
+
+### The hard part is the sample size
+
+A Grand Tour is 21 scored races; a season of one-day classics is a few dozen.
+Twenty-odd paired observations resolve only a large difference, so a null result
+here is even more a statement about the sample than it is on the lottery side —
+which is why `n_races` travels with every verdict. And on a sprint stage the
+finishing order is very nearly noise by construction: ability is worth four
+seconds against forty-five of race circumstance, so no forecast can or should
+beat a ranking there.
+
+### What the controls say
+
+Both hold, and they are the reason to believe the rest:
+
+- An **oracle** handed the generator's own `ability_true` beats the ranking, with
+  the corrected verdict, on a race where every stage is a climbing stage.
+- A forecaster that **is** the baseline comes out at an effect of exactly zero.
+- A **uniform draw** loses to the ranking, which is the claim §6 makes, measured.
+
+On the default synthetic Grand Tour — two stages in three a sprint — the fitted
+model edges the ranking and does **not** clear the corrected threshold on 17
+races. That is the honest result and the sample-size story above, in one number.
+
+## 10. The dashboard page
+
+`streamlit run dashboard/app.py`, then pick **🚴 Ciclismo** in the sidebar. Five
+tabs: **Datos**, **Abandonos** and **Tiempos** put the three invariants of §3 on
+screen, since none of them is visible in the shape of a frame; **Pronóstico**
+shows the baseline and the model side by side for one race, built only from what
+came before its date; **¿Le gana al ranking?** runs the walk-forward comparison.
+Loading a stage result together with a general classification renders the
+refusal. Details in
 [Dashboard §4](dashboard.md#4-ciclismo-the-result-contract).
 
-## 7. What is not built yet
+## 11. What is not built yet
 
-In order:
-
-1. **Scoring rules** for an ordering — Spearman against the finish, top-10 hit
-   rate, and a proper score for "wins the stage" as a multiclass forecast.
-   Neither the lottery's set-based hit counting nor football's three-way Brier
-   applies.
-2. **The ranking baseline** — a start-list quality score from PCS or UCI points,
-   which is the thing any model has to beat when no price exists.
-3. **A rider-strength model** (a Plackett-Luce or a Bradley-Terry fit over
-   results), which is the natural first model for an ordering.
-4. **Evaluation** through `core/`, with the corrected verdict, exactly as the
-   lottery backtest and football's market comparison do.
-5. **The evaluation tabs**, once there is something to evaluate. The page exists
-   and deliberately predicts nothing.
+1. **The market baseline.** Where a price exists it, not the ranking, is the bar.
+   Nothing here reads odds yet, so every verdict is against the ranking and says
+   so.
+2. **Course and terrain.** A climber and a sprinter are not one strength number,
+   and a model that cannot tell a mountain stage from a bunch sprint is leaving
+   most of the available signal on the table.
+3. **Teams.** Riders work for each other, which is the largest piece of structure
+   the current model ignores entirely.
+4. **Correlated abandons.** The synthetic generator draws them independently,
+   which is wrong in the way that matters most — real abandons cluster on the
+   same day, in the same crash.
 
 ---
 

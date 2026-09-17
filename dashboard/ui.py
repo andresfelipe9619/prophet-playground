@@ -419,6 +419,84 @@ HELP = {
         "compara esa media con la frecuencia real. Ajustado dentro de muestra: favorece al modelo."
     ),
 
+    # -- Fútbol · varios modelos, mezcla y valor
+    "fb_models_table": "Cada modelo puntuado contra la misma cuota de cierre y sobre los mismos "
+                       "partidos. Un partido que algún modelo no puede predecir se salta para "
+                       "todos: dos modelos medidos sobre partidos distintos no son comparables, y "
+                       "eso no se ve en la forma de la tabla.",
+    "fb_models_pick": "Cuáles medir. El umbral corregido se divide entre cuántos elijas, así que "
+                      "añadir un modelo endurece la prueba para todos — que es justo lo correcto.",
+    "fb_elo": "Elo: una sola nota de fuerza por equipo, que sube o baja tras cada partido según el "
+              "resultado y contra quién. Es la línea base barata que un modelo serio debe superar. "
+              "Solo produce local/empate/visitante: una nota única no puede saber cómo se reparten "
+              "los goles.",
+    "fb_elo_ranking": "Fuerza estimada de cada equipo al final de los partidos cargados. Los puntos "
+                      "no tienen unidad interpretable por sí solos; lo que significa algo es la "
+                      "diferencia entre dos equipos.",
+    "fb_blend": "Mezcla del modelo con el mercado. Con peso 0 la mezcla **es** el mercado y puntúa "
+                "exactamente igual; si subir el peso mejora la puntuación, el modelo aporta algo "
+                "que el precio no tenía. Es una pregunta más útil que «¿le gana al mercado?», que "
+                "casi nada responde que sí.",
+    "fb_blend_weight": "Cuánto peso lleva el modelo frente al mercado. 0 = solo mercado, 1 = solo "
+                       "modelo.",
+    "fb_pool": "Lineal promedia las probabilidades y siempre queda entre las dos fuentes. "
+               "Logarítmica promedia en escala log: se apoya más en lo que ambas favorecen y "
+               "castiga duro lo que una de las dos casi descartó. Si la conclusión cambia al "
+               "cambiar de regla, el hallazgo es sobre la regla, no sobre el modelo.",
+    "fb_tab_valor": "La parte que puede hacer daño. Todo lo de esta pestaña vale **solo si el "
+                    "modelo es bueno**, y lo único que dice algo sobre eso está en Resultados.",
+    "fb_two_bars": "Las dos barras son distintas y confundirlas es toda la trampa. Para juzgar un "
+                   "**modelo** se compara contra el precio sin margen. Para juzgar una **apuesta** "
+                   "se compara contra 1/cuota, porque el margen lo pagas tú. Entre las dos hay un "
+                   "hueco donde el modelo discrepa del mercado y la discrepancia no alcanza a "
+                   "pagar la comisión.",
+    "fb_value_table": "Por resultado: lo que dice el modelo, lo que dice el mercado, lo que "
+                      "tendrías que superar para ganar dinero, y el estado que sale de comparar "
+                      "los tres.",
+    "fb_kelly": "Kelly es la apuesta que maximiza el crecimiento a largo plazo **dada una ventaja "
+                "real**. Sobre una ventaja imaginaria no es que no ayude: sube la apuesta justo "
+                "cuando el modelo está más seguro y más equivocado. Por eso aquí es un cuarto de "
+                "Kelly y por eso no se muestra sin el veredicto al lado.",
+    "fb_margin_cost": "Cuánta probabilidad se come el margen, por resultado. Es el ancho del hueco "
+                      "de «solo discrepancia», y verlo como número es lo que impide que «mi modelo "
+                      "dice 38% y el mercado 35%» se lea como una apuesta.",
+
+    # -- Ciclismo · línea base, modelo y evaluación
+    "cy_tab_pronostico": "Quién debería ganar, según el ranking previo y según el modelo. Las dos "
+                         "cosas se muestran juntas: una probabilidad de un modelo sin su línea "
+                         "base al lado no dice nada.",
+    "cy_baseline_pick": "Sobre qué se construye la línea base. El ranking previo se arma con los "
+                        "resultados **anteriores** a la carrera elegida, nunca con la carrera "
+                        "misma.",
+    "cy_race_pick": "Qué carrera pronosticar. Todo lo que se muestre usa solo lo que se sabía "
+                    "antes de su fecha.",
+    "cy_uniform_warning": "Un sorteo uniforme sobre la lista de salida da 0,55% a cada uno de ~180 "
+                          "ciclistas. Cualquier pronóstico le gana sabiendo un solo nombre, así "
+                          "que **no es una línea base**: está aquí para que el error tenga nombre.",
+    "cy_win_probs": "Probabilidad de ganar de cada ciclista, bajo Plackett-Luce: la fuerza de cada "
+                    "uno dividida entre la fuerza total. Quitas al ganador y repites para el "
+                    "segundo puesto — así una sola cifra por ciclista genera un orden completo.",
+    "cy_top_n": "Probabilidad de acabar entre los primeros N, estimada por simulación. No hay "
+                "fórmula barata más allá del primer puesto. Con pocas simulaciones el error es de "
+                "un punto largo, así que no partas pelos con diferencias pequeñas.",
+    "cy_model_vs_baseline": "El modelo ajustado frente al ranking previo, ciclista a ciclista. "
+                            "Donde discrepan está lo que el modelo cree ver; si vale algo o no lo "
+                            "dice la pestaña Evaluación, no esta.",
+    "cy_tab_evaluacion": "El veredicto: se recorre carrera por carrera, cada pronóstico se "
+                         "construye **solo** con lo anterior, y se puntúa contra el ranking previo.",
+    "cy_metric": "Plackett-Luce puntúa el orden de llegada completo y es el veredicto. Las otras "
+                 "dos solo miran quién ganó. Las correlaciones de rango se leen fácil y premian "
+                 "acertar el centro del pelotón, que es la parte que no le importa a nadie — son "
+                 "diagnóstico, no veredicto.",
+    "cy_eval_table": "Menor es mejor en todas las métricas. Lee la columna corregida: el umbral ya "
+                     "está dividido entre cuántos pronosticadores compiten.",
+    "cy_eval_chart": "Puntuación por carrera de cada pronosticador contra el ranking. Por debajo "
+                     "de la línea del ranking es mejor que él ese día.",
+    "cy_sample_warning": "Una gran vuelta son 21 carreras puntuadas y una temporada de clásicas son "
+                         "unas pocas decenas. Con veintitantas observaciones solo se distingue una "
+                         "diferencia grande, así que aquí un «no le gana» habla del tamaño de la "
+                         "muestra todavía más que en las otras pestañas.",
+
     # -- Ciclismo
     "cy_files": "Archivos de resultados de la carpeta indicada. Un archivo contiene un solo tipo de "
                 "resultado, y no se pueden cargar juntos tipos distintos: un puesto en una etapa y "
@@ -711,7 +789,41 @@ PLAIN = {
                "acertar partido a partido.",
     },
 
+    "fb_tab_valor": {
+        "veo": "Qué pasaría si apostaras según el modelo a las cuotas que escribas: cuánta "
+               "ventaja habría y cuánto tocaría apostar.",
+        "concluyo": "**Nada de esto vale si el modelo no le gana al mercado**, y eso solo lo dice "
+                    "la pestaña Resultados. Lo que sí es cierto pase lo que pase es el hueco del "
+                    "margen: para ganar dinero no basta con discrepar del mercado, hay que "
+                    "discrepar lo suficiente como para pagar la comisión de la casa.",
+        "ojo": "Kelly **no** es una protección. Es la apuesta óptima suponiendo que tu ventaja es "
+               "real; si no lo es, sube la apuesta justo cuando el modelo está más seguro y más "
+               "equivocado, y convierte una pérdida lenta en una rápida. Por eso aquí es un cuarto "
+               "de Kelly y por eso no aparece sin el veredicto al lado.",
+    },
+
     # -- Ciclismo
+    "cy_tab_pronostico": {
+        "veo": "Quién debería ganar y quién debería entrar en el top 10, según el ranking previo "
+               "y según el modelo ajustado.",
+        "concluyo": "Aquí el objetivo no es un resultado de tres vías sino un **orden de llegada** "
+                    "de ~180 ciclistas. Una sola cifra de fuerza por ciclista genera el orden "
+                    "completo: el más fuerte gana con probabilidad proporcional a su fuerza, se le "
+                    "quita de la lista, y se repite para el segundo puesto.",
+        "ojo": "Que el modelo dé 12% al favorito no es poco ni mucho por sí solo. Con 180 "
+               "corredores, un sorteo uniforme daría 0,55% — por eso ese sorteo **no** es la línea "
+               "base contra la que hay que medirse, sino el ranking previo.",
+    },
+    "cy_tab_evaluacion": {
+        "veo": "Cada carrera puntuada dos veces: con el pronóstico del modelo y con el ranking "
+               "previo, usando solo lo que se sabía antes de esa carrera.",
+        "concluyo": "Menor es mejor. La diferencia media entre las dos puntuaciones, con su "
+                    "intervalo, es lo único que dice si el modelo aporta algo sobre el ranking.",
+        "ojo": "Son veintitantas carreras. Con esa cantidad solo se distingue una diferencia "
+               "grande, así que un «no le gana» aquí habla sobre todo del tamaño de la muestra. Y "
+               "ojo con los sprints: en una llegada masiva el orden es casi ruido, y ningún "
+               "pronóstico puede ni debe ganarle al ranking ahí.",
+    },
     "cy_tab_datos": {
         "veo": "Qué trae el archivo y las tres trampas que el contrato de datos protege y que no "
                "se ven mirando la tabla.",
@@ -797,6 +909,16 @@ READ = {
                              "correlacionados entre ciclistas.",
     "cy_gaps": "Solo puede subir. Un tramo plano es un grupo con el mismo tiempo; un escalón es "
                "donde se rompió la carrera. Si baja, los tiempos están mal.",
+    "fb_elo_ranking": "Lo que importa no es el número sino la distancia entre dos equipos: 100 "
+                      "puntos de diferencia son aproximadamente 64% de cuota esperada.",
+    "fb_margin_cost": "Cuanto más alta la barra, más tiene que discrepar el modelo en ese "
+                      "resultado para que apostarlo tenga sentido.",
+    "cy_win_probs": "La caída es fortísima: unos pocos nombres se llevan casi toda la "
+                    "probabilidad y la mayoría del pelotón queda cerca de cero. Así es una "
+                    "carrera real.",
+    "cy_model_vs_baseline": "Cada punto es un ciclista. Sobre la diagonal, el modelo lo ve mejor "
+                            "que el ranking; debajo, peor.",
+    "cy_eval_chart": "Más abajo es mejor. Compara cada línea con la del ranking, no con cero.",
 }
 
 # The jargon, defined once. Rendered as an expander in the sidebar of every page.
