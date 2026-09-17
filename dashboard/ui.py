@@ -913,9 +913,11 @@ READ = {
                       "puntos de diferencia son aproximadamente 64% de cuota esperada.",
     "fb_margin_cost": "Cuanto más alta la barra, más tiene que discrepar el modelo en ese "
                       "resultado para que apostarlo tenga sentido.",
-    "cy_win_probs": "La caída es fortísima: unos pocos nombres se llevan casi toda la "
-                    "probabilidad y la mayoría del pelotón queda cerca de cero. Así es una "
-                    "carrera real.",
+    "cy_win_probs": "Compara la altura de las barras con la línea del sorteo uniforme: lo que "
+                    "sobresalga de ella es lo que el pronóstico cree saber. En una carrera real "
+                    "unos pocos nombres se llevan casi toda la probabilidad; sobre los datos "
+                    "sintéticos de este panel la caída es mucho más suave, porque el generador "
+                    "no tiene estrellas.",
     "cy_model_vs_baseline": "Cada punto es un ciclista. Sobre la diagonal, el modelo lo ve mejor "
                             "que el ranking; debajo, peor.",
     "cy_eval_chart": "Más abajo es mejor. Compara cada línea con la del ranking, no con cero.",
