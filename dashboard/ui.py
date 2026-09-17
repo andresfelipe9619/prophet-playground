@@ -4,12 +4,27 @@ The dashboard spans three domains now, and this module is what keeps them
 looking and reading like one product: the explanatory copy, the two helpers that
 render a section and a chart, and the verdict badge.
 
-**All explanatory tooltip copy lives in the one `HELP` dict below.** That was
+**All explanatory copy lives in the dicts below**, and nowhere else. That was
 already this project's rule when the dashboard was Baloto-only, and splitting
 the pages into modules is exactly when it would have been easiest to lose: three
 files with their own inline strings cannot be reviewed as a whole, and the rule
 this project actually cares about — no chart or table appears without saying what
 it does *not* mean — is only checkable when the texts sit together.
+
+There are four such dicts, all keyed the same way so one key carries every layer
+of explanation a surface needs:
+
+- `HELP` — the hover ⓘ. There when you want it, out of the way when you don't.
+- `PLAIN` — the always-visible guided box: what you are looking at, what you may
+  conclude, and what it does **not** mean. Written for a reader who is competent
+  but has never met a p-value. This is the layer that stops the dashboard being
+  readable only by someone who already knows the answer.
+- `READ` — a one-line "how to read it" printed under a chart's title.
+- `GLOSSARY` — the jargon, defined once, with a concrete example each.
+
+`section()` and `chart()` pull `PLAIN` and `READ` in automatically off the key
+they already take, so a page gets the guided layer without a single new argument
+at the call site, and copy can never drift to a page module.
 """
 
 import streamlit as st
@@ -107,6 +122,28 @@ HELP = {
                  "totalmente dentro de la banda es exactamente lo que produce un proceso sin memoria.",
     "ljung_box": "Prueba conjunta sobre todos los lags a la vez. p alto = no hay autocorrelación detectable, "
                  "es decir, no hay 'memoria' que un modelo pueda explotar.",
+
+    # -- Estructura de la combinación
+    "structure_section": "Resume cada sorteo en un solo número que no depende del orden en que estén "
+                         "guardadas las balotas — su suma, cuántas son impares, cuántas caben en una "
+                         "fecha — y lo compara contra la distribución exacta. La prueba agrupada mira "
+                         "cada balota por separado; ésta mira las cinco juntas, así que ve cosas que "
+                         "aquella no puede ver.",
+    "sum_chart": "Distribución de la suma de las 5 balotas. La curva es la forma exacta que produce la "
+                 "combinatoria, no un ajuste a tus datos. Las sumas del centro son más frecuentes "
+                 "porque hay muchísimas más combinaciones que suman 110 que combinaciones que suman "
+                 "15 — no porque una combinación concreta sea más probable que otra.",
+    "parity_chart": "Cuántas de las 5 balotas son impares, contra lo exacto. El pool 1-43 tiene 22 "
+                    "impares y 21 pares, así que 2 o 3 impares es lo normal y 0 o 5 es raro.",
+    "calendar_chart": "Cuántas de las 5 balotas son 31 o menos, contra lo exacto. Los números 1-31 "
+                      "caben en una fecha y se juegan muchísimo más, aunque no sean más probables. "
+                      "Este reparto es lo que decide entre cuánta gente repartirías el premio.",
+    "structure_verdict": "Las tres pruebas juntas. Son inmunes al problema de los datos ordenados, y por "
+                         "una razón más fuerte que la prueba agrupada: ordenar un sorteo no cambia su "
+                         "suma ni cuántas impares tiene, porque son propiedades del conjunto.",
+    "sum_percentile": "Qué porcentaje de todas las combinaciones posibles suma igual o menos que ésta. "
+                      "Cerca de 50% es una suma del montón, que es donde juega casi todo el mundo. No "
+                      "cambia tu probabilidad de ganar; cambia con cuánta gente repartes.",
 
     # -- Forecast
     "tab_forecast": "Corre un modelo sobre tu histórico y pídele una sugerencia para el próximo sorteo. Es un "
@@ -425,9 +462,449 @@ HELP = {
 }
 
 
+# The always-visible guided box, keyed exactly like HELP.
+#
+# Three fields, and the third is the one this project exists for. "ojo" is not a
+# disclaimer bolted on at the end — it is the sentence that stops a reader
+# walking away with the conclusion the surface *looks* like it supports. A
+# frequency chart that says "el 7 salió más" and nothing else has misinformed
+# someone; the same chart with "eso no lo hace más probable" has not.
+#
+# Written for a reader who is technically competent and has never met a p-value.
+# Concrete numbers over abstractions, second person, no term used before it is
+# explained. A key with no entry here simply renders no box, so partial coverage
+# is fine: the tab-level and conceptually hard keys are the ones that need it.
+PLAIN = {
+    # -- Baloto · Resumen
+    "tab_resumen": {
+        "veo": "Cuántos sorteos cargaste, de qué fechas, y una prueba que revisa si tus números "
+               "salen repartidos de forma pareja.",
+        "concluyo": "Si la prueba dice que todo se ve parejo, tus datos son sanos y puedes seguir "
+                    "al resto del panel. Es el chequeo previo, como mirar que la báscula esté en "
+                    "cero antes de pesar algo.",
+        "ojo": "Que los datos sean sanos **no** significa que se pueda predecir nada. Significa lo "
+               "contrario: que el sorteo se comporta como debe, o sea impredecible.",
+    },
+    "pooled_test": {
+        "veo": "Una sola pregunta: ¿cada número del 1 al 43 sale más o menos la misma cantidad de "
+               "veces? El resultado es un número entre 0 y 1 llamado *p-valor*.",
+        "concluyo": "**p-valor alto (por encima de 0.05) = todo normal.** Es el resultado que "
+                    "esperas. Un p-valor bajo sería rarísimo y lo más probable es que apunte a un "
+                    "problema en el archivo de datos, no a una lotería que se pueda vencer.",
+        "ojo": "El p-valor **no** es «la probabilidad de que el sorteo sea justo». Es «qué tan "
+               "raros serían estos datos si el sorteo fuera justo». Un 0.40 quiere decir «nada "
+               "raro», no «40% de probabilidad de ser justo».",
+    },
+
+    # -- Baloto · Probabilidades
+    "tab_probabilidades": {
+        "veo": "Las probabilidades exactas de cada categoría de premio y cuánto vale jugar, "
+               "dados los premios que tú escribas.",
+        "concluyo": "Esta es la única pestaña con respuestas **definitivas**. No hay modelo, no "
+                    "hay estimación y no depende de tu histórico: es la misma aritmética que usa "
+                    "el operador para fijar los premios.",
+        "ojo": "Nada de lo que hagas mueve estos números. No hay forma de elegir 5 números que "
+               "sea mejor que otra: las 15.401.568 combinaciones son exactamente igual de "
+               "probables.",
+    },
+    "ev_section": {
+        "veo": "Cuánto devuelve en promedio un tiquete a la larga, comparado con lo que cuesta.",
+        "concluyo": "Si el «valor esperado» es negativo, cada tiquete pierde esa plata en "
+                    "promedio. Jugando muchas veces, eso es lo que efectivamente pasa.",
+        "ojo": "«En promedio» no quiere decir que pierdas esa cantidad cada vez. Casi siempre "
+               "pierdes todo el tiquete, y muy de vez en cuando ganas algo. El promedio es lo "
+               "que queda al sumar las dos cosas.",
+    },
+
+    # -- Baloto · Frecuencia
+    "tab_frecuencia": {
+        "veo": "Cuántas veces salió cada número y cuánto lleva sin salir.",
+        "concluyo": "Sirve para conocer tu histórico. Es una foto del pasado, nada más.",
+        "ojo": "Que un número haya salido más **no** lo hace más probable, y que lleve mucho sin "
+               "salir **no** lo hace «estar atrasado». Las balotas no recuerdan. Esta es la "
+               "confusión de la que viven casi todos los «sistemas» de lotería.",
+    },
+    "tab_hotcold": {
+        "veo": "Qué números vienen saliendo por encima o por debajo de su promedio histórico en "
+               "los últimos sorteos.",
+        "concluyo": "Que unas barras estén arriba y otras abajo es exactamente lo que produce el "
+                    "azar puro. Si tiras una moneda 20 veces casi nunca salen 10 y 10.",
+        "ojo": "«Caliente» y «frío» no son propiedades del número, son ruido de la ventana que "
+               "elegiste. Muévela unos sorteos y la lista cambia. La pestaña **Jugadas → Medir "
+               "estrategias** mide si jugar los calientes sirve de algo: no sirve.",
+    },
+
+    # -- Baloto · Aleatoriedad
+    "tab_aleatoriedad": {
+        "veo": "Las pruebas formales que buscan cualquier estructura aprovechable: repeticiones, "
+               "rachas y memoria entre un sorteo y el siguiente.",
+        "concluyo": "Lo sano es que todas digan «no hay nada». Si un sorteo tuviera memoria, un "
+                    "modelo de series de tiempo tendría algo que aprender; estas pruebas son las "
+                    "que responden si la tiene.",
+        "ojo": "Al correr seis pruebas a la vez, es normal que ~1 de cada 20 marque «No» por puro "
+               "azar. Una sola casilla en rojo no es un hallazgo.",
+    },
+    "acf_section": {
+        "veo": "Si el resultado de un sorteo dice algo sobre el siguiente, el de dos atrás, y así.",
+        "concluyo": "Barras dentro de la banda punteada = sin memoria detectable. Es la prueba "
+                    "directa de si ARIMA, Prophet o cualquier modelo de series de tiempo tiene "
+                    "materia prima aquí.",
+        "ojo": "Un ACF plano **no** es un fallo del panel: es el retrato exacto de un proceso sin "
+               "memoria, que es lo que un sorteo justo debe ser.",
+    },
+
+    "structure_section": {
+        "veo": "Cada sorteo reducido a un solo número — la suma de las 5 balotas, cuántas son "
+               "impares, cuántas caben en una fecha — comparado contra la forma exacta que produce "
+               "la combinatoria.",
+        "concluyo": "Si tus barras siguen la curva exacta, el sorteo no solo saca cada número las "
+                    "veces que toca: también los **combina** como debe. Es una pregunta distinta "
+                    "de la del Resumen, y una máquina puede pasar aquella y fallar ésta.",
+        "ojo": "Que la suma 110 sea más frecuente que la 15 **no** significa que convenga jugar "
+               "sumas del centro. Hay 14.090 combinaciones que suman 110 y **una sola** que suma "
+               "15; cada una de las 14.091 es igual de probable. Lo único que cambia es con cuánta "
+               "gente repartirías.",
+    },
+
+    # -- Baloto · Forecast
+    "tab_forecast": {
+        "veo": "Un modelo entrenado sobre tu histórico proponiendo números para el próximo sorteo.",
+        "concluyo": "Sirve para ver qué produce cada modelo y cuánto se demora. Como ejercicio de "
+                    "forecasting es legítimo.",
+        "ojo": "Estos números **no** son mejores que cinco elegidos al azar, y la pestaña "
+               "**Backtest** lo demuestra sobre tus propios datos. Úsalos si te divierte, no "
+               "porque el modelo sepa algo.",
+    },
+
+    # -- Baloto · Jugadas
+    "tab_jugadas": {
+        "veo": "Tres cosas: generar jugadas, ver cómo le habría ido a una jugada tuya en el "
+               "pasado, y medir si una forma de elegir números le gana al azar.",
+        "concluyo": "Generar números está perfecto. Lo que ninguna estrategia logra es hacer una "
+                    "jugada más probable que otra, y aquí eso se mide en vez de afirmarse.",
+        "ojo": "Si una estrategia sale ganadora en una corrida, míra la sección de estabilidad "
+               "antes de creerle: una estrategia sin ninguna ventaja parece ganadora ~1 de cada "
+               "20 corridas.",
+    },
+    "experiment_intro": {
+        "veo": "Para cada sorteo del pasado se generan jugadas usando **solo** lo que se sabía "
+               "antes de ese sorteo, y se cuenta cuántos números acertaron.",
+        "concluyo": "Es la comparación honesta: si una estrategia tuviera ventaja real, aquí se "
+                    "vería. La referencia es 0.58 aciertos de 5, que es lo que da el azar.",
+        "ojo": "Lee la columna **corregida**, no la suelta. Al probar varias estrategias a la vez, "
+               "que alguna pase el filtro por suerte deja de ser improbable.",
+    },
+    "stability_section": {
+        "veo": "El mismo experimento repetido muchas veces con datos distintos, contando cuántas "
+               "veces cada estrategia salió «ganadora».",
+        "concluyo": "`random` no puede tener ventaja, así que su tasa es tu piso medido de falsas "
+                    "alarmas. Una estrategia que no marque claramente más seguido que ella no ha "
+                    "demostrado nada.",
+        "ojo": "Esto es exactamente cómo se convence la gente de que su sistema funciona: corren "
+               "el experimento una vez, les da bien, y no lo vuelven a correr.",
+    },
+    "tab_split": {
+        "veo": "Cuánto valdría el premio mayor para cada jugada **si gana**, según cuánta gente "
+               "suele jugar esos mismos números.",
+        "concluyo": "Esta es la **única palanca real** de todo el panel. No mejora tu "
+                    "probabilidad de ganar; mejora cuánto te llevas cuando ganas, porque el "
+                    "acumulado se reparte entre todos los que acertaron.",
+        "ojo": "Los pesos de este modelo no se pueden calibrar — haría falta saber qué tiquetes "
+               "compró la gente, y ningún operador lo publica. La **dirección** es sólida (las "
+               "fechas se sobrejuegan muchísimo); cualquier cifra concreta es aproximada, por eso "
+               "viene con banda.",
+    },
+
+    # -- Baloto · Backtest
+    "tab_backtest": {
+        "veo": "El veredicto del proyecto. Cada modelo se entrena **solo** con sorteos anteriores "
+               "al que intenta adivinar, y se cuenta cuántos números acierta de verdad.",
+        "concluyo": "Lo que importa no es «cuántos aciertos» sino **cuántos más que el azar**. El "
+                    "azar puro da 0.58 aciertos de 5 en promedio; un modelo con ventaja real "
+                    "daría consistentemente más.",
+        "ojo": "«Ningún modelo le gana al azar» significa **ninguna ventaja mayor que la que estos "
+               "datos alcanzan a ver**, no «ninguna ventaja». La pestaña **Potencia** dice "
+               "exactamente de qué tamaño es esa frontera.",
+    },
+
+    # -- Baloto · Potencia
+    "tab_power": {
+        "veo": "Dos preguntas que van **antes** de cualquier resultado: ¿qué tan grande tendría "
+               "que ser una ventaja para que estos datos la vieran? y ¿estas pruebas sirven para "
+               "ver una ventaja cuando sí existe?",
+        "concluyo": "Sin esto, un «no encontré nada» no vale. Un detector de metales apagado "
+                    "tampoco encuentra nada.",
+        "ojo": "La resolución mejora con la **raíz** de la cantidad de sorteos: cuadruplicar tu "
+               "histórico solo reduce a la mitad la ventaja más pequeña que podrías detectar.",
+    },
+    "mde_section": {
+        "veo": "La ventaja más pequeña que tu cantidad de sorteos podría distinguir del azar de "
+               "forma confiable.",
+        "concluyo": "Es el número que le pone resolución a un resultado nulo. Con 200 sorteos "
+                    "evaluados solo verías ventajas grandes; todo lo más fino es invisible.",
+        "ojo": "«Invisible para esta prueba» no es lo mismo que «no existe». Son dos frases muy "
+               "distintas y la mayoría de los análisis las confunde.",
+    },
+    "sensitivity_section": {
+        "veo": "Se generan sorteos con un sesgo **plantado a propósito** y se mide cuántas veces "
+               "lo detecta cada prueba.",
+        "concluyo": "Es el control de calidad de todo lo demás. Empieza siempre por las filas de "
+                    "fuerza 0: ahí no hay sesgo, así que las tres tasas deben quedar bajas. Si "
+                    "alguna no lo hace, esa prueba está rota y el resto de la tabla no dice nada.",
+        "ojo": "`random` debe quedarse abajo **incluso con sesgo fuerte**. No es un fallo: un "
+               "tiquete uniforme no sabe qué números están favorecidos, así que no puede "
+               "aprovecharlos. Es el control correcto.",
+    },
+
+    # -- Baloto · Registro
+    "tab_registry": {
+        "veo": "Predicciones escritas **antes** de que el sorteo existiera, con fecha y sin "
+               "posibilidad de editarlas.",
+        "concluyo": "Todo lo demás en este panel mira hacia atrás, y mirar hacia atrás siempre se "
+                    "puede afinar sin querer. Esta pestaña es la única evidencia que no admite "
+                    "ajustes posteriores.",
+        "ojo": "Un registro con pocas predicciones no demuestra nada en ninguna dirección. A 3 "
+               "sorteos por semana, un año son 156 filas, que apenas alcanzan para detectar una "
+               "ventaja de +23% o mayor.",
+    },
+
+    # -- Fútbol
+    "fb_tab_datos": {
+        "veo": "Qué partidos trae el archivo y, sobre todo, **de dónde salen sus cuotas**.",
+        "concluyo": "Ese dato decide todo lo demás. Las cuotas de **cierre** (justo antes del "
+                    "partido, después de que se movió el dinero) son la barra real. Las de "
+                    "**apertura** son la primera estimación de la casa y son mucho más blandas.",
+        "ojo": "Aquí la barra **no** es el azar: es el mercado. Un modelo que le gana a «siempre "
+               "local» no ha encontrado nada — la ventaja de local ya está en el precio.",
+    },
+    "fb_tab_mercado": {
+        "veo": "El margen de la casa de apuestas, y si sus precios están bien calibrados.",
+        "concluyo": "Las tres probabilidades implícitas de un partido suman más de 1 — ese exceso "
+                    "(2% a 8% típico) es la comisión de la casa. Hay que quitarla antes de que "
+                    "los precios signifiquen algo como pronóstico.",
+        "ojo": "Comparar un modelo contra `1/cuota` sin quitar el margen lo mide contra una barra "
+               "deliberadamente equivocada a favor de la casa. Es el error más común del área.",
+    },
+    "fb_forecast_tab": {
+        "veo": "El pronóstico del modelo para un partido concreto, siempre al lado del mercado.",
+        "concluyo": "Sirve para ver en qué se parecen y en qué discrepan. Cuando discrepan mucho, "
+                    "lo interesante es entender por qué.",
+        "ojo": "Un partido no prueba nada, gane quien gane. El único número de esta página que "
+               "dice si el modelo vale algo está en **Resultados**, medido sobre muchos partidos "
+               "y con corrección.",
+    },
+    "fb_eval_tab": {
+        "veo": "El modelo puntuado contra la cuota de cierre en partidos que **no** vio al "
+               "entrenar.",
+        "concluyo": "Éste es el veredicto. Mira siempre la fila **corregida**: con varios modelos "
+                    "y varios métodos probados a la vez, que alguno pase el filtro por suerte es "
+                    "esperable.",
+        "ojo": "Un skill score positivo pequeño con intervalo que cruza el cero **no** es una "
+               "ventaja: es ruido que salió con el signo favorable.",
+    },
+    "fb_tab_resultados": {
+        "veo": "Cómo terminaron estos partidos, sin más.",
+        "concluyo": "Puramente descriptivo. Sirve para ubicarte: la referencia de primera división "
+                    "inglesa ronda 45% local, 25% empate, 30% visitante.",
+        "ojo": "Que la media del mercado coincida con la frecuencia observada **no** es un "
+               "resultado: acertar el agregado no le cuesta nada al mercado. Lo difícil es "
+               "acertar partido a partido.",
+    },
+
+    # -- Ciclismo
+    "cy_tab_datos": {
+        "veo": "Qué trae el archivo y las tres trampas que el contrato de datos protege y que no "
+               "se ven mirando la tabla.",
+        "concluyo": "Las tres son invisibles en la forma de los datos y arruinan cualquier "
+                    "análisis posterior: mezclar puestos de etapa con puestos de la general, "
+                    "perder a los que abandonaron, y guardar diferencias al ganador en una "
+                    "columna que significa tiempo total.",
+        "ojo": "Aquí el objetivo no es un resultado de tres vías sino un **orden de llegada** de "
+               "~180 ciclistas. Una probabilidad uniforme sobre la lista de salida no es una "
+               "línea base: es una forma de hacer ver brillante a cualquier modelo.",
+    },
+    "cy_tab_abandonos": {
+        "veo": "Quién no llega al final y en qué etapas se cae la gente.",
+        "concluyo": "Un quinto de la lista de salida de una gran vuelta puede no terminarla, y los "
+                    "abandonos se concentran en los ciclistas de peor forma.",
+        "ojo": "Filtrarlos convierte «predecir el orden de llegada» en «predecir el orden entre "
+               "los que llegaron», que es un problema bastante más fácil y sobre el que nadie "
+               "puede apostar.",
+    },
+    "cy_tab_tiempos": {
+        "veo": "Cómo se abre la carrera por detrás del primero, puesto por puesto.",
+        "concluyo": "Un tramo plano al principio es un grupo que llegó junto; un salto es donde se "
+                    "partió la carrera. En una llegada masiva, la mayoría comparte el tiempo del "
+                    "ganador y eso es correcto.",
+        "ojo": "Si la curva **baja** en algún punto, alguien está cronometrado más rápido que "
+               "quien quedó por delante. Eso es imposible en una clasificación real y es la "
+               "huella de diferencias guardadas como si fueran tiempos totales.",
+    },
+}
+
+# A one-line "how to read it" printed under a chart's title, before the figure.
+#
+# Keyed like HELP, and pulled in by `chart()` automatically, so a chart gets it
+# without a new argument at the call site. Different job from HELP: the ⓘ says
+# what the chart means and does not mean, this says where to point your eyes.
+READ = {
+    "category_chart": "La escala vertical es logarítmica — cada marca vale 10× la anterior. Las "
+                      "barras más bajas son las que más pagan, y por eso están tan abajo.",
+    "freq_chart": "Compara cada barra con la línea punteada, que es lo que saldría si todo fuera "
+                  "perfectamente parejo. Ninguna cae justo encima: esa diferencia es ruido normal.",
+    "hotcold_chart": "Rojo = salió más que su promedio en la ventana reciente; azul = menos. "
+                     "Mueve el deslizador y verás que la lista cambia sola.",
+    "acf_chart": "Si todas las barras caen dentro de las dos líneas punteadas, no hay memoria "
+                 "entre sorteos. Es lo que esperas ver.",
+    "sum_chart": "Las barras son tus sorteos; la línea es la forma exacta. Deberían seguirse. La "
+                 "campana no la produce ningún ajuste: sale de contar combinaciones.",
+    "parity_chart": "Barras contra puntos. 2 o 3 impares domina porque hay muchas más formas de "
+                    "repartir 5 balotas así que de sacarlas todas impares.",
+    "calendar_chart": "Barras contra puntos. Fíjate en cuánto pesa la parte de la izquierda: esos "
+                      "son los sorteos con pocos números «de fecha», los que menos gente juega.",
+    "history_chart": "La barra de «sin premio» domina siempre. Compárala con las probabilidades "
+                     "exactas de la pestaña Probabilidades: cuadran.",
+    "strategy_chart": "Las dos barras de cada estrategia deberían quedar casi iguales. Si una se "
+                      "despega, mira primero el intervalo de confianza en la tabla de abajo.",
+    "summary_chart": "Barra del modelo contra barra del azar, por modelo. Casi iguales es el "
+                     "resultado correcto para una lotería justa.",
+    "holdout_chart": "Cada línea es un modelo. Los picos por encima y por debajo de la línea "
+                     "punteada son varianza normal, no rachas.",
+    "power_chart": "Busca dónde la curva cruza la línea del 80%. A la izquierda de ese punto tu "
+                   "prueba está prácticamente ciega.",
+    "sensitivity_chart": "Donde una curva cruza el 80% está el umbral de ese detector. La curva "
+                         "de `random` debe quedarse abajo del todo: ése es el control.",
+    "split_table": "Las barras llevan bigotes porque el modelo da una **banda**, no una cifra. Si "
+                   "la banda es tan ancha que te cambiaría la decisión, este modelo no puede "
+                   "tomarla por ti.",
+    "fb_overround_chart": "El eje horizontal es la comisión de la casa. La cola hacia la derecha "
+                          "son partidos con menos dinero apostado, donde la casa se protege más.",
+    "fb_calibration": "Los puntos deberían caer sobre la diagonal. Que lo hagan es justamente lo "
+                      "que vuelve difícil esta barra: no hay un sesgo obvio que explotar.",
+    "fb_model_calibration_curve": "Misma lectura que la curva del mercado, pero ajustada sobre los "
+                                  "mismos partidos que muestra — eso favorece al modelo.",
+    "fb_outcomes": "La barra de local siempre gana. Esa ventaja es real y grande, y ya está "
+                   "metida en el precio: no es una oportunidad.",
+    "fb_observed_vs_market": "Dos barras casi iguales es lo esperado y no prueba nada.",
+    "fb_scoreline_grid": "Fila = goles del local, columna = goles del visitante. Lo más oscuro es "
+                         "lo más probable, y rara vez pasa del 10-12%.",
+    "fb_model_vs_market": "Donde las dos barras discrepan está lo que el modelo cree que el "
+                          "mercado no ve. En un partido suelto, casi siempre es el modelo el que "
+                          "está equivocado.",
+    "cy_attrition": "La línea solo puede bajar. La caída es la carrera desgastando al pelotón — "
+                    "información sobre la carrera, no ruido que haya que limpiar.",
+    "cy_abandons_per_stage": "Los picos son las etapas duras y las caídas. Los abandonos van "
+                             "correlacionados entre ciclistas.",
+    "cy_gaps": "Solo puede subir. Un tramo plano es un grupo con el mismo tiempo; un escalón es "
+               "donde se rompió la carrera. Si baja, los tiempos están mal.",
+}
+
+# The jargon, defined once. Rendered as an expander in the sidebar of every page.
+#
+# Each entry is one plain sentence plus a concrete example, because the example
+# is what makes an abstraction stick. Ordered roughly by how early a reader
+# meets the term, not alphabetically — a glossary you read top to bottom teaches
+# more than one you only look things up in.
+GLOSSARY = [
+    ("Línea base",
+     "Con qué se compara un pronóstico para saber si vale algo. En Baloto es el azar puro; en "
+     "fútbol es la cuota de cierre; en ciclismo es el ranking previo. Sin línea base fijada de "
+     "antemano, cualquier modelo parece bueno."),
+    ("p-valor",
+     "Qué tan raros serían tus datos **si no hubiera ningún efecto**. Bajo (<0.05) = raro, algo "
+     "pasa. Alto = nada fuera de lo normal. Ejemplo: p = 0.40 significa «esto pasaría 4 de cada "
+     "10 veces por pura casualidad», o sea nada llamativo. **No** es la probabilidad de que tu "
+     "hipótesis sea cierta."),
+    ("Intervalo de confianza (IC 95%)",
+     "El rango dentro del cual está la respuesta de verdad, con la precisión que te dieron tus "
+     "datos. Ejemplo: una ventaja de +0.02 [−0.15, +0.19] quiere decir que ni siquiera sabes el "
+     "signo. El p-valor dice si descartas el azar; el intervalo dice **con cuánta precisión "
+     "mediste**."),
+    ("Corrección de Bonferroni",
+     "Si pruebas 6 modelos a la vez, tienes 6 oportunidades de que alguno pase el filtro por "
+     "suerte — con 6 pruebas eso pasa ~26% de las veces. La corrección baja el umbral (0.05 "
+     "dividido entre 6) para compensar. **Siempre lee la columna corregida.**"),
+    ("Walk-forward / fuera de muestra",
+     "Entrenar el modelo solo con lo que se sabía antes del evento que intenta predecir, y "
+     "avanzar. Es la única forma honesta de probar un pronóstico: si el modelo vio el resultado "
+     "al entrenar, «acertarlo» no significa nada."),
+    ("Potencia y efecto mínimo detectable (MDE)",
+     "La ventaja más pequeña que tus datos alcanzarían a ver. Con 200 sorteos solo detectas "
+     "ventajas grandes. Es lo que convierte un «no encontré nada» en una frase con contenido: "
+     "«no hay ventaja mayor que tanto»."),
+    ("Distribución hipergeométrica",
+     "La fórmula exacta para «saqué 5 bolas de 43 sin reponer, ¿cuántas coinciden con las tuyas?». "
+     "Da 0.58 aciertos de 5 en promedio. Es exacta, no una simulación — por eso es la referencia "
+     "correcta del backtest."),
+    ("Chi-cuadrado",
+     "Una prueba que compara «cuántas veces salió cada cosa» contra «cuántas veces debería haber "
+     "salido». Responde: ¿este desbalance es más de lo que produce el azar?"),
+    ("Autocorrelación / Ljung-Box",
+     "Si el resultado de hoy dice algo sobre el de mañana. Si no hay autocorrelación, no hay "
+     "«memoria» y los modelos de series de tiempo (ARIMA, Prophet) no tienen nada que aprender."),
+    ("Estadístico de orden",
+     "Cuando las balotas se publican ordenadas de menor a mayor, la primera columna ya no es «una "
+     "balota al azar»: es siempre el mínimo de las cinco. Analizarla por separado produce patrones "
+     "falsos garantizados. La prueba agrupada es inmune."),
+    ("Cuota decimal",
+     "Cuánto te pagan por cada peso apostado, premio incluido. Cuota 2.50 = si apuestas 1.000 y "
+     "aciertas, recibes 2.500. La probabilidad implícita es 1 dividido entre la cuota."),
+    ("Margen / sobrerredondeo",
+     "Las tres probabilidades implícitas de un partido suman más de 1 (típico 1.02-1.08). Ese "
+     "exceso es la comisión de la casa. Hay que quitarlo antes de comparar un modelo contra el "
+     "precio, o lo estás midiendo contra una barra torcida a favor de la casa."),
+    ("Cuota de apertura vs. de cierre",
+     "La apertura es la primera estimación de la casa. El cierre es el precio justo antes del "
+     "partido, después de que todo el dinero se movió, y es muchísimo más afilado. Ganarle a la "
+     "apertura no prueba casi nada."),
+    ("Calibración",
+     "Cuando dices «60%», ¿pasa el 60% de las veces? Un pronóstico calibrado acierta la "
+     "frecuencia a largo plazo. Puede estar perfectamente calibrado y ser inútil (decir siempre "
+     "«33%») — por eso calibración no basta."),
+    ("RPS (ranked probability score)",
+     "La nota de un pronóstico de fútbol. Más bajo es mejor. Cobra la **distancia** del error: "
+     "apostar por el local cuando gana el visitante es más grave que haber apostado al empate, "
+     "porque local-empate-visitante están ordenados."),
+    ("Dixon-Coles",
+     "El modelo de fútbol de este panel. Estima una fuerza de ataque y una de defensa por equipo, "
+     "más la ventaja de local, y corrige la frecuencia de los marcadores bajos (0-0, 1-0, 1-1), "
+     "que un Poisson simple subestima."),
+    ("Elo",
+     "Una sola nota de fuerza por equipo, que sube o baja después de cada partido según el "
+     "resultado y contra quién. Viene del ajedrez. Es una línea base útil y fácil, pero solo "
+     "produce local/empate/visitante, nunca un marcador."),
+    ("Criterio de Kelly",
+     "Cuánto apostar cuando crees tener ventaja, para maximizar el crecimiento a largo plazo sin "
+     "arruinarte. Solo tiene sentido si la ventaja es **real**: aplicado sobre una ventaja "
+     "imaginaria, Kelly acelera la quiebra en vez de evitarla."),
+    ("Plackett-Luce",
+     "La forma estándar de convertir «una fuerza por ciclista» en la probabilidad de un orden de "
+     "llegada completo: el más fuerte gana con probabilidad proporcional a su fuerza, se lo quita "
+     "de la lista, y se repite para el segundo puesto."),
+]
+
+
 def section(title, help_key):
-    """A subheader with the ⓘ that explains the section it opens."""
+    """A subheader with the ⓘ, plus the guided box when the key has one."""
     st.subheader(title, help=HELP[help_key])
+    plain(help_key)
+
+
+def plain(help_key):
+    """The always-visible 'what am I looking at' box for `help_key`.
+
+    Rendered by `section()` automatically; called directly only where a surface
+    needs the box without opening a new subheader.
+    """
+    entry = PLAIN.get(help_key)
+    if entry is None:
+        return
+    with st.container(border=True):
+        st.markdown(f"**Qué estás viendo.** {entry['veo']}")
+        st.markdown(f"**Qué puedes concluir.** {entry['concluyo']}")
+        # Last and never optional: this is the line that stops a reader leaving
+        # with the conclusion the surface merely looks like it supports.
+        st.markdown(f"**Lo que NO significa.** {entry['ojo']}")
 
 
 def chart(fig, title, help_key):
@@ -435,14 +912,24 @@ def chart(fig, title, help_key):
 
     The title moves out of the figure and into Streamlit so every chart in the
     dashboard gets the same typography and the same explain-on-hover affordance;
-    Plotly's own title has nowhere to hang a help icon.
+    Plotly's own title has nowhere to hang a help icon. A `READ` entry for the
+    same key prints between the title and the figure — you want to know where to
+    look before you look, not after.
     """
     st.markdown(f"**{title}**", help=HELP[help_key])
+    if help_key in READ:
+        st.caption(f"Cómo leerlo: {READ[help_key]}")
     # `title=None` leaves Plotly rendering the string "undefined"; an empty text
     # is what actually clears it.
     fig.update_layout(title={"text": ""}, margin=dict(t=10, b=40))
     st.plotly_chart(fig, use_container_width=True)
 
+
+def glossary():
+    """The jargon expander. Every page puts one in the sidebar."""
+    with st.sidebar.expander("Glosario — ¿qué significa esta palabra?"):
+        for term, meaning in GLOSSARY:
+            st.markdown(f"**{term}.** {meaning}")
 
 
 def verdict_badge(looks_random, positive_text="Sin evidencia de patrón explotable", negative_text="Posible señal — revisar"):
@@ -450,4 +937,22 @@ def verdict_badge(looks_random, positive_text="Sin evidencia de patrón explotab
         st.success(positive_text)
     else:
         st.warning(negative_text)
+
+
+def plain_verdict(passed, headline, detail, good_is_pass=True):
+    """A verdict stated as a sentence, with the technical detail underneath.
+
+    A bare `p = 0.412` tells a reader who already knows the answer what they
+    already knew and tells everyone else nothing. This states the finding in
+    words first and keeps the number where it can still be checked.
+
+    `good_is_pass` flips the colour without touching the wording, because
+    "passed" is not always the welcome outcome: a lottery that fails the
+    uniformity test is alarming, while a model that fails to beat chance is the
+    expected result.
+    """
+    box = st.success if passed == good_is_pass else st.warning
+    box(f"**{headline}**")
+    st.caption(detail)
+
 
