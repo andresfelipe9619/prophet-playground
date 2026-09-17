@@ -115,7 +115,7 @@ the reason its result looks unimpressive is stated rather than hidden.
 **Jugadas → Reparto de premios**: enter the jackpot and tickets sold, compare
 example combinations or your own generated ones, and see the bias breakdown.
 Generated tickets also carry a popularity column — see
-[Dashboard](dashboard.md#6--jugadas--generate-check-measure).
+[Dashboard](dashboard.md#7--jugadas--generate-check-measure).
 
 ---
 

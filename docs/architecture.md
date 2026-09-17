@@ -43,10 +43,14 @@ flowchart TD
         FMKT["football/market.py<br/><i>the closing line as baseline</i>"]
         FPROC["football/processor.py<br/><i>odds contract, one source per frame</i>"]
         FDL["football/downloader.py<br/><i>season files, validated on arrival</i>"]
+        FMOD["football/dixon_coles.py · elo.py · ensemble.py<br/><i>the models and their pooling</i>"]
+        FEV["football/evaluation.py · backtest.py<br/><i>paired test vs the market</i>"]
     end
     subgraph LCY["cycling/ — third domain"]
         CPROC["cycling/processor.py<br/><i>result contract, one kind per frame</i>"]
         CSCR["cycling/scraper.py<br/><i>gaps resolved into totals</i>"]
+        CBASE["cycling/baseline.py<br/><i>the pre-race ranking as a distribution</i>"]
+        CEV["cycling/scoring.py · evaluation.py<br/><i>paired test vs the ranking</i>"]
     end
     subgraph L0["core/ — domain-agnostic"]
         WIN["core/windows.py<br/><i>walk-forward + cutoff splits</i>"]
@@ -260,12 +264,23 @@ makes it true by construction regardless.
 │   ├── common.py                 ★ The three outcomes and their (H, D, A) ordering
 │   ├── processor.py              ★ football-data.co.uk contract + opening/closing guard
 │   ├── market.py                 Odds → calibrated probabilities (football's baseline.py)
+│   ├── dixon_coles.py            Attack/defence strengths + the low-score correction
+│   ├── elo.py                    The cheap baseline; ordered logit fitted for the draw
+│   ├── ensemble.py               Pooling with the market; weight 0 IS the market
+│   ├── scoring.py                ★ Brier / RPS / log-loss — RPS is the verdict
+│   ├── evaluation.py             ★ Paired one-sided test against the market
+│   ├── backtest.py               Walk-forward; compare_models corrects across models
+│   ├── value.py                  Edge, the two bars, quarter-Kelly staking
 │   ├── downloader.py             Season files, validated through the contract on arrival
 │   └── sample_data.py            Synthetic seasons carrying the generative truth
 │
 ├── cycling/                      Third domain — an ordering, not an outcome
 │   ├── common.py                 ★ Result kinds, finish statuses, time parsing
 │   ├── processor.py              ★ Result contract: one kind per frame, totals not gaps
+│   ├── baseline.py               ★ Plackett-Luce worths; a uniform draw is NOT a baseline
+│   ├── scoring.py                ★ PL log score is the verdict; abandons stay in the denominator
+│   ├── plackett_luce.py          Rider strengths by MM, shrunk toward the field
+│   ├── evaluation.py             ★ Paired one-sided test against the ranking
 │   ├── scraper.py                procyclingstats.com, tables found by their headers
 │   └── sample_data.py            Synthetic stage races carrying the generative truth
 │
@@ -281,6 +296,7 @@ makes it true by construction regardless.
 │   │                             the `prophet` package it imports)
 │   ├── analysis/
 │   │   ├── randomness.py         Frequency, gaps, hot/cold, chi2, runs, ACF
+│   │   ├── structure.py          Sum / parity / calendar split vs exact distributions
 │   │   ├── prizes.py             Exact prize probabilities, EV, RTP, breakeven
 │   │   └── tickets.py            Generate, check and measure ticket strategies
 │   └── utils/
@@ -299,10 +315,10 @@ makes it true by construction regardless.
 ├── tests/                        pytest suite — the Baloto invariants
 └── dashboard/                    Streamlit UI — the primary surface
     ├── app.py                    Shell: page config, domain selector, lazy dispatch
-    ├── ui.py                     ★ The single HELP dict + section() / chart()
+    ├── ui.py                     ★ HELP / PLAIN / READ / GLOSSARY + section() / chart()
     ├── baloto_page.py            The ten Baloto tabs
-    ├── football_page.py          Data contract + market baseline (scores nothing)
-    └── cycling_page.py           Result contract, attrition, gaps
+    ├── football_page.py          Data, market, forecast, the verdict, and staking
+    └── cycling_page.py           The contract, a race forecast, and the verdict
 ```
 
 `contants.py` was misspelled; the move to `lottery/` corrected it to

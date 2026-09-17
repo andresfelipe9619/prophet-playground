@@ -217,7 +217,7 @@ once it was measured.
 
 ## 6. In the dashboard
 
-The **Jugadas** tab wraps all of this — see [Dashboard](dashboard.md#6--jugadas--generate-check-measure).
+The **Jugadas** tab wraps all of this — see [Dashboard](dashboard.md#7--jugadas--generate-check-measure).
 
 ## 7. Adding a strategy
 

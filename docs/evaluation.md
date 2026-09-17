@@ -287,6 +287,43 @@ one in twenty tests to flag by chance. One or two red flags across six positions
 noise, not a finding. The dashboard says so on screen; any new test surface should
 too.
 
+### 4.1 The order-agnostic summaries
+
+`lottery/analysis/structure.py` reduces each draw to a number that does not
+depend on the order the balls are stored in — their **sum**, how many are **odd**,
+how many fall at or below **31** — and compares the observed distribution against
+the exact combinatorial one. All three references are counted, not simulated:
+`sum_counts` totals exactly C(43,5) and is symmetric about 110.
+
+**This is not a restatement of the pooled test.** The pooled test asks about
+*marginals*, and a machine can pass it while broken. Draws of five consecutive
+numbers use every number equally often — perfectly flat marginals, nothing for a
+uniformity test to object to — and still have sums far narrower than
+combinatorics allows, because the five were not picked independently. These
+summaries are sensitive to exactly that kind of dependence *between* the balls,
+which makes them a second, independent verdict. A test in
+`tests/test_structure.py` builds that construction and checks the sum test fires
+on it.
+
+**They are immune to the sorted-data trap for a stronger reason than the pooled
+test is.** Sorting a draw cannot change its sum, its odd count or its calendar
+split, because all three are properties of the *set*. No amount of order-statistic
+structure can move them at all, and a test asserts the outputs are bit-identical
+under a column shuffle.
+
+Because the sum has 191 attainable values and most are nearly empty on any real
+history, `goodness_of_fit` pools the thin tails from the outside in before the
+chi-square, and returns NaN rather than a verdict when fewer than two cells
+survive — with one cell there is nothing left to compare.
+
+**And it is the honest home for the lesson the premise turns on.** All
+combinations are equally likely; not all *summaries* are. There is exactly one
+way to draw a sum of 15 and 14,090 ways to draw a sum of 110, and every one of
+those 14,091 tickets is equally likely. The bell counts how many there are, not
+what they are worth — which is also why an unusual sum cannot improve `P(win)`,
+only [who you split with](jackpot-splitting.md). `sum_percentile` puts a ticket
+on that curve and appears in the jackpot-splitting table for that reason.
+
 ## 5. Expected value: the one exact answer
 
 `lottery/analysis/prizes.py`. No historical data required, no model, no uncertainty.
@@ -467,9 +504,10 @@ python -m football.backtest --seasons COL.csv --extra --league "Colombia Primera
 
 | Entry point | What it holds out | Refit |
 | --- | --- | --- |
-| `run_all(matches, n_windows=30, min_train=100)` | the last `n_windows` matches | Dixon-Coles refits before each held-out match |
+| `run_all(matches, n_windows=30, min_train=100)` | the last `n_windows` matches | the model refits before each held-out match |
 | `run_holdout(matches, cutoff, mode="expanding")` | every match after `cutoff` | refits before each held-out match |
 | `run_holdout(matches, cutoff, mode="frozen")` | every match after `cutoff` | fits **once** at the cutoff, forecasts the rest |
+| `compare_models(matches, models=MODEL_NAMES)` | the last `n_windows` matches | refits every requested model, one row each |
 
 `expanding` answers "how would this do if I refit before every match"; `frozen`
 answers "I fit this in January — what did it say about the spring?", the literal
@@ -477,9 +515,72 @@ and harder test. Both return the same result dict, so the two are directly
 comparable. `--half-life` adds time decay; `--method` picks the de-margining
 (`multiplicative` / `additive` / `power`); `--metric` picks the score.
 
+### 9.1 Several models at once
+
+`compare_models` scores `dixon_coles`, `elo` and `blend` — or any subset — over
+one held-out set, and two details make its table readable:
+
+**Every model is scored on the same matches.** A window whose fixture involves a
+team *any* requested model never saw is skipped for **all** of them. Two models
+scored on different subsets are not comparable, and nothing in the table's shape
+would say so.
+
+**`n_comparisons` is the model count.** Three models against one set of matches
+is three chances for luck to clear an uncorrected 5%, so the threshold is 0.05/3.
+A table printing one naive verdict per model would have reintroduced the exact
+bug [§2.1](#21-multiple-comparisons) exists for.
+
+```bash
+python -m football.backtest --seasons E0_2324.csv --models dixon_coles,elo,blend \
+    --blend-weight 0.5 --pool linear
+```
+
+The blend row is the one worth reading closely. At weight 0 it **is** the market
+— identical score, effect exactly 0 — so any improvement as the weight rises is
+information the model has and the price does not. That is a more answerable
+question than "does it beat the market", which almost nothing does. See
+[Football §10](football.md#10-pooling-with-the-market).
+
+Both controls hold on synthetic seasons: all three models beat a deliberately
+soft book, and none beats one that prices the generative truth exactly.
+
 **On Colombian (`--extra`) data the corrected verdict is off the table** — the
 market there is opening odds only ([Data Pipeline §5.1](data-pipeline.md#51-footballs-extra-files)),
 so beating it is beating a bookmaker's first guess, not the market.
+
+## 10. Cycling: a model vs the pre-race ranking
+
+The third instance of the same contract, and the one whose null is weakest —
+which the domain says out loud rather than hiding.
+
+| Layer | Lottery | Football | Cycling |
+| --- | --- | --- | --- |
+| The null | exact hypergeometric | the de-margined closing price | the **pre-race ranking** |
+| The score | set-based hits | RPS over H–D–A | Plackett-Luce log score over the finishing order |
+| The comparison | model hits vs chance | `market − model` per match | `baseline − model` per race |
+| Verdict keys | `beats_chance*` | `beats_market*` | `beats_baseline*` |
+
+`cycling/evaluation.py:beats_baseline_test` is the same paired one-sided z-test
+through `core/significance.py`. `walk_forward` hands every forecaster only the
+results strictly before each race; `compare_forecasters` runs several against one
+baseline and sets `n_comparisons` to the number of challengers.
+
+**A uniform draw over the start list is not the baseline**, and the dashboard
+keeps it in the comparison table precisely so it can be seen losing to the real
+one. With ~180 riders it gives everyone 0.55%; a model that beats it has shown
+only that cycling has favourites. See [Cycling §6](cycling.md#6-the-baseline-cyclingbaselinepy).
+
+**Non-finishers stay in the denominator**, which makes the domain's
+keep-the-abandons rule arithmetic rather than a check somebody has to remember.
+Dropping them silently renormalises the field to the riders who made it. See
+[Cycling §7](cycling.md#7-scoring-an-ordering-cyclingscoringpy).
+
+**The sample size is the hard part.** A Grand Tour is 21 scored races. Twenty-odd
+paired observations resolve only a large difference, so a null result here is
+even more a statement about the sample than it is on the lottery side — and on a
+sprint stage the finishing order is close to noise by construction, so no
+forecast can or should beat a ranking there. `n_races` travels with every
+verdict for that reason.
 
 ---
 
