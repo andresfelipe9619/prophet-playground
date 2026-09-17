@@ -244,18 +244,22 @@ fine — but a first look costs a minute and this code has never seen reality.
 
 ## 6. The dashboard page
 
-`streamlit run dashboard/app.py`, then pick **⚽ Fútbol** in the sidebar. Four
-tabs — **Datos**, **Mercado**, **Pronóstico**, **Resultados** — and a
-**Europa / Colombia** source toggle at the top. Datos and Mercado are descriptive:
-which odds source a file resolved to, how big the margin is, that the market is
-calibrated, how the three de-margining methods differ on one match, plus the
-model's own calibration curve. **Pronóstico** is the two-team view
-([§8](#8-the-model-and-the-two-team-view)); **Resultados** carries a gated
-walk-forward backtest of the model against the market, with both the naive and the
-Bonferroni-corrected verdict. In Colombia mode the page shows the opening-odds
-warning, and every model surface shows the market beside it. Selecting season files
-that resolve to different odds sources renders the refusal instead of merging them.
-Details in [Dashboard §3](dashboard.md#3-fútbol-the-data-contract-the-market-and-the-model).
+`streamlit run dashboard/app.py`, then pick **⚽ Fútbol** in the sidebar. Five
+numbered tabs — **1 · Datos**, **2 · Mercado**, **3 · Pronóstico**,
+**4 · ¿Le gana al mercado?**, **5 · Valor** — and a **Europa / Colombia** source
+toggle at the top. Datos and Mercado are descriptive: which odds source a file
+resolved to, how big the margin is, that the market is calibrated, how the three
+de-margining methods differ on one match, plus the model's own calibration curve.
+**Pronóstico** is the two-team view ([§8](#8-the-model-and-the-two-team-view)),
+now with the Elo beside Dixon-Coles and its rating table.
+**¿Le gana al mercado?** scores every selected model in one pass and prints the
+corrected threshold as 0.05 divided by however many ran. **Valor** is the staking
+surface of [§11](#11-value-and-staking), and it shows no stake at all until the
+verdict from the previous tab is on screen beside it. In Colombia mode the page
+shows the opening-odds warning, and every model surface shows the market beside
+it. Selecting season files that resolve to different odds sources renders the
+refusal instead of merging them. Details in
+[Dashboard §3](dashboard.md#3-fútbol-the-data-contract-the-market-and-the-model).
 
 ## 7. What is built, and what is not
 
@@ -272,13 +276,121 @@ exist:
 - **`football/evaluation.py`** — `beats_market_test`, a paired one-sided
   proper-score test against the market through `core/significance.py`, naive and
   corrected verdict together.
-- **`football/backtest.py`** — walk-forward (`run_all`) and date-cutoff
-  (`run_holdout`, `expanding` / `frozen`) evaluation.
+- **`football/elo.py`** — Elo ratings with an ordered-logit map to H–D–A
+  ([§9](#9-elo-the-cheap-baseline)).
+- **`football/ensemble.py`** — linear and logarithmic pooling of a model with the
+  market ([§10](#10-pooling-with-the-market)).
+- **`football/value.py`** — edge, the two bars, and Kelly staking
+  ([§11](#11-value-and-staking)).
+- **`football/backtest.py`** — walk-forward (`run_all`), date-cutoff
+  (`run_holdout`, `expanding` / `frozen`) and multi-model (`compare_models`)
+  evaluation.
 
-**Elo is deliberately skipped.** It was listed as a cheap model and a second
-baseline, but it only produces a 1X2 vector, and the scoreline forecast (correct
-score, O/U, BTTS) needed a goals model regardless. Dixon-Coles gives both, so a
-separate Elo would only add a weaker duplicate of one of its outputs.
+**What is still missing.** Lineups and injuries — the single largest thing the
+closing price knows and no model here does; in-play data; and any notion of a
+team's form being about *who* is playing rather than about recent results.
+
+## 9. Elo: the cheap baseline
+
+Elo was skipped for a long time on the grounds that it only produces a 1X2
+vector while Dixon-Coles produces that *and* a scoreline, so a separate Elo would
+be a weaker duplicate of one output. That reasoning was about Elo as a
+**forecast**, and it holds. It is wrong about Elo as a **baseline**.
+
+"Dixon-Coles beats the market" is a claim. "Dixon-Coles beats the market while
+also beating one number per team, updated after each match" is a much more
+interesting one — and if the expensive model *cannot* separate itself from Elo,
+that is the most useful thing a run can tell you, because Elo costs a single pass
+over the data.
+
+### The draw is the whole difficulty
+
+Classic Elo answers "who wins", which is two-way; the target is three-way.
+Splitting the win probability by some fixed draw share would be a made-up number
+wearing a rating system's credibility. Instead the rating gap goes through an
+**ordered logit** whose two cut points and scale are fitted by maximum likelihood
+on the training matches (the standard treatment, Hvattum & Arntzen). That has the
+property the outcome needs: H, D and A are ordered, so the draw sits between the
+two wins by construction rather than by assumption. The gap between the cut
+points is optimised in logs, so they cannot cross and the result cannot stop
+being a distribution.
+
+### One matchday at a time
+
+Ratings advance a **date** at a time, not a row at a time. Every fixture on a
+date is predicted from the ratings as they stood before that date, and the date's
+updates are applied together afterwards. Updating match by match would make the
+model depend on the order rows happen to sit in within a matchday — an ordering
+that does not exist, since the fixtures are played simultaneously — and would let
+one 3pm result inform another 3pm forecast. A test shuffles the frame and demands
+a bit-identical fit.
+
+## 10. Pooling with the market
+
+`football/ensemble.py`, and it asks a sharper question than the backtest does.
+
+"Does the model beat the market?" sets a bar almost nothing clears, and a no
+answers very little: a model can be genuinely informative and still lose to a
+price that already contains everything it knows plus team news, lineups and
+money. **Does the model know anything the market does not** is the better
+question, and a blend answers it directly.
+
+A blend at weight 0 **is** the market. It scores identically, and the paired test
+returns an effect of exactly zero — not a degenerate case to guard against, but
+the null the comparison is built on. If putting weight on the model improves the
+score from there, the model carries information the price does not, whether or
+not it could ever stand alone. A test pins that endpoint, because the whole
+reading collapses if it drifts.
+
+Two pooling rules, for the same reason `market.py` offers three de-margining
+methods. **Linear** averages the probabilities and hedges: the result always
+lands between its inputs and is never more confident than the more confident
+source. **Logarithmic** takes a weighted geometric mean and renormalises, which
+leans harder on whatever both sources favour and is far harsher on an outcome one
+of them nearly ruled out — a source saying 2% drags the pool most of the way down
+instead of being averaged away. Report which one you used; if a conclusion flips
+between them it is about the pooling rule, not about the model.
+
+Nothing here is fitted. The weight is a parameter the caller chooses and the
+backtest measures — fitting it on the same matches you then score would be the
+purest form of the leak this package exists to avoid.
+
+## 11. Value and staking
+
+`football/value.py` is football's counterpart to the lottery's jackpot splitting:
+the module that answers "so what do I actually do", and the one most able to do
+harm. Jackpot splitting is safe because it improves a quantity that is real
+whether or not any model works. Nothing here is safe in that way.
+
+### The two bars, which are different
+
+This distinction is the whole module:
+
+- To judge a **model**, compare it against the **de-margined** price. That is
+  what `market.py` produces and `evaluation.py` tests, because the bookmaker's
+  margin is not a forecast.
+- To judge a **bet**, compare it against the raw **`1/odds`**. You pay the
+  margin.
+
+Between the two sits a band, and most betting systems live in it: the model is
+more optimistic than the market and the disagreement is not big enough to pay for
+the spread. `classify` returns that as a named state — `no_value`,
+`disagreement_only`, `value` — rather than leaving it to a footnote, and
+`margin_cost` prints the band's width.
+
+### Kelly is not a safety feature
+
+It is the stake that maximises long-run growth *given a true edge*. Applied to an
+edge that is not real it does not merely fail to help: it sizes up precisely when
+the model is most confidently wrong, which is how a staking plan turns a small
+negative expectation into a fast one. `kelly_fraction` therefore defaults to a
+**quarter** stake, and the dashboard will not show a stake at all until the
+measured verdict is on screen next to it.
+
+**Scope.** One outcome at a time. Backing two outcomes of the same match
+simultaneously is a different optimisation — the bets are mutually exclusive, so
+the single-bet formula over-stakes — and pretending otherwise would be the same
+kind of quiet wrongness this package exists to avoid.
 
 ## 8. The model and the two-team view
 

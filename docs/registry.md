@@ -98,7 +98,7 @@ work" and "I have not run this long enough to know".
 The **Registro** tab wraps all of it: record against an upcoming draw, score what
 has happened, and see the per-label result with its detectable-effect floor. The
 refusals surface as Spanish messages there, with the module's English detail
-underneath — see [Dashboard](dashboard.md#9--registro--predictions-made-in-advance).
+underneath — see [Dashboard](dashboard.md#10--registro--predictions-made-in-advance).
 
 ---
 

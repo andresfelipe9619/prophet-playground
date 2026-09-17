@@ -196,7 +196,7 @@ data by roughly a factor of three, and the two are easy to confuse.
 
 The **Potencia y Sensibilidad** tab wraps both, and the backtest tab now prints
 the MDE of the run you just executed beside its verdict — see
-[Dashboard](dashboard.md#8--potencia-y-sensibilidad--what-the-verdict-is-worth).
+[Dashboard](dashboard.md#9--¿qué-se-podía-ver--what-the-verdict-is-worth).
 
 ---
 

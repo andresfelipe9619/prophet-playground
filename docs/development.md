@@ -118,6 +118,14 @@ docs — the ones a refactor breaks silently and no reader would notice:
 | The `(H, D, A)` ordering | Transposing two probability columns passes every range check |
 | One kind of cycling result per frame | A stage placing and a GC standing are different quantities in one `rank` column |
 | Cycling non-finishers survive loading | Abandons are not random, so dropping them makes the problem easier than it is |
+| Cycling non-finishers stay in the **scoring** denominator | Dropping them renormalises the field to the riders who finished — the same bug one layer down |
+| A uniform draw loses to the ranking baseline | It is the claim `cycling/baseline.py` makes about itself, measured |
+| Structural summaries are bit-identical under a column shuffle | It is the property that makes them immune to the sorted-data trap |
+| The sum reference totals exactly C(43,5) | The identity that proves it is a count and not an estimate |
+| Elo fits identically from a shuffled frame | Ratings advance by date, not by row order; nothing else would notice the sort being dropped |
+| A blend at weight 0 scores exactly like the market | The whole reading of the ensemble backtest rests on that endpoint |
+| Every model in a comparison is scored on the same matches | Two models scored on different subsets are not comparable and the table cannot show it |
+| The margin band is a distinct state from "no value" | "Model > market" reads as a bet until the spread is accounted for |
 | `time_seconds` is a total, never a gap | A column of gaps looks normal and ranks the field backwards by hours |
 | An unknown rank marker raises | Defaulting to "not ranked" is how a changed page quietly loses riders |
 | A results table is found by its headers | A CSS selector that misses returns zero rows instead of failing |

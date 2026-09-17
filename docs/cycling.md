@@ -4,8 +4,15 @@ The third domain. Read [Domain and Premise](domain-and-premise.md) and
 [Football](football.md) first — this page is about how cycling differs from
 both, and the differences are in the shape of the target, not in the discipline.
 
-Currently a **data layer only**: the contract, the scraper, and seeded
-synthetic races. No models and no scoring rules yet — see [§7](#7-what-is-not-built-yet).
+The contract, the scraper and seeded synthetic races, and on top of them the
+layer that lets a forecast mean something: a **ranking baseline**
+([§6](#6-the-baseline-cyclingbaselinepy)), a **proper scoring rule** for an
+ordering ([§7](#7-scoring-an-ordering-cyclingscoringpy)), a fitted
+**Plackett-Luce** rider-strength model ([§8](#8-the-model-cyclingplackett_lucepy))
+and the paired evaluation against that baseline
+([§9](#9-evaluation-cyclingevaluationpy)). What is still missing is in
+[§11](#11-what-is-not-built-yet) — most of all the market, which is the bar
+wherever a price exists.
 
 ## 1. Where it sits between the other two
 
@@ -338,7 +345,7 @@ shows the baseline and the model side by side for one race, built only from what
 came before its date; **¿Le gana al ranking?** runs the walk-forward comparison.
 Loading a stage result together with a general classification renders the
 refusal. Details in
-[Dashboard §4](dashboard.md#4-ciclismo-the-result-contract).
+[Dashboard §4](dashboard.md#4-ciclismo-the-result-contract-the-ranking-and-the-model).
 
 ## 11. What is not built yet
 

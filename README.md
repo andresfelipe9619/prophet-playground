@@ -89,14 +89,15 @@ print(compare_strategies(df, balls))                   # random vs hot vs cold, 
 One app, three domains, picked from the sidebar. Spanish UI. Full guide in
 **[docs/dashboard.md](docs/dashboard.md)**.
 
-| Domain | What is there |
-| --- | --- |
-| 🎯 **Baloto** | The ten tabs below: models, chance baseline, backtest, tickets, registry |
-| ⚽ **Fútbol** | Data contract and market baseline only — no model, and **nothing is scored** |
-| 🚴 **Ciclismo** | Data contract only — no baseline, no model |
+| Domain | The baseline | What is there |
+| --- | --- | --- |
+| 🎯 **Baloto** | exact chance | The ten tabs below: models, chance baseline, backtest, tickets, registry |
+| ⚽ **Fútbol** | the closing price | Data, market, a two-team forecast (Dixon-Coles + Elo), a multi-model verdict, and staking |
+| 🚴 **Ciclismo** | the pre-race ranking | Data, a race forecast (ranking + Plackett-Luce), and the verdict |
 
-The selector says which is which, because listing them as peers would imply three
-finished products.
+All three can answer "did this beat its baseline?" — but they are **not the same
+question**, and the selector names which one. What differs between them is what
+can be found there at all: nothing in Baloto, a great deal in the other two.
 
 ### Baloto's tabs
 
@@ -157,11 +158,22 @@ football/                  Second domain — real signal, market baseline
   common.py                The three outcomes and their (H, D, A) ordering
   processor.py             ★ football-data.co.uk contract; never mixes opening/closing odds
   market.py                Odds → calibrated probabilities; the baseline to beat
+  dixon_coles.py           Attack/defence strengths, the low-score correction
+  elo.py                   The cheap baseline; ordered logit fitted for the draw
+  ensemble.py              Pooling a model with the market (weight 0 IS the market)
+  scoring.py               Brier / RPS / log-loss; ★ RPS is the verdict
+  evaluation.py            ★ Paired one-sided test against the market
+  backtest.py              Walk-forward; compare_models corrects across models
+  value.py                 Edge, the two bars, quarter-Kelly staking
   downloader.py            football-data.co.uk → exported_data/football/
   sample_data.py           Synthetic seasons carrying the generative truth
 cycling/                   Third domain — an ordering, not an outcome
   common.py                Result kinds, finish statuses, cycling time parsing
   processor.py             ★ Result contract; one kind per frame, gaps never stored as totals
+  baseline.py              Plackett-Luce worths; ★ a uniform draw is NOT a baseline
+  scoring.py               ★ PL log score is the verdict; abandons stay in the denominator
+  plackett_luce.py         Rider strengths by MM, shrunk toward the field
+  evaluation.py            ★ Paired one-sided test against the ranking
   scraper.py               procyclingstats.com → exported_data/cycling/
   sample_data.py           Synthetic stage races carrying the generative truth
 lottery/
@@ -174,6 +186,7 @@ lottery/
     prophet_model.py       Prophet per position
   analysis/
     randomness.py          Frequency, gaps, hot/cold, chi-square, runs, ACF
+    structure.py           Sum / parity / calendar split vs their exact distributions
     prizes.py              Exact prize probabilities, EV, RTP, breakeven jackpot
     tickets.py             Generate tickets, check them, measure strategies vs chance
   utils/
@@ -184,10 +197,10 @@ scripts/                   CLI entry points (python -m scripts.<name>)
 tests/                     pytest suite pinning the invariants
 dashboard/
   app.py                   Shell: page config, domain selector, dispatch
-  ui.py                    ★ The single HELP dict + section() / chart()
+  ui.py                    ★ HELP / PLAIN / READ / GLOSSARY + section() / chart()
   baloto_page.py           The ten Baloto tabs
-  football_page.py         Datos · Mercado · Resultados
-  cycling_page.py          Datos · Abandonos · Tiempos
+  football_page.py         Datos · Mercado · Pronóstico · ¿Le gana al mercado? · Valor
+  cycling_page.py          Datos · Abandonos · Tiempos · Pronóstico · ¿Le gana al ranking?
 docs/                      Full documentation
 ```
 
