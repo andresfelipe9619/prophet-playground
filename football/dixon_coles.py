@@ -27,15 +27,11 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.stats import poisson
 
-from football.common import OUTCOMES  # noqa: F401  (kept for the order contract)
+from football.common import OUTCOMES, UnknownTeamError  # noqa: F401  (order contract; re-export)
 
 # rho must keep every tau cell positive over realistic lambdas; this bound is
 # wide enough for real data and narrow enough that the optimiser stays sane.
 _RHO_BOUNDS = (-0.4, 0.4)
-
-
-class UnknownTeamError(ValueError):
-    """A prediction was asked for a team the model was never fitted on."""
 
 
 def _tau(home_goals, away_goals, lambda_home, lambda_away, rho):

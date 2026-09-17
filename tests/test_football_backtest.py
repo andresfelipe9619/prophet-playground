@@ -20,7 +20,7 @@ that a real model beats a demonstrably soft market, not a realistic one.
 
 import pytest
 
-from football.backtest import run_all, run_holdout
+from football.backtest import MODEL_NAMES, compare_models, run_all, run_holdout
 from football.sample_data import generate_matches
 from football.processor import preprocess_matches
 
@@ -57,3 +57,70 @@ def test_effect_size_and_interval_are_reported():
     result = run_all(_matches(market_noise=0.8), n_windows=60, min_train=160)
     assert "effect" in result and "ci_low" in result and "ci_high" in result
     assert result["n_windows_scored"] > 0
+
+
+# ---------------------------------------------------------- several models at once
+
+def test_every_model_is_scored_on_the_same_matches():
+    """The property that makes a multi-model table readable at all.
+
+    A window is skipped when *any* requested model cannot predict it, so the
+    rows compare like with like. Two models scored on different subsets of
+    matches are not comparable, and nothing in the table's shape would say so.
+    """
+    table = compare_models(_matches(market_noise=0.8), n_windows=40, min_train=160)
+    assert list(table["model"]) == list(MODEL_NAMES)
+    assert table["n_windows_scored"].nunique() == 1
+    assert table["n_windows_scored"].iloc[0] > 0
+    # The market half of every paired comparison is the same matches, so every
+    # row must see the identical market score.
+    assert table["market_score"].nunique() == 1
+
+
+def test_the_threshold_is_divided_by_how_many_models_ran():
+    # Three models against one set of matches is three chances for luck to clear
+    # an uncorrected 5%. A table reporting one naive verdict per model would have
+    # reintroduced exactly the bug the lottery side is built around.
+    table = compare_models(_matches(market_noise=0.8), n_windows=40, min_train=160)
+    assert table["bonferroni_threshold"].iloc[0] == pytest.approx(0.05 / len(MODEL_NAMES))
+
+    pair = compare_models(_matches(market_noise=0.8), n_windows=40, min_train=160,
+                          models=("dixon_coles", "elo"))
+    assert pair["bonferroni_threshold"].iloc[0] == pytest.approx(0.05 / 2)
+
+
+def test_a_blend_at_weight_zero_is_the_market_itself():
+    """The reading the whole blend rests on, checked rather than asserted in prose.
+
+    At weight 0 the blend *is* the market, so the paired difference is exactly
+    zero on every match: the same score, no effect, and no edge. Any improvement
+    as the weight rises is therefore the model adding something the price did
+    not already contain. If this drifts, that reading is gone.
+    """
+    table = compare_models(_matches(market_noise=1.3), n_windows=40, min_train=160,
+                           models=("blend",), blend_weight=0.0)
+    row = table.iloc[0]
+    assert row["model_score"] == pytest.approx(row["market_score"])
+    assert row["effect"] == pytest.approx(0.0, abs=1e-12)
+    assert bool(row["beats_market_corrected"]) is False
+
+
+def test_a_blend_beats_a_soft_market_when_the_model_does():
+    # The positive control for the pooling path: against a demonstrably soft
+    # book, putting weight on a real model has to help.
+    table = compare_models(_matches(market_noise=1.3), n_windows=80, min_train=160,
+                           models=("blend",), blend_weight=1.0)
+    assert bool(table["beats_market_corrected"].iloc[0]) is True
+
+
+def test_nothing_beats_a_market_that_prices_the_truth():
+    # The negative control, for every model at once. A table that fires here is
+    # measuring its own wiring.
+    table = compare_models(_matches(market_noise=0.0), n_windows=80, min_train=160)
+    assert not table["beats_market_corrected"].any()
+
+
+def test_an_unknown_model_is_refused_by_name():
+    with pytest.raises(ValueError, match="Unknown models"):
+        compare_models(_matches(market_noise=0.5), n_windows=20, min_train=160,
+                       models=("dixon_coles", "neural_net"))
