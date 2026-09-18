@@ -1,0 +1,19 @@
+# Streamlit configuration, committed so a deployed instance and a local one
+# behave the same. Anything host-specific (the port, the bind address) is passed
+# on the command line instead — see docs/deployment.md — because a port pinned
+# here fights the $PORT the platform hands the process.
+
+[server]
+headless = true
+# Uploads are the only way a deployed instance gets real data: exported_data/ is
+# gitignored, so the hosted app runs on synthetic data until someone uploads a
+# CSV. 50 MB is far more than a lottery history or a season file needs.
+maxUploadSize = 50
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#1f77b4"

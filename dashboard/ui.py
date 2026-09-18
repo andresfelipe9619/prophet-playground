@@ -29,6 +29,8 @@ at the call site, and copy can never drift to a page module.
 
 import streamlit as st
 
+from dashboard import mobile
+
 # Every explanatory tooltip in the UI, in one place.
 #
 # Streamlit renders `help=` as a small ⓘ next to the element and shows the text
@@ -196,6 +198,12 @@ HELP = {
     "min_train": "Cuántos sorteos como mínimo debe tener el modelo para entrenar antes de la primera ventana.",
     "include_prophet": "Prophet reajusta un modelo por posición y por ventana, así que multiplica el tiempo "
                        "de corrida. Déjalo apagado salvo que lo necesites.",
+    # Shown in place of `include_prophet` when the package is not installed — a
+    # deployed instance leaves it out on purpose (docs/deployment.md), and an
+    # option that is greyed out without saying why reads as a broken app.
+    "prophet_missing": "Prophet no está instalado en esta copia. Se omite a propósito en el despliegue: "
+                       "arrastra un compilador y pesa más que todo lo demás junto, para un modelo que "
+                       "viene apagado por defecto. Los demás modelos están todos disponibles.",
     "cutoff_date": "El modelo se entrena con todos los sorteos hasta esta fecha (inclusive) y predice los "
                    "posteriores, que ya sabemos cómo salieron.",
     "holdout_mode": "Reentrenar en cada sorteo es lo que harías jugando de verdad: antes de cada sorteo "
@@ -1045,8 +1053,11 @@ def chart(fig, title, help_key):
         st.caption(f"Cómo leerlo: {READ[help_key]}")
     # `title=None` leaves Plotly rendering the string "undefined"; an empty text
     # is what actually clears it.
-    fig.update_layout(title={"text": ""}, margin=dict(t=10, b=40))
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(title={"text": ""})
+    # Margins, legend placement and touch behaviour come from one place, so a
+    # chart cannot be added that is unreadable on a phone: see dashboard/mobile.py.
+    st.plotly_chart(mobile.responsive(fig), use_container_width=True,
+                    config=mobile.PLOTLY_CONFIG)
 
 
 def glossary():

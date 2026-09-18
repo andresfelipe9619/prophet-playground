@@ -15,6 +15,10 @@ pre-race ranking for cycling. A launcher that listed them identically would
 imply three interchangeable products, which is exactly the kind of quiet
 overclaim the rest of this project is built to avoid — the domains differ in
 what can be found there at all, not in how far the code has got.
+
+The shell is also where the **phone layout** is installed, once, before any page
+renders: `dashboard/mobile.py` owns every rule that makes a 375px screen a
+first-class target rather than a squeezed desktop.
 """
 
 import importlib
@@ -25,7 +29,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 
-st.set_page_config(page_title="Sports Analytics", layout="wide")
+st.set_page_config(
+    page_title="Sports Analytics",
+    page_icon="🎯",
+    layout="wide",
+    # "auto" is what collapses the sidebar on a phone and leaves it open on a
+    # desktop; pinning it either way breaks one of the two.
+    initial_sidebar_state="auto",
+)
+
+from dashboard import mobile
+
+mobile.apply()
 
 # Label -> (module, what exists there today). The second half is shown in the
 # sidebar under the selector, so the state of each domain is visible before you
@@ -59,6 +74,15 @@ def main():
         module_name, state = DOMAINS[choice]
         st.caption(state)
         st.divider()
+
+    # On a phone the sidebar is an overlay behind the ☰ button, so the domain
+    # selector and every data control are off screen. Without this line a phone
+    # reader has no way to know the controls exist, let alone that they are
+    # there; on a desktop the sidebar is visible and the line would be noise.
+    mobile.phone_only(
+        f"<strong>{choice}</strong> — toca ☰ arriba a la izquierda para cambiar de "
+        "deporte o cargar tus datos."
+    )
 
     # Imported here, not at module scope: Baloto's page pulls in statsforecast
     # and xgboost, and the cycling page has no use for either.

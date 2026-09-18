@@ -1,0 +1,9 @@
+# Streamlit Community Cloud looks for a dependency file in the entrypoint's
+# directory before the repository root, and `dashboard/app.py` is the entrypoint.
+# This file is that hook, and it exists so the root requirements.txt — which
+# installs prophet and a compiler toolchain — is not what a hosted build picks
+# up. See docs/deployment.md.
+#
+# pip resolves a nested -r relative to the file containing it, so this reaches
+# the repository root from here.
+-r ../requirements-deploy.txt

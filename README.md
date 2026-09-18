@@ -99,6 +99,20 @@ All three can answer "did this beat its baseline?" — but they are **not the sa
 question**, and the selector names which one. What differs between them is what
 can be found there at all: nothing in Baloto, a great deal in the other two.
 
+It is built for a phone as well as a desktop: below 640px the columns stack,
+metrics go two-up, the tab strip swipes and chart legends move above the plot.
+All of it lives in [`dashboard/mobile.py`](dashboard/mobile.py).
+
+### Putting it on a URL
+
+`docker build -t baloto-dashboard . && docker run -p 8501:8501 baloto-dashboard`,
+or point **Streamlit Community Cloud** at this repo with `dashboard/app.py` as
+the entrypoint — that is the whole deployment. **Vercel cannot host it**: not a
+Python limitation, but a Streamlit one — it is a long-running server holding a
+websocket per viewer, not a per-request function. Both halves, and what a
+deployed instance actually runs on, are in
+**[docs/deployment.md](docs/deployment.md)**.
+
 ### Baloto's tabs
 
 | Tab | Purpose |
