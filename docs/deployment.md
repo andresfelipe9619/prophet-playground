@@ -187,8 +187,13 @@ The assumption itself was also wrong for current versions. Measured:
 | `pip install prophet` on Linux | **6 s**, from a `manylinux` wheel — no compiler, nothing built |
 | prophet + cmdstanpy on disk | **38 MB** |
 | All six models, one next-draw forecast each | Prophet 0.5 s · statsforecast trio 1.4 s · XGBoost 0.3 s |
-| 5-window backtest, 400 draws | 5.1 s without Prophet, 6.6 s with |
+| 20-window backtest, 1035 draws | 44.9 s without Prophet, **49.8 s** with — about +11% |
 | Peak RSS for all of the above | **~296 MB** |
+
+(The backtest row is a clean run; a first attempt measured it against a
+concurrent test suite and reported the Prophet run as *faster*, which is how a
+contended benchmark announces itself. The control was then repeated — 44.9 s and
+44.1 s — so the +11% sits well outside the drift.)
 
 That last figure is the one that matters for a memory-capped host: it leaves
 room under Community Cloud's limit. The assumption was true of prophet 0.x, and

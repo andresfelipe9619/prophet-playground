@@ -60,14 +60,14 @@ flowchart TD
 
 ```bash
 python -m lottery.backtest --n-windows 20 --min-train 100
-python -m lottery.backtest --n-windows 20 --include-prophet     # slower
+python -m lottery.backtest --n-windows 20 --include-prophet     # +11% runtime
 ```
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--n-windows` | 15 | How many recent draws to evaluate |
 | `--min-train` | 60 | Minimum history before the first evaluated window |
-| `--include-prophet` | off | Prophet refits per position per window; far slower |
+| `--include-prophet` | off on the CLI, **on in the dashboard** | Prophet refits per position per window, which costs about +11% (measured: 44.9 s → 49.8 s over 20 windows / 1035 draws), not the "far slower" this table used to claim |
 | `--cutoff` | off | Hold out every draw after a date instead — see [§2.2](#22-holdout-by-date) |
 | `--mode` | `expanding` | With `--cutoff`: `expanding` or `frozen` |
 | `--current-format-only` | off | Drop pre-2017 draws ([data contract](data-pipeline.md#12-two-eras-of-the-game)) |

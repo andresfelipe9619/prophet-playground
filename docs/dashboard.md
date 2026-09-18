@@ -235,6 +235,13 @@ out**:
 | **Últimos N sorteos** | window count, minimum training size | The summary table and bar chart |
 | **Corte por fecha (holdout)** | a date picker, and a mode | The same, **plus** a draw-by-draw table and a hits-over-time chart |
 
+Both carry an **Incluir Prophet** checkbox that ships **on**. It used to ship off
+on the grounds that Prophet was far slower; measured, it costs about +11% (see
+[Models: performance notes](models.md#performance-notes)), and a table that
+silently drops a model compares five things while the Bonferroni correction
+printed beside it says six. It is unticked and disabled only when the package is
+genuinely missing, which is a broken install rather than a choice.
+
 The date option is the concrete one: pick 31 July, and the panel trains on
 everything up to it and predicts the draws of August and September that have
 already happened. Its **Modo** radio maps to the two experiments in

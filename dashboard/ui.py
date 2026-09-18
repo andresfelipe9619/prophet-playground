@@ -152,8 +152,8 @@ HELP = {
                     "ejercicio de forecasting, no una predicción confiable.",
     "model_choice": "FrequencyBaseline juega el número más frecuente de cada posición (la referencia a "
                     "vencer). AutoARIMA/AutoETS/AutoTheta son modelos clásicos de series de tiempo. Prophet "
-                    "es el más lento. XGBoost usa lags y medias móviles. Ninguno supera al azar en el "
-                    "backtest — para eso está esa pestaña.",
+                    "descompone tendencia y estacionalidad. XGBoost usa lags y medias móviles. Ninguno "
+                    "supera al azar en el backtest — para eso está esa pestaña.",
 
     # -- Jugadas
     "tab_jugadas": "Genera jugadas, verifícalas contra sorteos reales y mide si tu forma de elegirlas le gana "
@@ -196,8 +196,13 @@ HELP = {
     "n_windows": "Cuántos sorteos recientes dejar fuera del entrenamiento y evaluar. Con menos de ~30, una "
                  "sola corrida es una anécdota.",
     "min_train": "Cuántos sorteos como mínimo debe tener el modelo para entrenar antes de la primera ventana.",
-    "include_prophet": "Prophet reajusta un modelo por posición y por ventana, así que multiplica el tiempo "
-                       "de corrida. Déjalo apagado salvo que lo necesites.",
+    # Measured, not assumed: Prophet refits per position per window, which sounds
+    # expensive and is not — 20 windows over 1035 draws cost 44.9s without it and
+    # 49.8s with. It now ships on, because a backtest missing a model compares
+    # five things while the correction beside it says six.
+    "include_prophet": "Prophet reajusta un modelo por posición y por ventana. Suena caro y no lo es: "
+                       "medido sobre 20 ventanas y 1035 sorteos, añade alrededor del 11% al tiempo "
+                       "total. Viene encendido; apágalo solo si tienes prisa.",
     # Shown in place of `include_prophet` when the package is missing. It should
     # not be: prophet is in requirements.txt and every model the selector offers
     # is meant to be here. This is the safety net for an incomplete install, and
