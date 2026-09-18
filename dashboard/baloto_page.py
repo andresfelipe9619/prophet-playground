@@ -1000,7 +1000,7 @@ def render():
             max_train = max(MIN_TRAIN_FLOOR, n_draws - 1)
             min_train = c2.slider("Mínimo de sorteos para entrenar", MIN_TRAIN_FLOOR, max_train,
                                   min(60, max_train), help=HELP["min_train"])
-            include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False,
+            include_prophet = c3.checkbox("Incluir Prophet", value=PROPHET_AVAILABLE,
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
@@ -1039,7 +1039,7 @@ def render():
                 help=HELP["holdout_mode"],
             )
             mode = "expanding" if mode_label.startswith("Reentrenar") else "frozen"
-            include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False, key="holdout_prophet",
+            include_prophet = c3.checkbox("Incluir Prophet", value=PROPHET_AVAILABLE, key="holdout_prophet",
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])

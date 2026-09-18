@@ -58,7 +58,7 @@ Changes are verified by:
 4. The `static` CI job byte-compiles `dashboard/app.py` and everything under `scripts/`, which pytest never imports — a syntax error there passes the whole suite and is caught only here.
 5. For dashboard changes, launching Streamlit headless and driving it with Playwright (Chromium is under `/opt/pw-browsers/`, at a versioned path such as `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). Streamlit only executes the script when a client connects over the websocket, so an HTTP 200 on `/` proves nothing — you must load the page in a browser and check tab text for `Traceback` / "This app has encountered an error". Note that all tab panels stay mounted in the DOM, so scope Playwright locators to `get_by_role("tabpanel", name=...)` or they match across tabs.
 
-`lottery/backtest.py` with `--include-prophet` refits Prophet per position per window and is far slower than the other models; it is off by default for that reason.
+`lottery/backtest.py` with `--include-prophet` refits Prophet per position per window. That sounds expensive and is not: measured at 20 windows over 1035 draws it is 44.9s without Prophet and 49.8s with, about +11% — an earlier note here called it "far slower", which was never measured. The CLI keeps the opt-in flag (a flag named `--include-prophet` that defaults to on is incoherent), but **the dashboard's backtest now includes it by default**, because a comparison table missing a model silently compares five things while the correction says six.
 
 ## Data contract
 

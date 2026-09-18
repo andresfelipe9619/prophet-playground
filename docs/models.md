@@ -190,8 +190,16 @@ forecast_position(series, pos, n, holidays=COLOMBIA_HOLIDAYS)   # if you want to
 
 ### Performance notes
 
-- Prophet refits per position per window, which makes it far slower than the rest.
-  It is **off by default in the backtest** (`--include-prophet` to enable).
+- Prophet refits per position per window. That sounds expensive and, measured, is
+  not: 20 windows over 1035 draws take 44.9 s without it and 49.8 s with it, about
+  **+11%**. On a single next-draw forecast it is the *faster* half of the field —
+  0.5 s for six positions against 1.4 s for the statsforecast trio. This section
+  previously said "far slower than the rest", which was never measured; see
+  [`docs/deployment.md`](deployment.md#3-what-the-deployed-app-runs-on).
+- The CLI keeps `--include-prophet` as an opt-in flag, since a flag by that name
+  defaulting to on would be incoherent. **The dashboard's backtest includes it by
+  default**: a comparison table missing a model compares five things while the
+  Bonferroni correction beside it says six.
 - Use `predict_at_dates()` when you need one date. `make_predictions()` rebuilds the
   full history frame, and Prophet's uncertainty sampling makes predicting ~1500
   historical rows to read one value genuinely expensive.
