@@ -23,6 +23,7 @@ make sense against it.
 | 11 | **[Cycling](cycling.md)** | The third domain. An ordering rather than an outcome, the result contract and its three traps, the scraper, the ranking baseline, the Plackett-Luce scoring rule and model, and the paired evaluation. |
 | 12 | **[Dashboard](dashboard.md)** | One app, three domains: the sidebar selector, Baloto's ten tabs, football's five, cycling's five, and the four layers of explanation that make them readable without a statistics background. |
 | 13 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
+| 14 | **[Deployment](deployment.md)** | The phone layout, why Vercel cannot host a Streamlit app, the hosts that can, and what a deployed instance actually runs on. |
 
 ## Quick answers
 
@@ -63,6 +64,11 @@ make sense against it.
 | Why is the sum of the balls a bell curve if all tickets are equal? | [Evaluation §4.1](evaluation.md#41-the-order-agnostic-summaries) |
 | I don't know what a p-value is — where do I start? | The **Glosario** in the dashboard sidebar · [Dashboard §5](dashboard.md#5-the-four-layers-of-explanation) |
 | How do I use the Colombian league data? | [Data Pipeline §5.1](data-pipeline.md#51-footballs-extra-files) |
+| Can I deploy this to Vercel? | [Deployment §2](deployment.md#vercel-does-not-host-this) |
+| Where should I host the dashboard, then? | [Deployment §2](deployment.md#what-does-work) |
+| Why does the hosted app show synthetic data? | [Deployment §3](deployment.md#3-what-the-deployed-app-runs-on) |
+| Why is Prophet missing from the deployed app? | [Deployment §3](deployment.md#3-what-the-deployed-app-runs-on) |
+| How do I check a change still works on a phone? | [Deployment §1](deployment.md#verifying-a-layout-change) |
 
 ## Conventions
 

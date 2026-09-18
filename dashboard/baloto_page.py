@@ -10,6 +10,7 @@ honest expectation is that most of these checks come back negative — this page
 is built to show that clearly instead of hiding it.
 """
 
+import importlib.util
 import io
 import os
 import sys
@@ -108,6 +109,15 @@ from lottery.utils.sample_data import load_sample_and_preprocess
 from dashboard.ui import HELP, chart, glossary, plain, plain_verdict, section, verdict_badge
 
 MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
+
+# Prophet is the one dependency a deployed instance may not have: it drags in
+# cmdstanpy and a compiler toolchain, which is most of the image for a model
+# that is off by default and slower than every other one here. A hosted build
+# that leaves it out should say so where the option is, rather than raising an
+# ImportError from inside a spinner after the reader has clicked the button —
+# see docs/deployment.md. `find_spec` does not import it, which is the point:
+# checking must not cost what installing it was meant to save.
+PROPHET_AVAILABLE = importlib.util.find_spec("prophet") is not None
 
 
 @st.cache_data(show_spinner=False)
@@ -617,8 +627,12 @@ def render():
             "puede superar de forma sostenida la probabilidad teórica. Revisa la pestaña Backtest antes de confiar "
             "en cualquiera de estos números."
         )
-        model_choice = st.selectbox("Modelo", ["FrequencyBaseline", "Prophet", *MODEL_NAMES, "XGBoost"],
-                                     help=HELP["model_choice"])
+        model_options = ["FrequencyBaseline", "Prophet", *MODEL_NAMES, "XGBoost"]
+        if not PROPHET_AVAILABLE:
+            model_options.remove("Prophet")
+        model_choice = st.selectbox("Modelo", model_options, help=HELP["model_choice"])
+        if not PROPHET_AVAILABLE:
+            st.caption(HELP["prophet_missing"])
 
         if st.button("Generar predicción del próximo sorteo"):
             with st.spinner("Entrenando..."):
@@ -987,7 +1001,9 @@ def render():
             min_train = c2.slider("Mínimo de sorteos para entrenar", MIN_TRAIN_FLOOR, max_train,
                                   min(60, max_train), help=HELP["min_train"])
             include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False,
-                                           help=HELP["include_prophet"])
+                                           disabled=not PROPHET_AVAILABLE,
+                                           help=HELP["include_prophet"] if PROPHET_AVAILABLE
+                                           else HELP["prophet_missing"])
 
             start_idx, total = bt.window_bounds(n_draws, n_windows, min_train)
             if start_idx >= total:
@@ -1024,7 +1040,9 @@ def render():
             )
             mode = "expanding" if mode_label.startswith("Reentrenar") else "frozen"
             include_prophet = c3.checkbox("Incluir Prophet (más lento)", value=False, key="holdout_prophet",
-                                           help=HELP["include_prophet"])
+                                           disabled=not PROPHET_AVAILABLE,
+                                           help=HELP["include_prophet"] if PROPHET_AVAILABLE
+                                           else HELP["prophet_missing"])
 
             n_train_preview, n_holdout_preview = bt.cutoff_bounds(df["ds"], pd.Timestamp(cutoff))
             st.caption(
