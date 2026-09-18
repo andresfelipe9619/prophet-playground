@@ -1,3 +1,11 @@
+# Everything this project runs, for a local checkout. See docs/local-setup.md.
+#
+# There is one list because there is one place this runs: your machine. A second
+# list that *can* differ from what the app needs eventually does — that happened
+# here once, and the hosted build silently offered five models where the real one
+# offers six. `requirements-test.txt` stays separate because it answers a
+# genuinely different question (what pytest imports) and is read by CI, not by
+# the app.
 pandas>=2.2
 numpy>=1.26
 scipy>=1.13
@@ -13,3 +21,21 @@ scikit-learn>=1.4.1.post1
 streamlit>=1.36
 requests~=2.31.0
 beautifulsoup4~=4.11.2
+
+# TimesFM, the foundation model. It is by far the heaviest thing here — torch is
+# ~1.2 GB on its own, and `pip install timesfm[torch]` resolves to the CUDA build
+# and pulls ~3.2 GB of NVIDIA libraries on top (measured). That is the right
+# install on a machine with an NVIDIA GPU, and the model will use it: see
+# `timesfm_model.best_device`.
+#
+# **No GPU? Install the CPU wheel instead** and save those 3.2 GB:
+#
+#     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# The weights are downloaded separately from HuggingFace on first use and cached
+# under ~/.cache/huggingface. Licence note, because it differs from everything
+# else here: TimesFM weights up to 2.5 are Apache-2.0, and 3.0's — the default,
+# since this runs locally — are non-commercial and non-production. See
+# `lottery/models/timesfm_model.py:CHECKPOINT`.
+timesfm>=2.0
+torch>=2.0

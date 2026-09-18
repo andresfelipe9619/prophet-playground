@@ -63,7 +63,7 @@ def test_the_sidebar_width_is_never_set():
     for match in re.finditer(r'\[data-testid="stSidebar"\][^{}]*\{([^}]*)\}', rules):
         assert not re.search(r"\bwidth\b", match.group(1)), (
             "dashboard/mobile.py sets a width on the sidebar. That parks the collapsed "
-            "sidebar over the ☰ button; see docs/deployment.md."
+            "sidebar over the ☰ button; see docs/local-setup.md."
         )
 
 

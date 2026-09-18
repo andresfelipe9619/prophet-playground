@@ -103,15 +103,18 @@ It is built for a phone as well as a desktop: below 640px the columns stack,
 metrics go two-up, the tab strip swipes and chart legends move above the plot.
 All of it lives in [`dashboard/mobile.py`](dashboard/mobile.py).
 
-### Putting it on a URL
+### Reading it on your phone
 
-`docker build -t baloto-dashboard . && docker run -p 8501:8501 baloto-dashboard`,
-or point **Streamlit Community Cloud** at this repo with `dashboard/app.py` as
-the entrypoint — that is the whole deployment. **Vercel cannot host it**: not a
-Python limitation, but a Streamlit one — it is a long-running server holding a
-websocket per viewer, not a per-request function. Both halves, and what a
-deployed instance actually runs on, are in
-**[docs/deployment.md](docs/deployment.md)**.
+There is **no hosted instance and no deployment** — this runs on your machine,
+which is what lets every model run at full strength on your real data. To read it
+on a phone, run the server and open it over your own network:
+
+```bash
+streamlit run dashboard/app.py --server.address 0.0.0.0   # then open the Network URL
+```
+
+The laptop keeps the data, the models and the GPU; the phone is only a screen.
+See **[docs/local-setup.md](docs/local-setup.md)**.
 
 ### Baloto's tabs
 
@@ -122,7 +125,7 @@ deployed instance actually runs on, are in
 | **Frecuencia y Gaps** | Per-number frequency vs uniform, gap and "overdue" table |
 | **Hot / Cold** | Recent vs all-time share |
 | **Aleatoriedad** | chi-square, runs test, Ljung–Box, ACF — is there any signal? |
-| **Forecast** | Next-draw suggestion from any of the models, including Google's TimesFM if installed |
+| **Forecast** | Next-draw suggestion from any of the seven models, including Google's TimesFM |
 | **Jugadas** | Generate tickets, check one against your whole history, and measure strategies against chance |
 | **Backtest vs. Azar** | Walk-forward accuracy against the hypergeometric baseline, over the last N draws or everything after a date you pick |
 | **Potencia y Sensibilidad** | What edge this much data could detect, and whether the tests fire on a planted one |
@@ -135,7 +138,7 @@ streamlit run dashboard/app.py                       # main entry point
 
 python -m lottery.backtest --n-windows 20 --min-train 100    # evaluate vs chance
 python -m lottery.backtest --n-windows 20 --include-prophet  # +11% runtime
-python -m lottery.backtest --n-windows 20 --include-timesfm  # add Google's TimesFM (optional dep)
+python -m lottery.backtest --n-windows 20 --include-timesfm  # add Google's TimesFM (zero-shot)
 python -m lottery.backtest --cutoff 2026-07-31 --mode frozen # hold out everything after a date
 python -m lottery.backtest --current-format-only             # drop pre-2017 draws (rules changed)
 

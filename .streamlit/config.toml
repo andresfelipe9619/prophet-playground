@@ -1,18 +1,22 @@
-# Streamlit configuration, committed so a deployed instance and a local one
-# behave the same. Anything host-specific (the port, the bind address) is passed
-# on the command line instead — see docs/deployment.md — because a port pinned
-# here fights the $PORT the platform hands the process.
+# Streamlit configuration for a local checkout. See docs/local-setup.md.
 
 [server]
-headless = true
-# Uploads are the only way a deployed instance gets real data: exported_data/ is
-# gitignored, so the hosted app runs on synthetic data until someone uploads a
-# CSV. 50 MB is far more than a lottery history or a season file needs.
+# false, so `streamlit run dashboard/app.py` opens your browser. Set it to true
+# only when you want the server without the tab — the LAN case in
+# docs/local-setup.md, where you open the app from your phone instead.
+headless = false
+# Uploads are how the dashboard gets data it was not pointed at on disk. 50 MB is
+# far more than a lottery history or a season file needs.
 maxUploadSize = 50
 enableXsrfProtection = true
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Local means you are the developer as well as the reader: a full traceback in
+# the page is useful here, where on a public URL it would be a leak.
+showErrorDetails = "full"
 
 [theme]
 base = "light"

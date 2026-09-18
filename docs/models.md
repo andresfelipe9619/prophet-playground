@@ -200,7 +200,7 @@ forecast_position(series, pos, n, holidays=COLOMBIA_HOLIDAYS)   # if you want to
   **+11%**. On a single next-draw forecast it is the *faster* half of the field —
   0.5 s for six positions against 1.4 s for the statsforecast trio. This section
   previously said "far slower than the rest", which was never measured; see
-  [`docs/deployment.md`](deployment.md#3-what-the-deployed-app-runs-on).
+  [`docs/local-setup.md`](local-setup.md#4-what-the-models-do-with-a-local-machine).
 - The CLI keeps `--include-prophet` as an opt-in flag, since a flag by that name
   defaulting to on would be incoherent. **The dashboard's backtest includes it by
   default**: a comparison table missing a model compares five things while the
@@ -255,12 +255,19 @@ statsforecast models, not the calendar axis with Prophet (see
 [Architecture §5](architecture.md#5-two-time-axes)). There is no `freq` to get
 wrong here, which removes one of this project's standing traps.
 
-**It is optional, and the optionality is load-bearing.** torch plus a downloaded
-checkpoint dwarf every other dependency combined. `is_available()` answers with
-`importlib.util.find_spec` and **does not import torch**, the dashboard hides the
-model when it is absent, and the backtest flag is opt-in. Nothing silently drops
-a model because a dependency is missing — see
-[Deployment](deployment.md#timesfm-and-what-it-costs).
+**It is the heaviest thing here, and it still degrades gracefully.** torch plus a
+downloaded checkpoint outweigh every other dependency combined, so while someone
+may reasonably skip the install, the app must not pretend the model never
+existed. `is_available()` answers with `importlib.util.find_spec` and **does not
+import torch** — the dashboard re-executes top to bottom on every interaction —
+and when the answer is no, the surface says so rather than offering one model
+fewer in silence. It ships in `requirements.txt` and, once installed, is on by
+default everywhere: see
+[Local Setup §4](local-setup.md#4-what-the-models-do-with-a-local-machine).
+
+**It uses the GPU when there is one.** `best_device()` picks cuda, then Apple
+`mps`, then cpu, and `load_forecaster` passes it to the 3.0 loader. This is the
+clearest thing running locally buys that a free hosted tier could not.
 
 ### Licence: not the same answer as the rest of the project
 
@@ -270,14 +277,25 @@ Apache-2.0**, while **3.0's weights are under `timesfm-non-commercial-license-v1
 restricted to non-commercial, non-production use**. The `timesfm` package itself
 is Apache-2.0; it is the weights that differ.
 
-This project therefore defaults to the 2.5 checkpoint:
+**This project runs locally and non-commercially, which is squarely inside 3.0's
+terms**, so 3.0 is the default — the stronger model, and the whole reason the
+restriction is worth reading rather than routing around:
 
 ```python
-CHECKPOINT = "google/timesfm-2.5-200m-pytorch"   # timesfm_model.py
+CHECKPOINT = "google/timesfm-3.0-pytorch"        # timesfm_model.py
+CHECKPOINT_APACHE = "google/timesfm-2.5-200m-pytorch"
 ```
 
-A dashboard on a public URL is production, so that default is the safe one.
-Changing it is one constant, and the consequence is yours to weigh.
+If this ever goes commercial or back onto a public URL, `CHECKPOINT =
+CHECKPOINT_APACHE` is the one-line switch, and the licence is the reason. Nothing
+in this repository redistributes weights; you download them from Google's
+HuggingFace repo under whichever licence it states.
+
+The two checkpoint families ship genuinely different APIs — 2.5 compiles a
+`ForecastConfig` and exposes `.forecast(horizon, inputs)`, 3.0 takes a device and
+exposes `.predict_batch(...)` yielding one result per series. `_Timesfm3Adapter`
+normalises that to the 2.5 shape so the difference stops at this module's edge
+and never reaches `forecast_matrix`, the backtest, the dashboard or the tests.
 
 ### Testing it without the weights
 

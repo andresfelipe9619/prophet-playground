@@ -173,6 +173,67 @@ def test_frozen_holdout_includes_it(series, monkeypatch):
     assert len(results["TimesFM"]) == info["n_holdout"]
 
 
+class _Fake3Output:
+    def __init__(self, values):
+        self.forecast = np.asarray(values, dtype=np.float32)
+
+
+class Fake3Forecaster:
+    """Mimics TimesFM 3.0's `predict_batch`, which is a different API from 2.5's."""
+
+    def __init__(self, value=7.0):
+        self.value = value
+        self.calls = []
+
+    def predict_batch(self, contexts, horizon, **kwargs):
+        self.calls.append({"contexts": list(contexts), "horizon": horizon})
+        # An iterator of per-series objects, each carrying a (horizon,) forecast.
+        return iter([_Fake3Output([self.value] * horizon) for _ in contexts])
+
+
+def test_the_3_0_adapter_matches_the_2_5_contract():
+    # 2.5 returns (batch, horizon) from `.forecast`; 3.0 yields one object per
+    # series from `.predict_batch`. The adapter is what stops that difference
+    # reaching forecast_matrix, the backtest, the dashboard and every test here.
+    from lottery.models.timesfm_model import _Timesfm3Adapter
+
+    adapter = _Timesfm3Adapter(Fake3Forecaster(7.0))
+    point, _quantiles = adapter.forecast(horizon=3, inputs=[np.zeros(64), np.zeros(64)])
+
+    assert point.shape == (2, 3)
+    assert (point == 7.0).all()
+
+
+def test_the_3_0_adapter_drives_a_real_forecast(series):
+    # End to end through the adapter rather than the stub: the same clipping and
+    # position semantics must hold whichever checkpoint family is loaded.
+    from lottery.models.timesfm_model import _Timesfm3Adapter
+
+    preds = forecast_positions(series, N_COLUMNS,
+                               forecaster=_Timesfm3Adapter(Fake3Forecaster(999.0)))
+    for position in range(N_COLUMNS - 1):
+        assert preds[position] == MAIN_BALL_RANGE[1]
+    assert preds[N_COLUMNS - 1] == SUPER_BALL_RANGE[1]
+
+
+def test_the_default_context_covers_a_full_history():
+    # A real 2010-2026 export is ~1035 draws. The context was cut to 512 while
+    # this project was aimed at a hosted free tier; locally there is no reason to
+    # hand the model less history than exists.
+    from lottery.models.timesfm_model import MAX_CONTEXT
+
+    assert MAX_CONTEXT >= 1035, "the default context should not truncate a full Baloto history"
+
+
+def test_the_default_checkpoint_is_the_strong_one():
+    # Local, non-commercial use, so 3.0 is permitted and is the better model.
+    # CHECKPOINT_APACHE stays available for anything published or commercial.
+    from lottery.models.timesfm_model import CHECKPOINT, CHECKPOINT_APACHE
+
+    assert "3.0" in CHECKPOINT
+    assert "2.5" in CHECKPOINT_APACHE
+
+
 def test_predictions_are_plain_ints(series):
     # They land in a set with the actual draw in `_score_window`; numpy scalars
     # compare equal but a DataFrame built from them dtypes differently, and the

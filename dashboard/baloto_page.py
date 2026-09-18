@@ -119,15 +119,16 @@ MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 # option disappears and says why, instead of raising an ImportError from inside
 # a spinner after the reader has already clicked the button. `find_spec` does
 # not import the package, so the check costs nothing on the common path where it
-# is present. See docs/deployment.md.
+# is present. See docs/local-setup.md.
 PROPHET_AVAILABLE = importlib.util.find_spec("prophet") is not None
 
-# TimesFM is the one model that is genuinely optional. Unlike Prophet it is not
-# expected in every environment: it is a pretrained foundation model, so it drags
-# in torch and downloads a checkpoint, which together dwarf the rest of this
-# project (see docs/deployment.md). `is_available()` uses find_spec and does not
-# import torch, which matters on a surface Streamlit re-executes top to bottom on
-# every interaction.
+# TimesFM ships in requirements.txt like everything else, because this project
+# runs locally and there is no free-tier memory cap to design around. The check
+# stays because the install is genuinely heavy (torch plus a downloaded
+# checkpoint) and someone may well skip it deliberately — a missing model should
+# say so rather than vanish. `is_available()` uses find_spec and does not import
+# torch, which matters on a surface Streamlit re-executes top to bottom on every
+# interaction. See docs/local-setup.md.
 TIMESFM_AVAILABLE = timesfm_is_available()
 
 
@@ -1040,10 +1041,12 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
-            # Off by default even when installed: a foundation model's first run
-            # downloads a checkpoint, and an unannounced multi-hundred-MB download
-            # behind a button is exactly the surprise this dashboard avoids.
-            include_timesfm = c3.checkbox("Incluir TimesFM", value=False, key="wf_timesfm",
+            # On when installed: the checkpoint is cached after the first run, so
+            # the only cost that ever surprised anyone is paid once. A comparison
+            # table that quietly leaves out an installed model is the bug this
+            # project already fixed once, for Prophet.
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=TIMESFM_AVAILABLE,
+                                          key="wf_timesfm",
                                           disabled=not TIMESFM_AVAILABLE,
                                           help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
                                           else HELP["timesfm_missing"])
@@ -1087,7 +1090,8 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
-            include_timesfm = c3.checkbox("Incluir TimesFM", value=False, key="holdout_timesfm",
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=TIMESFM_AVAILABLE,
+                                          key="holdout_timesfm",
                                           disabled=not TIMESFM_AVAILABLE,
                                           help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
                                           else HELP["timesfm_missing"])
