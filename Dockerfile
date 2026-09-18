@@ -16,8 +16,15 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Dependencies first, so editing a page module does not reinstall xgboost.
-COPY requirements-deploy.txt ./
-RUN pip install --no-cache-dir -r requirements-deploy.txt
+#
+# requirements.txt, the same file a local checkout installs — there is no
+# separate deploy list. There was one briefly, and it silently omitted Prophet,
+# which meant the hosted app offered five models where the real one offers six.
+# A dependency list that can differ from what the app needs will eventually
+# differ from what the app needs. requirements-test.txt is a different question
+# (what pytest imports) and stays separate.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

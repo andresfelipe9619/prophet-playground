@@ -110,13 +110,13 @@ from dashboard.ui import HELP, chart, glossary, plain, plain_verdict, section, v
 
 MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 
-# Prophet is the one dependency a deployed instance may not have: it drags in
-# cmdstanpy and a compiler toolchain, which is most of the image for a model
-# that is off by default and slower than every other one here. A hosted build
-# that leaves it out should say so where the option is, rather than raising an
-# ImportError from inside a spinner after the reader has clicked the button —
-# see docs/deployment.md. `find_spec` does not import it, which is the point:
-# checking must not cost what installing it was meant to save.
+# Prophet ships in every environment this app is meant to run in, deployment
+# included — a hosted instance missing a model is a different app, not a smaller
+# one. This is the net for the case where the install is incomplete anyway: the
+# option disappears and says why, instead of raising an ImportError from inside
+# a spinner after the reader has already clicked the button. `find_spec` does
+# not import the package, so the check costs nothing on the common path where it
+# is present. See docs/deployment.md.
 PROPHET_AVAILABLE = importlib.util.find_spec("prophet") is not None
 
 

@@ -198,12 +198,14 @@ HELP = {
     "min_train": "Cuántos sorteos como mínimo debe tener el modelo para entrenar antes de la primera ventana.",
     "include_prophet": "Prophet reajusta un modelo por posición y por ventana, así que multiplica el tiempo "
                        "de corrida. Déjalo apagado salvo que lo necesites.",
-    # Shown in place of `include_prophet` when the package is not installed — a
-    # deployed instance leaves it out on purpose (docs/deployment.md), and an
-    # option that is greyed out without saying why reads as a broken app.
-    "prophet_missing": "Prophet no está instalado en esta copia. Se omite a propósito en el despliegue: "
-                       "arrastra un compilador y pesa más que todo lo demás junto, para un modelo que "
-                       "viene apagado por defecto. Los demás modelos están todos disponibles.",
+    # Shown in place of `include_prophet` when the package is missing. It should
+    # not be: prophet is in requirements.txt and every model the selector offers
+    # is meant to be here. This is the safety net for an incomplete install, and
+    # it says so — an option greyed out without a reason reads as a broken app,
+    # which is exactly what it would be.
+    "prophet_missing": "Prophet no está instalado en esta copia, y debería estarlo: está en las "
+                       "dependencias del proyecto. Los demás modelos funcionan. Reinstala con "
+                       "`pip install -r requirements.txt`.",
     "cutoff_date": "El modelo se entrena con todos los sorteos hasta esta fecha (inclusive) y predice los "
                    "posteriores, que ya sabemos cómo salieron.",
     "holdout_mode": "Reentrenar en cada sorteo es lo que harías jugando de verdad: antes de cada sorteo "
