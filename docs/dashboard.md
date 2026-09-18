@@ -242,13 +242,13 @@ silently drops a model compares five things while the Bonferroni correction
 printed beside it says six. It is unticked and disabled only when the package is
 genuinely missing, which is a broken install rather than a choice.
 
-Beside it is **Incluir TimesFM**, which ships **off** and is hidden entirely when
-the package is absent. That is not the same judgement as Prophet's: TimesFM is a
-genuinely optional dependency (torch plus a downloaded checkpoint), and its first
-run pulls several hundred MB, so an unannounced download behind a button is the
-surprise being avoided. When it is missing the dashboard says so rather than
-quietly offering one model fewer. See
-[Deployment](deployment.md#timesfm-and-what-it-costs).
+Beside it is **Incluir TimesFM**, ticked whenever the package is installed. It
+shipped off while this project was aimed at a hosted free tier, where the first
+run meant an unannounced checkpoint download; locally the weights are cached
+after that first run, and a table quietly missing an installed model is the bug
+already fixed once for Prophet. When the package is genuinely absent the
+dashboard says so rather than offering one model fewer in silence. See
+[Local Setup §4](local-setup.md#4-what-the-models-do-with-a-local-machine).
 
 The date option is the concrete one: pick 31 July, and the panel trains on
 everything up to it and predicts the draws of August and September that have

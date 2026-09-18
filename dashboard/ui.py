@@ -217,18 +217,19 @@ HELP = {
     # own sentence, because "nothing happened when I clicked" is what a 200M
     # parameter download looks like from the outside.
     "include_timesfm": "TimesFM no se entrena con tus sorteos: viene preentrenado y solo hace una "
-                       "pasada. Eso lo vuelve barato por ventana, pero la primera vez descarga el "
-                       "modelo (cientos de MB). Viene apagado por eso, no por lento.",
-    "timesfm_missing": "TimesFM no está instalado en esta copia. Es opcional a propósito: necesita "
-                       "torch y descargar un modelo preentrenado, que juntos pesan varios GB — más "
-                       "que todo lo demás del proyecto junto. Para instalarlo: "
-                       "`pip install -r requirements-timesfm.txt`.",
+                       "pasada por ventana, así que es barato de correr. Usa la GPU si tu máquina "
+                       "tiene una. Solo la primera vez descarga el modelo; después queda en caché.",
+    "timesfm_missing": "TimesFM no está instalado en esta copia. Está en requirements.txt, pero es "
+                       "lo más pesado del proyecto (torch más el modelo preentrenado), así que es "
+                       "normal haberlo saltado. Para instalarlo: `pip install -r requirements.txt` "
+                       "— y si no tienes GPU, añade "
+                       "`--extra-index-url https://download.pytorch.org/whl/cpu`.",
     "timesfm_first_run": "La primera predicción descarga el modelo preentrenado (cientos de MB) y "
                          "puede tardar varios minutos. Las siguientes son inmediatas.",
     "timesfm_download_failed": "No se pudo descargar el modelo preentrenado de TimesFM. Se baja de "
-                               "HuggingFace la primera vez que lo usas, así que esto suele ser falta "
-                               "de conexión, un proxy, o un servidor que bloquea huggingface.co. Los "
-                               "demás modelos no dependen de ninguna descarga y siguen funcionando.",
+                               "HuggingFace la primera vez que lo usas y queda en caché, así que "
+                               "esto suele ser falta de conexión o un proxy. Los demás modelos no "
+                               "dependen de ninguna descarga y siguen funcionando.",
     "timesfm_model": "Un modelo *fundacional*: se entrenó una sola vez sobre millones de series "
                      "reales y nunca vio tus sorteos. No aprende nada de tu historial — lo lee y "
                      "responde. Es la pregunta interesante del proyecto en su forma más fuerte: si "
