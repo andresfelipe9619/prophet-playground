@@ -129,19 +129,14 @@ opens on a phone a few times a week.
 1. Push this branch, sign in at `share.streamlit.io` with GitHub.
 2. New app → this repo → entrypoint `dashboard/app.py`.
 3. That is the whole thing. It reads
-   [`.streamlit/config.toml`](../.streamlit/config.toml) and
-   [`dashboard/requirements.txt`](../dashboard/requirements.txt) from the repo.
-
-Community Cloud looks for a dependency file **in the entrypoint's directory
-first, then the repository root**, which is why `dashboard/requirements.txt`
-exists: it is one line pointing at `requirements-deploy.txt`, and it exists
-precisely so the root `requirements.txt` — which installs Prophet and a compiler
-toolchain — is *not* what gets installed. Without it a free-tier build spends
-most of its time compiling a Stan model for an option that ships switched off.
+   [`.streamlit/config.toml`](../.streamlit/config.toml) and the root
+   [`requirements.txt`](../requirements.txt) — the same file a local checkout
+   installs.
 
 Community Cloud instances are memory-capped (roughly 1–2.7 GB, and the figure
-changes without notice). statsforecast and xgboost fit; the thing most likely to
-exceed it is a backtest over a very long history with every model selected.
+changes without notice). All six models loaded and run peak at ~296 MB, so the
+headroom is real; the thing most likely to exceed it is a backtest over a very
+long history with every model selected.
 
 ### Deploying with the Dockerfile
 
@@ -171,26 +166,54 @@ cannot become a shared dataset by accident. Committing a real
 `exported_data/final-final.csv` would work and is a deliberate decision to
 publish that data, not a deployment step.
 
-**Prophet is not installed.** [`requirements-deploy.txt`](../requirements-deploy.txt)
-leaves out prophet, cmdstanpy, matplotlib and seaborn: the first two are most of
-the build for a model that ships switched off, and the last two are used only by
-`scripts/summary_charts.py`, which the dashboard superseded.
-`dashboard/baloto_page.py:PROPHET_AVAILABLE` checks with `importlib.util.find_spec`
-(which does not import it), drops the option from the model selector, disables
-the backtest checkbox, and explains why. The alternative — leaving the option
-there to raise an `ImportError` from inside a spinner after someone taps it — is
-the failure mode this project avoids everywhere else.
+**Every model is installed, Prophet included.** A hosted instance missing one of
+the six is not a smaller deployment, it is a different app: the model selector
+and the backtest's model list *are* the product.
 
-Add `prophet>=1.1.6` to `requirements-deploy.txt` to get it back. Expect the
-build to take several times longer.
+**There is no separate deploy requirements file, on purpose.** There was one
+briefly. It omitted Prophet on the assumption that Prophet compiles a Stan model
+at install time and needs a C++ toolchain — so the hosted app offered five
+models where the real one offers six, and nothing about the running app said so.
+A second dependency list that *can* diverge from what the app needs will
+eventually diverge from it, so `requirements.txt` is what a local checkout, the
+Dockerfile and Community Cloud all install. `requirements-test.txt` stays
+separate because it answers a genuinely different question — what `pytest`
+imports — and CI, not the app, is what reads it.
 
-**There are three requirements files** and they answer three different questions:
+The assumption itself was also wrong for current versions. Measured:
 
-| File | Question |
+| | Measured |
 | --- | --- |
-| `requirements.txt` | Everything: dashboard, scripts, Prophet. The local dev install. |
-| `requirements-test.txt` | What `pytest` imports. What CI installs. |
-| `requirements-deploy.txt` | What `dashboard/app.py` reaches at runtime. |
+| `pip install prophet` on Linux | **6 s**, from a `manylinux` wheel — no compiler, nothing built |
+| prophet + cmdstanpy on disk | **38 MB** |
+| All six models, one next-draw forecast each | Prophet 0.5 s · statsforecast trio 1.4 s · XGBoost 0.3 s |
+| 5-window backtest, 400 draws | 5.1 s without Prophet, 6.6 s with |
+| Peak RSS for all of the above | **~296 MB** |
+
+That last figure is the one that matters for a memory-capped host: it leaves
+room under Community Cloud's limit. The assumption was true of prophet 0.x, and
+it is worth **re-measuring rather than re-assuming** if a pin changes — which is
+the general lesson, not a fact about Prophet.
+
+`dashboard/baloto_page.py:PROPHET_AVAILABLE` stays as a safety net for an
+install that came out incomplete anyway: it checks with `importlib.util.find_spec`
+(which does not import the package), drops the option, and says the install is
+wrong rather than leaving a control that raises an `ImportError` from inside a
+spinner after someone taps it.
+
+A host therefore also installs matplotlib and seaborn, which only
+`scripts/summary_charts.py` imports — every dashboard chart is Plotly. That is a
+few tens of MB of image for nothing, and it is the price of the rule above:
+trimming them means a second list, and a second list is what dropped a model
+last time. They cost no memory at runtime, because nothing the app imports
+touches them.
+
+**There are two requirements files** and they answer two different questions:
+
+| File | Question | Read by |
+| --- | --- | --- |
+| `requirements.txt` | What running this project needs | A local checkout, the Dockerfile, Community Cloud |
+| `requirements-test.txt` | What `pytest` imports | CI |
 
 **The registry writes to disk.** `lottery/analysis/registry.py` appends to
 `predictions.csv` at the repository root. On every host here that filesystem is
