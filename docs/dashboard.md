@@ -242,6 +242,14 @@ silently drops a model compares five things while the Bonferroni correction
 printed beside it says six. It is unticked and disabled only when the package is
 genuinely missing, which is a broken install rather than a choice.
 
+Beside it is **Incluir TimesFM**, which ships **off** and is hidden entirely when
+the package is absent. That is not the same judgement as Prophet's: TimesFM is a
+genuinely optional dependency (torch plus a downloaded checkpoint), and its first
+run pulls several hundred MB, so an unannounced download behind a button is the
+surprise being avoided. When it is missing the dashboard says so rather than
+quietly offering one model fewer. See
+[Deployment](deployment.md#timesfm-and-what-it-costs).
+
 The date option is the concrete one: pick 31 July, and the panel trains on
 everything up to it and predicts the draws of August and September that have
 already happened. Its **Modo** radio maps to the two experiments in

@@ -152,8 +152,9 @@ HELP = {
                     "ejercicio de forecasting, no una predicción confiable.",
     "model_choice": "FrequencyBaseline juega el número más frecuente de cada posición (la referencia a "
                     "vencer). AutoARIMA/AutoETS/AutoTheta son modelos clásicos de series de tiempo. Prophet "
-                    "descompone tendencia y estacionalidad. XGBoost usa lags y medias móviles. Ninguno "
-                    "supera al azar en el backtest — para eso está esa pestaña.",
+                    "descompone tendencia y estacionalidad. XGBoost usa lags y medias móviles. TimesFM "
+                    "es un modelo fundacional de Google: no se entrena con tus datos, ya venía "
+                    "entrenado. Ninguno supera al azar en el backtest — para eso está esa pestaña.",
 
     # -- Jugadas
     "tab_jugadas": "Genera jugadas, verifícalas contra sorteos reales y mide si tu forma de elegirlas le gana "
@@ -211,6 +212,27 @@ HELP = {
     "prophet_missing": "Prophet no está instalado en esta copia, y debería estarlo: está en las "
                        "dependencias del proyecto. Los demás modelos funcionan. Reinstala con "
                        "`pip install -r requirements.txt`.",
+    # TimesFM: the three states a foundation model has that a fitted model does
+    # not — not installed, installed but never run, and running. Each needs its
+    # own sentence, because "nothing happened when I clicked" is what a 200M
+    # parameter download looks like from the outside.
+    "include_timesfm": "TimesFM no se entrena con tus sorteos: viene preentrenado y solo hace una "
+                       "pasada. Eso lo vuelve barato por ventana, pero la primera vez descarga el "
+                       "modelo (cientos de MB). Viene apagado por eso, no por lento.",
+    "timesfm_missing": "TimesFM no está instalado en esta copia. Es opcional a propósito: necesita "
+                       "torch y descargar un modelo preentrenado, que juntos pesan varios GB — más "
+                       "que todo lo demás del proyecto junto. Para instalarlo: "
+                       "`pip install -r requirements-timesfm.txt`.",
+    "timesfm_first_run": "La primera predicción descarga el modelo preentrenado (cientos de MB) y "
+                         "puede tardar varios minutos. Las siguientes son inmediatas.",
+    "timesfm_download_failed": "No se pudo descargar el modelo preentrenado de TimesFM. Se baja de "
+                               "HuggingFace la primera vez que lo usas, así que esto suele ser falta "
+                               "de conexión, un proxy, o un servidor que bloquea huggingface.co. Los "
+                               "demás modelos no dependen de ninguna descarga y siguen funcionando.",
+    "timesfm_model": "Un modelo *fundacional*: se entrenó una sola vez sobre millones de series "
+                     "reales y nunca vio tus sorteos. No aprende nada de tu historial — lo lee y "
+                     "responde. Es la pregunta interesante del proyecto en su forma más fuerte: si "
+                     "algo tan grande tampoco le gana al azar aquí, es porque no hay nada que ver.",
     "cutoff_date": "El modelo se entrena con todos los sorteos hasta esta fecha (inclusive) y predice los "
                    "posteriores, que ya sabemos cómo salieron.",
     "holdout_mode": "Reentrenar en cada sorteo es lo que harías jugando de verdad: antes de cada sorteo "

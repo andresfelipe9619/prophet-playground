@@ -19,8 +19,14 @@ date — "train on the data up to July, then predict the draws that have already
 happened since" — which produces a concrete, checkable result rather than an
 average. See `run_holdout` for what the two modes mean.
 
-Prophet is included but off by default (`--include-prophet`) because it
-refits per position per window and is far slower than the other models.
+Prophet costs about +11% of the run and is on in the dashboard, opt-in on the
+CLI (`--include-prophet`). TimesFM is opt-in in both (`--include-timesfm`) for a
+different reason: it is a pretrained foundation model, so using it means several
+GB of torch and a checkpoint downloaded from HuggingFace, which most runs of this
+have no reason to pay for. Everything it produces is scored through the same
+`_score_window` and the same one-sided z-test as every fitted model here — a
+foundation model gets no special treatment, which is the whole point of
+including it.
 """
 
 import argparse
@@ -129,6 +135,23 @@ def _prophet_window(n_columns):
     return predict
 
 
+def _timesfm_window(n_columns):
+    from lottery.models.timesfm_model import forecast_positions, load_forecaster
+
+    # Loaded and compiled once, here, rather than per window: the checkpoint is
+    # the expensive part and it does not depend on the window. Every window then
+    # reuses it, which is what makes a zero-shot model cheap to walk forward —
+    # there is no refit, only a forward pass.
+    forecaster = load_forecaster()
+
+    @_predictor("TimesFM")
+    def predict(position_series, t):
+        # upto=t, so the draw at t is never in the context.
+        return {"TimesFM": forecast_positions(position_series, n_columns, upto=t,
+                                              forecaster=forecaster)}
+    return predict
+
+
 @_predictor("FrequencyBaseline")
 def _frequency_window(position_series, t):
     return {"FrequencyBaseline": most_frequent_pick(position_series, upto=t)}
@@ -170,7 +193,8 @@ def summarize(results_by_model, alpha=0.05):
     return pd.DataFrame(summary).sort_values("avg_main_hits", ascending=False).reset_index(drop=True)
 
 
-def run_all(position_series, n_columns, n_windows=15, min_train=60, include_prophet=False):
+def run_all(position_series, n_columns, n_windows=15, min_train=60, include_prophet=False,
+            include_timesfm=False):
     predictors = [
         _frequency_window,
         _statsforecast_window(n_columns),
@@ -178,6 +202,8 @@ def run_all(position_series, n_columns, n_windows=15, min_train=60, include_prop
     ]
     if include_prophet:
         predictors.append(_prophet_window(n_columns))
+    if include_timesfm:
+        predictors.append(_timesfm_window(n_columns))
 
     results = {}
     for predict_window in predictors:
@@ -246,6 +272,14 @@ def _frozen_prophet(position_series, n_columns, start, horizon):
     return {"Prophet": by_step}
 
 
+def _frozen_timesfm(position_series, n_columns, start, horizon):
+    from lottery.models.timesfm_model import forecast_horizon_positions
+
+    # None propagates: the loop below drops a model that could not predict rather
+    # than scoring an invented forecast into the chance test.
+    return {"TimesFM": forecast_horizon_positions(position_series, n_columns, start, horizon)}
+
+
 def _frozen_frequency(position_series, n_columns, start, horizon):
     """The hottest number per slot as of the cutoff — the same pick for every held-out draw."""
     pick = most_frequent_pick(position_series, upto=start)
@@ -262,7 +296,8 @@ def _score_frozen(predictions_by_step, position_series, n_columns, start):
     return pd.DataFrame(rows, columns=RESULT_COLUMNS)
 
 
-def run_holdout(position_series, n_columns, cutoff, mode="expanding", include_prophet=False):
+def run_holdout(position_series, n_columns, cutoff, mode="expanding", include_prophet=False,
+                include_timesfm=False):
     """Train on draws up to `cutoff`, predict every draw after it, score against what happened.
 
     Returns (results_by_model, info). `info` carries the cutoff, the mode and
@@ -293,19 +328,29 @@ def run_holdout(position_series, n_columns, cutoff, mode="expanding", include_pr
     if mode == "expanding":
         # Same loop as run_all, with the split pinned to the cutoff instead of a window count.
         return run_all(position_series, n_columns, n_windows=n_holdout, min_train=n_train,
-                       include_prophet=include_prophet), info
+                       include_prophet=include_prophet,
+                       include_timesfm=include_timesfm), info
 
     builders = [_frozen_frequency, _frozen_statsforecast, _frozen_xgboost]
     if include_prophet:
         builders.append(_frozen_prophet)
+    if include_timesfm:
+        builders.append(_frozen_timesfm)
 
     results = {}
     for build in builders:
         t0 = time.time()
         by_model = build(position_series, n_columns, n_train, n_holdout)
-        for name, by_step in by_model.items():
+        # A builder returning None for a model means it could not forecast this
+        # split at all; it is dropped rather than scored, the same contract the
+        # walk-forward loop follows for a window a model cannot predict.
+        produced = {name: by_step for name, by_step in by_model.items() if by_step is not None}
+        for name, by_step in produced.items():
             results[name] = _score_frozen(by_step, position_series, n_columns, n_train)
-        print(f"{', '.join(by_model)} done in {time.time() - t0:.1f}s")
+        skipped = sorted(set(by_model) - set(produced))
+        label = ", ".join(produced) or "nothing"
+        note = f" (skipped {', '.join(skipped)}: not enough context)" if skipped else ""
+        print(f"{label} done in {time.time() - t0:.1f}s{note}")
     return results, info
 
 
@@ -342,6 +387,9 @@ if __name__ == "__main__":
     parser.add_argument("--n-windows", type=int, default=15)
     parser.add_argument("--min-train", type=int, default=60)
     parser.add_argument("--include-prophet", action="store_true")
+    parser.add_argument("--include-timesfm", action="store_true",
+                        help="add Google's TimesFM foundation model (zero-shot, no fitting). "
+                             "Needs torch and downloads a checkpoint on first use")
     parser.add_argument("--cutoff", metavar="YYYY-MM-DD",
                         help="hold out every draw after this date instead of the last --n-windows")
     parser.add_argument("--mode", choices=HOLDOUT_MODES, default="expanding",
@@ -358,7 +406,8 @@ if __name__ == "__main__":
 
     if args.cutoff:
         results, info = run_holdout(position_series, n_columns, args.cutoff, mode=args.mode,
-                                    include_prophet=args.include_prophet)
+                                    include_prophet=args.include_prophet,
+                                    include_timesfm=args.include_timesfm)
         print(f"\n=== Holdout ({info['mode']}): trained on {info['n_train']} draws up to "
               f"{info['cutoff']:%Y-%m-%d}, predicting {info['n_holdout']} draws "
               f"{info['holdout_start']:%Y-%m-%d} to {info['holdout_end']:%Y-%m-%d} ===")
@@ -368,7 +417,7 @@ if __name__ == "__main__":
         out = "holdout_summary.csv"
     else:
         results = run_all(position_series, n_columns, args.n_windows, args.min_train,
-                          args.include_prophet)
+                          args.include_prophet, args.include_timesfm)
         out = "backtest_summary.csv"
 
     summary = summarize(results)

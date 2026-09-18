@@ -122,7 +122,7 @@ deployed instance actually runs on, are in
 | **Frecuencia y Gaps** | Per-number frequency vs uniform, gap and "overdue" table |
 | **Hot / Cold** | Recent vs all-time share |
 | **Aleatoriedad** | chi-square, runs test, Ljung–Box, ACF — is there any signal? |
-| **Forecast** | Next-draw suggestion from any model |
+| **Forecast** | Next-draw suggestion from any of the models, including Google's TimesFM if installed |
 | **Jugadas** | Generate tickets, check one against your whole history, and measure strategies against chance |
 | **Backtest vs. Azar** | Walk-forward accuracy against the hypergeometric baseline, over the last N draws or everything after a date you pick |
 | **Potencia y Sensibilidad** | What edge this much data could detect, and whether the tests fire on a planted one |
@@ -134,7 +134,8 @@ deployed instance actually runs on, are in
 streamlit run dashboard/app.py                       # main entry point
 
 python -m lottery.backtest --n-windows 20 --min-train 100    # evaluate vs chance
-python -m lottery.backtest --n-windows 20 --include-prophet  # include Prophet (slow)
+python -m lottery.backtest --n-windows 20 --include-prophet  # +11% runtime
+python -m lottery.backtest --n-windows 20 --include-timesfm  # add Google's TimesFM (optional dep)
 python -m lottery.backtest --cutoff 2026-07-31 --mode frozen # hold out everything after a date
 python -m lottery.backtest --current-format-only             # drop pre-2017 draws (rules changed)
 

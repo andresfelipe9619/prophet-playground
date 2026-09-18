@@ -80,7 +80,7 @@ things, and only one of them is forecasting.
 | 2 | **Ticket generation and checking** — produce plays, score them against real draws | **Yes.** Generating and scoring are exact. |
 | 3 | **Strategy measurement** — does a way of picking beat random picking? | **Yes**, up to statistical power. This is the experiment. |
 | 4 | **Randomness testing** — is this data consistent with a fair draw? | **Yes**, up to statistical power. |
-| 5 | **Forecasting** — Prophet, ARIMA, XGBoost on each ball position | Runs, but must not beat chance. |
+| 5 | **Forecasting** — Prophet, ARIMA, XGBoost, and Google's TimesFM foundation model on each ball position | Runs, but must not beat chance. The foundation model is the strongest available test of that: it was trained on millions of real series and still finds nothing here. |
 
 Item 1 answers a real decision exactly. Which numbers will come up is unknowable;
 **what a ticket returns on average is arithmetic**. See
