@@ -94,7 +94,7 @@ flowchart LR
 
     BE --> POOL["pooled_uniformity_test<br/><i>sort-proof verdict</i>"]
     BPS --> ANA["randomness.py<br/><i>chi2 · runs · Ljung-Box · gaps</i>"]
-    BPS --> MODELS["Prophet · AutoARIMA<br/>AutoETS · AutoTheta · XGBoost"]
+    BPS --> MODELS["Prophet · AutoARIMA<br/>AutoETS · AutoTheta · XGBoost<br/>TimesFM (optional)"]
     MODELS --> BTEST["lottery/backtest.py<br/><i>walk-forward</i>"]
     CHANCE["baseline.py<br/><i>hypergeometric</i>"] --> BTEST
     BTEST --> VERDICT{{"beats chance?"}}

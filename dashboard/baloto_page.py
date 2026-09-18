@@ -97,6 +97,9 @@ from lottery.models.common import (
     super_position,
 )
 from lottery.models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
+from lottery.models.timesfm_model import CheckpointUnavailableError
+from lottery.models.timesfm_model import forecast_positions as timesfm_forecast
+from lottery.models.timesfm_model import is_available as timesfm_is_available
 from lottery.models.xgboost_model import forecast_next
 from lottery.utils.processor import (
     check_draw_format,
@@ -118,6 +121,14 @@ MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 # not import the package, so the check costs nothing on the common path where it
 # is present. See docs/deployment.md.
 PROPHET_AVAILABLE = importlib.util.find_spec("prophet") is not None
+
+# TimesFM is the one model that is genuinely optional. Unlike Prophet it is not
+# expected in every environment: it is a pretrained foundation model, so it drags
+# in torch and downloads a checkpoint, which together dwarf the rest of this
+# project (see docs/deployment.md). `is_available()` uses find_spec and does not
+# import torch, which matters on a surface Streamlit re-executes top to bottom on
+# every interaction.
+TIMESFM_AVAILABLE = timesfm_is_available()
 
 
 @st.cache_data(show_spinner=False)
@@ -627,12 +638,18 @@ def render():
             "puede superar de forma sostenida la probabilidad teórica. Revisa la pestaña Backtest antes de confiar "
             "en cualquiera de estos números."
         )
-        model_options = ["FrequencyBaseline", "Prophet", *MODEL_NAMES, "XGBoost"]
+        model_options = ["FrequencyBaseline", "Prophet", *MODEL_NAMES, "XGBoost", "TimesFM"]
         if not PROPHET_AVAILABLE:
             model_options.remove("Prophet")
+        if not TIMESFM_AVAILABLE:
+            model_options.remove("TimesFM")
         model_choice = st.selectbox("Modelo", model_options, help=HELP["model_choice"])
         if not PROPHET_AVAILABLE:
             st.caption(HELP["prophet_missing"])
+        if not TIMESFM_AVAILABLE:
+            st.caption(HELP["timesfm_missing"])
+        elif model_choice == "TimesFM":
+            st.caption(HELP["timesfm_first_run"])
 
         if st.button("Generar predicción del próximo sorteo"):
             with st.spinner("Entrenando..."):
@@ -657,8 +674,27 @@ def render():
                 elif model_choice == "XGBoost":
                     for p in range(n_columns):
                         preds[p] = forecast_next(position_series[p], p, n_columns, next_date)
+                elif model_choice == "TimesFM":
+                    # Zero-shot: no fit, one forward pass over every position at
+                    # once. `next_date` is not passed because TimesFM reads values,
+                    # not dates — it sits on the sequential draw axis, like the
+                    # statsforecast models and unlike Prophet.
+                    try:
+                        preds = timesfm_forecast(position_series, n_columns) or {}
+                    except CheckpointUnavailableError as exc:
+                        # The expected failure, not a bug: the weights download on
+                        # first use. Shown as a sentence with the original error as
+                        # detail, the same shape the football and cycling pages use
+                        # for their domain refusals.
+                        st.error(HELP["timesfm_download_failed"])
+                        st.caption(str(exc))
+                        preds = None
 
-            if any(preds.get(p) is None for p in range(n_columns)):
+            # preds is None only when the block above already put an explanation
+            # on screen; anything else here would print a second, vaguer one.
+            if preds is None:
+                st.caption("")
+            elif any(preds.get(p) is None for p in range(n_columns)):
                 st.error("No hay suficiente historia para entrenar este modelo. Carga un CSV con más sorteos.")
             else:
                 main_numbers = sorted({preds[p] for p in main_positions(n_columns)})
@@ -1004,6 +1040,13 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
+            # Off by default even when installed: a foundation model's first run
+            # downloads a checkpoint, and an unannounced multi-hundred-MB download
+            # behind a button is exactly the surprise this dashboard avoids.
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=False, key="wf_timesfm",
+                                          disabled=not TIMESFM_AVAILABLE,
+                                          help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
+                                          else HELP["timesfm_missing"])
 
             start_idx, total = bt.window_bounds(n_draws, n_windows, min_train)
             if start_idx >= total:
@@ -1016,7 +1059,8 @@ def render():
                 with st.spinner("Corriendo backtest walk-forward..."):
                     try:
                         results = bt.run_all(position_series, n_columns, n_windows=n_windows,
-                                              min_train=min_train, include_prophet=include_prophet)
+                                              min_train=min_train, include_prophet=include_prophet,
+                                              include_timesfm=include_timesfm)
                         st.session_state["backtest_summary"] = bt.summarize(results)
                         st.session_state.pop("holdout", None)
                     except ValueError as exc:
@@ -1043,6 +1087,10 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=False, key="holdout_timesfm",
+                                          disabled=not TIMESFM_AVAILABLE,
+                                          help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
+                                          else HELP["timesfm_missing"])
 
             n_train_preview, n_holdout_preview = bt.cutoff_bounds(df["ds"], pd.Timestamp(cutoff))
             st.caption(
@@ -1063,7 +1111,8 @@ def render():
                 with st.spinner("Entrenando hasta el corte y prediciendo lo que ya pasó..."):
                     try:
                         results, info = bt.run_holdout(position_series, n_columns, pd.Timestamp(cutoff),
-                                                        mode=mode, include_prophet=include_prophet)
+                                                        mode=mode, include_prophet=include_prophet,
+                                                        include_timesfm=include_timesfm)
                         st.session_state["backtest_summary"] = bt.summarize(results)
                         st.session_state["holdout"] = (
                             bt.holdout_detail(results, position_series, n_columns), info

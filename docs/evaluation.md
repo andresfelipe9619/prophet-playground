@@ -68,6 +68,7 @@ python -m lottery.backtest --n-windows 20 --include-prophet     # +11% runtime
 | `--n-windows` | 15 | How many recent draws to evaluate |
 | `--min-train` | 60 | Minimum history before the first evaluated window |
 | `--include-prophet` | off on the CLI, **on in the dashboard** | Prophet refits per position per window, which costs about +11% (measured: 44.9 s → 49.8 s over 20 windows / 1035 draws), not the "far slower" this table used to claim |
+| `--include-timesfm` | off | Google's TimesFM, a pretrained foundation model. Off because it needs torch and downloads a checkpoint, not because it is slow — it fits nothing, so each window is one forward pass. See [Models §5a](models.md#5a-timesfm-the-foundation-model) |
 | `--cutoff` | off | Hold out every draw after a date instead — see [§2.2](#22-holdout-by-date) |
 | `--mode` | `expanding` | With `--cutoff`: `expanding` or `frozen` |
 | `--current-format-only` | off | Drop pre-2017 draws ([data contract](data-pipeline.md#12-two-eras-of-the-game)) |

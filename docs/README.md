@@ -13,7 +13,7 @@ make sense against it.
 | 1 | **[Domain and Premise](domain-and-premise.md)** | The game's rules, why an i.i.d. process cannot be forecast, what this project does instead and why, and the anti-patterns to avoid. **Read first.** |
 | 2 | **[Architecture](architecture.md)** | Layers, data flow, the central data structures, position semantics, the two time axes, cross-cutting invariants. |
 | 3 | **[Data Pipeline](data-pipeline.md)** | The data contract, the scraper and its state machine, source resolution, synthetic data, and where the other two domains get their data. |
-| 4 | **[Models](models.md)** | Every predictor: Prophet, the statsforecast trio, XGBoost, the frequency baseline. |
+| 4 | **[Models](models.md)** | Every predictor: Prophet, the statsforecast trio, XGBoost, the frequency baseline, and Google's TimesFM foundation model. |
 | 5 | **[Tickets](tickets.md)** | Generating plays, checking them against real draws, and measuring whether a strategy beats picking at random. |
 | 6 | **[Evaluation](evaluation.md)** | Walk-forward backtesting, the hypergeometric chance baseline, randomness tests, expected value, how to read results. |
 | 7 | **[Jackpot Splitting](jackpot-splitting.md)** | The only lever that changes anything: unpopular combinations do not win more often, they split less. |
@@ -40,6 +40,7 @@ make sense against it.
 | How do I prove a prediction was made in advance? | [Registry](registry.md) |
 | Why isn't there a `freq=` anywhere? | [Architecture §5](architecture.md#5-two-time-axes) |
 | How do I add a model? | [Models §7](models.md#7-adding-a-model) |
+| Would a big foundation model do better? | [Models §5a](models.md#5a-timesfm-the-foundation-model) |
 | How do I generate and check tickets? | [Tickets](tickets.md) |
 | My strategy beat chance once — is it real? | [Tickets §5](tickets.md#5-measuring-the-accuracy-system) |
 | What does the test suite actually pin? | [Development §3.1](development.md#31-the-test-suite) |
@@ -67,7 +68,7 @@ make sense against it.
 | Can I deploy this to Vercel? | [Deployment §2](deployment.md#vercel-does-not-host-this) |
 | Where should I host the dashboard, then? | [Deployment §2](deployment.md#what-does-work) |
 | Why does the hosted app show synthetic data? | [Deployment §3](deployment.md#3-what-the-deployed-app-runs-on) |
-| Why is Prophet missing from the deployed app? | [Deployment §3](deployment.md#3-what-the-deployed-app-runs-on) |
+| Why is TimesFM missing from the deployed app? | [Deployment §3](deployment.md#timesfm-and-what-it-costs) |
 | How do I check a change still works on a phone? | [Deployment §1](deployment.md#verifying-a-layout-change) |
 
 ## Conventions

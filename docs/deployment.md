@@ -213,12 +213,71 @@ trimming them means a second list, and a second list is what dropped a model
 last time. They cost no memory at runtime, because nothing the app imports
 touches them.
 
-**There are two requirements files** and they answer two different questions:
+### TimesFM and what it costs
+
+TimesFM is the one model this project does **not** install by default, and the
+reason is the opposite of Prophet's. Prophet was excluded on a guess about its
+cost; TimesFM is excluded on a measurement of it:
+
+| | Measured in this repo's sandbox |
+| --- | --- |
+| `pip install "timesfm[torch]"` | torch **1.2 GB** + **3.2 GB** of NVIDIA CUDA libraries — on a machine with no GPU |
+| The same with the CPU wheel (`--extra-index-url https://download.pytorch.org/whl/cpu`) | a fraction of that, and identical forecasts here |
+| The checkpoint | downloaded from HuggingFace on first use, cached under `~/.cache/huggingface` |
+
+That is more than the rest of the project's dependencies combined, for one
+optional model — and it does not fit a free Community Cloud instance, whose cap
+is around 1–2.7 GB. **The hosted dashboard therefore runs the six models it
+always had, and hides TimesFM.**
+
+Nothing about that is silent, which is the part that matters:
+
+* `lottery/models/timesfm_model.py:is_available()` decides, using
+  `importlib.util.find_spec` so it **does not import torch** — the dashboard
+  re-executes top to bottom on every interaction and cannot afford to.
+* The dashboard removes the option and says *why*, in `HELP["timesfm_missing"]`.
+* The backtest flag `--include-timesfm` is opt-in, and off by default in the UI
+  even when installed, because the first run downloads a checkpoint and an
+  unannounced several-hundred-MB download behind a button is exactly the surprise
+  this dashboard is built to avoid.
+* The download failing is handled as the expected case, not a crash:
+  `CheckpointUnavailableError` carries a sentence about network/proxy/blocked
+  host, and the page renders it with the underlying error as detail. Verified —
+  this sandbox blocks `huggingface.co`, so the library raises a bare
+  `ProxyError: 403 Forbidden`, and the dashboard shows the sentence rather than a
+  traceback.
+
+To run it locally, install the CPU wheel:
+
+```bash
+pip install -r requirements-timesfm.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu
+```
+
+To host it, you need an instance with several GB of disk and RAM — a small paid
+Render/Railway/Fly box, not a free tier. Weigh that against what it buys: a model
+that, like every other model here, does not beat chance.
+
+**Licence, which is not the same answer as the rest of the project.** Upstream
+distributes TimesFM weights **up to 2.5 under Apache-2.0** and **3.0's weights
+under `timesfm-non-commercial-license-v1.0`, restricted to non-commercial,
+non-production use**. A dashboard on a public URL is production, so
+`timesfm_model.CHECKPOINT` defaults to the 2.5 checkpoint. The `timesfm` package
+itself is Apache-2.0; it is the weights that differ.
+
+**There are three requirements files** and they answer three different questions:
 
 | File | Question | Read by |
 | --- | --- | --- |
 | `requirements.txt` | What running this project needs | A local checkout, the Dockerfile, Community Cloud |
 | `requirements-test.txt` | What `pytest` imports | CI |
+| `requirements-timesfm.txt` | One optional model the app runs fine without | Nobody by default |
+
+The third one is allowed to exist for the opposite reason the deleted
+deploy-only list was not: it does not duplicate what the app needs, it **adds**
+something the app is built to work without. The rule it must keep obeying is that
+no surface silently drops a model because it was not installed — the app says so
+instead.
 
 **The registry writes to disk.** `lottery/analysis/registry.py` appends to
 `predictions.csv` at the repository root. On every host here that filesystem is

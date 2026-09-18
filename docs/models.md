@@ -30,7 +30,12 @@ Skipping `clip_to_range()` produces out-of-range balls. It is not optional.
 | **AutoETS** | same call | " | fast | yes |
 | **AutoTheta** | same call | " | fast | yes |
 | **XGBoost** | `lottery/models/xgboost_model.py` | per position | fast | yes, via `forecast_next` / `forecast_horizon` |
-| **Prophet** | `lottery/models/prophet_model.py` | per position | slow | yes |
+| **Prophet** | `lottery/models/prophet_model.py` | per position | +11% of a run | yes |
+| **TimesFM** | `lottery/models/timesfm_model.py` | **nothing — pretrained** | one forward pass | yes, via `forecast_positions` |
+
+TimesFM is the odd row and the interesting one: every other model here learns its
+parameters from your draws, and TimesFM never sees them until you ask. See
+[§5a](#5a-timesfm-the-foundation-model).
 
 ## 2. FrequencyBaseline
 
@@ -204,6 +209,86 @@ forecast_position(series, pos, n, holidays=COLOMBIA_HOLIDAYS)   # if you want to
   full history frame, and Prophet's uncertainty sampling makes predicting ~1500
   historical rows to read one value genuinely expensive.
 
+## 5a. TimesFM: the foundation model
+
+`lottery/models/timesfm_model.py`. [TimesFM](https://github.com/google-research/timesfm)
+is Google Research's pretrained time-series transformer. It is the only model
+here that **fits nothing**: it was trained once on a very large corpus of real
+time series, has never seen a Baloto draw, and forecasts zero-shot from a context
+window of values.
+
+```python
+from lottery.models.timesfm_model import forecast_positions, is_available
+
+if is_available():
+    preds = forecast_positions(position_series, n_columns)   # {0: 23, 1: 21, ...}
+```
+
+### Why it is worth having
+
+Not because it might win — it does not, and it cannot. The premise in
+[Domain and Premise](domain-and-premise.md) applies to a 200M-parameter
+transformer exactly as it applies to `most_frequent_pick`: the draws are i.i.d.
+uniform by design, and there is nothing in them to find.
+
+That is precisely the argument it strengthens. "My three-line frequency baseline
+does not beat chance" invites the reply *then use a better model*. A foundation
+model trained on millions of real series, failing the same one-sided z-test on
+the same held-out draws under the same Bonferroni correction, closes that reply
+off. It is the premise's strongest available test, which is why it is scored
+through the identical `_score_window` as everything else and gets no special
+treatment anywhere in the pipeline.
+
+### The four things that make it structurally different
+
+**It fits nothing, so walking it forward is cheap.** The checkpoint loads once in
+`_timesfm_window` and every window is a forward pass. There is no per-window
+refit, which is what makes Prophet and XGBoost cost what they cost.
+
+**All six positions ride in one call.** `forecast()` takes a list of arrays as a
+batch, so six positions are six rows of one pass — the same reason
+`statsforecast_model.fit_predict_all` does every position at once and this project
+tells you not to loop over positions for it.
+
+**It reads values, not dates.** It sits on the sequential draw axis with the
+statsforecast models, not the calendar axis with Prophet (see
+[Architecture §5](architecture.md#5-two-time-axes)). There is no `freq` to get
+wrong here, which removes one of this project's standing traps.
+
+**It is optional, and the optionality is load-bearing.** torch plus a downloaded
+checkpoint dwarf every other dependency combined. `is_available()` answers with
+`importlib.util.find_spec` and **does not import torch**, the dashboard hides the
+model when it is absent, and the backtest flag is opt-in. Nothing silently drops
+a model because a dependency is missing — see
+[Deployment](deployment.md#timesfm-and-what-it-costs).
+
+### Licence: not the same answer as the rest of the project
+
+Everything else here is permissively licensed and that is the end of it. TimesFM
+needs one sentence more. Per the upstream README, model weights **up to 2.5 are
+Apache-2.0**, while **3.0's weights are under `timesfm-non-commercial-license-v1.0`,
+restricted to non-commercial, non-production use**. The `timesfm` package itself
+is Apache-2.0; it is the weights that differ.
+
+This project therefore defaults to the 2.5 checkpoint:
+
+```python
+CHECKPOINT = "google/timesfm-2.5-200m-pytorch"   # timesfm_model.py
+```
+
+A dashboard on a public URL is production, so that default is the safe one.
+Changing it is one constant, and the consequence is yours to weigh.
+
+### Testing it without the weights
+
+`forecast_positions(..., forecaster=...)` takes any object exposing
+`.forecast(horizon, inputs)`. `tests/test_timesfm_model.py` passes a stub that
+records what it was handed, which is what lets the suite pin the real invariants —
+the predicted draw never entering the context, clipping into each position's
+range, one batched call, a short history refused — in CI, where neither timesfm
+nor torch is installed. A numeric comparison against real weights would not have
+caught a temporal leak; inspecting the context does.
+
 ## 6. Choosing a model
 
 ```mermaid
@@ -214,9 +299,10 @@ flowchart TD
     Q1 -->|"A forecasting exercise"| Q2{"Constraint?"}
     Q2 -->|"Fastest, all models at once"| SF["statsforecast trio"]
     Q2 -->|"Feature engineering practice"| XGB["XGBoost"]
-    Q2 -->|"Calendar-aware, interpretable"| PROPH["Prophet (slow)"]
+    Q2 -->|"Calendar-aware, interpretable"| PROPH["Prophet"]
     Q2 -->|"Reference point"| FREQ["FrequencyBaseline"]
-    SF & XGB & PROPH & FREQ --> BT["Then: lottery/backtest.py<br/>Does it beat chance?"]
+    Q2 -->|"Nothing fitted on your data"| TFM["TimesFM<br/>optional dependency"]
+    SF & XGB & PROPH & FREQ & TFM --> BT["Then: lottery/backtest.py<br/>Does it beat chance?"]
 ```
 
 ## 7. Adding a model
@@ -227,8 +313,14 @@ flowchart TD
 3. Derive positions from `common.main_positions()` / `super_position()` — never
    `range(5)` or `n - 1`.
 4. Add a window predictor in `lottery/backtest.py` decorated with `@_predictor("YourModel")`.
-5. Register it in `run_all()`.
+5. Register it in `run_all()` — and in `run_holdout`'s frozen builders if it can
+   forecast a horizon from one fit.
 6. Add it to the dashboard's Forecast tab selector.
+7. If it needs a dependency the project does not already install, follow
+   `timesfm_model`: an `is_available()` that uses `importlib.util.find_spec` and
+   **does not import the package**, an option the dashboard hides when it is
+   absent, and copy in `ui.py` saying why. A model that vanishes without
+   explanation reads as a broken app.
 
 The backtest's `_run_windows()` handles windowing, scoring and skipping; your
 predictor only maps `(position_series, t) → {model_name: {position: prediction}}`,
