@@ -61,6 +61,23 @@ ruff check .          # everything; --fix applies the safe ones
 mypy                  # strict, scoped to core/ (the scope is in pyproject.toml)
 ```
 
+These are **not yet wired into CI.** They belong in the `static` job, which
+needs no third-party install and reports in seconds — add these steps after
+the documentation-link check in `.github/workflows/tests.yml`:
+
+```yaml
+      # numpy and pandas-stubs are here because mypy reads core/'s imports;
+      # nothing in this job runs any of this project's code.
+      - name: Install lint tools
+        run: pip install ruff mypy pandas-stubs numpy
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type-check core/
+        run: mypy
+```
+
 Two configuration choices are worth knowing before you fight them. **The line
 limit is 120, not 88 or 100.** Measured, this codebase sits at p50 = 46 and
 p95 = 97 characters; the overruns are almost entirely explanatory prose and the
