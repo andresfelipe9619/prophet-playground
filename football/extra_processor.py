@@ -99,14 +99,14 @@ def preprocess_extra(df, league=None, validate=True):
     out["home_goals"] = out["home_goals"].astype(int)
     out["away_goals"] = out["away_goals"].astype(int)
     out["outcome"] = [outcome_from_goals(h, a)
-                      for h, a in zip(out["home_goals"], out["away_goals"])]
+                      for h, a in zip(out["home_goals"], out["away_goals"], strict=True)]
 
     name, triple = _resolve_extra_source(df.columns)
     if name is None:
         for column in ODDS_COLUMNS:
             out[column] = np.nan
     else:
-        for column, raw in zip(ODDS_COLUMNS, triple):
+        for column, raw in zip(ODDS_COLUMNS, triple, strict=True):
             out[column] = pd.to_numeric(df[raw], errors="coerce")
         # A price triple is usable whole or not at all — the same rule as the
         # main contract, so downstream normalisation sees one market or none.

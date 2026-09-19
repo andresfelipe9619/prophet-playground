@@ -24,3 +24,10 @@ xgboost>=2.0.3
 scikit-learn>=1.4.1.post1
 beautifulsoup4~=4.11.2
 pytest>=8.0
+
+# Lint and type-check, configured in pyproject.toml. Both are pure-Python and
+# install in a couple of seconds, so the `static` CI job runs them without
+# pulling the rest of this file.
+ruff>=0.15
+mypy>=1.19
+pandas-stubs>=2.2

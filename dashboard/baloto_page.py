@@ -22,28 +22,20 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import lottery.backtest as bt
-from lottery.analysis.randomness import (
-    autocorrelation_check,
-    frequency_table,
-    gap_table,
-    hot_cold_numbers,
-    is_sorted_ascending,
-    pooled_uniformity_test,
-    randomness_report,
-)
-from lottery.analysis.power import (
-    DEFAULT_RELATIVE_EDGES,
-    describe as power_describe,
-    minimum_detectable_effect,
-    power_curve,
-    required_draws_table,
-    super_minimum_detectable_effect,
-)
+from dashboard.ui import HELP, chart, glossary, plain_verdict, section, verdict_badge
 from lottery.analysis.popularity import (
     compare_tickets,
     popularity_components,
     popularity_score,
-    split_adjusted_value,
+)
+from lottery.analysis.power import (
+    describe as power_describe,
+)
+from lottery.analysis.power import (
+    minimum_detectable_effect,
+    power_curve,
+    required_draws_table,
+    super_minimum_detectable_effect,
 )
 from lottery.analysis.prizes import (
     breakeven_jackpot,
@@ -51,26 +43,31 @@ from lottery.analysis.prizes import (
     expected_value,
     total_combinations,
 )
-from lottery.analysis.tickets import (
-    STRATEGIES,
-    Ticket,
-    check_against_history,
-    check_ticket,
-    compare_strategies,
-    draw_from_row,
-    generate_portfolio,
-    history_summary,
-    portfolio_coverage,
-    stability_check,
-    ticket_from_predictions,
+from lottery.analysis.randomness import (
+    frequency_table,
+    gap_table,
+    hot_cold_numbers,
+    is_sorted_ascending,
+    pooled_uniformity_test,
+    randomness_report,
 )
 from lottery.analysis.registry import (
     RegistryError,
-    load as load_registry,
-    pending as pending_predictions,
-    record as record_prediction,
     score_pending,
+)
+from lottery.analysis.registry import (
+    load as load_registry,
+)
+from lottery.analysis.registry import (
+    pending as pending_predictions,
+)
+from lottery.analysis.registry import (
+    record as record_prediction,
+)
+from lottery.analysis.registry import (
     status as registry_status,
+)
+from lottery.analysis.registry import (
     summary as registry_summary,
 )
 from lottery.analysis.sensitivity import (
@@ -83,11 +80,23 @@ from lottery.analysis.structure import (
     structure_report,
     sum_percentile,
 )
+from lottery.analysis.tickets import (
+    STRATEGIES,
+    Ticket,
+    check_against_history,
+    check_ticket,
+    compare_strategies,
+    draw_from_row,
+    generate_portfolio,
+    history_summary,
+    portfolio_coverage,
+    stability_check,
+)
 from lottery.models.baseline import expected_main_matches, most_frequent_pick
 from lottery.models.common import (
     DEFAULT_DATA_PATH,
-    MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
+    MAIN_BALLS_DRAWN,
     SUPER_BALL_RANGE,
     build_position_series,
     infer_draw_weekdays,
@@ -108,8 +117,6 @@ from lottery.utils.processor import (
     preprocess_draws,
 )
 from lottery.utils.sample_data import load_sample_and_preprocess
-
-from dashboard.ui import HELP, chart, glossary, plain, plain_verdict, section, verdict_badge
 
 MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 
@@ -591,7 +598,7 @@ def render():
         section("Veredicto por posición", "verdict_table")
         reports = randomness_reports(position_series, n_columns)
         rows = []
-        for p, rep in reports.items():
+        for rep in reports.values():
             rows.append({
                 "Posición": rep["label"],
                 "Sorteos": rep["n_draws"],
@@ -671,7 +678,7 @@ def render():
                 elif model_choice in MODEL_NAMES:
                     raw = fit_predict_all(position_series, h=1)
                     clipped = adjusted_predictions(raw, n_columns, model_name=model_choice)
-                    preds = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"].astype(int)))
+                    preds = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"].astype(int), strict=True))
                 elif model_choice == "XGBoost":
                     for p in range(n_columns):
                         preds[p] = forecast_next(position_series[p], p, n_columns, next_date)
@@ -896,7 +903,7 @@ def render():
             section("El premio mayor se reparte", "tab_split")
             st.markdown(
                 "Todo lo demás en este panel termina igual: nada cambia tu **probabilidad** de ganar, "
-                "porque las {combos:,} combinaciones son igual de probables. Eso sigue siendo cierto "
+                f"porque las {total_combinations():,} combinaciones son igual de probables. Eso sigue siendo cierto "
                 "aquí. Lo que cambia es la otra mitad del valor esperado.\n\n"
                 "El premio mayor se reparte entre todos los que tengan la combinación ganadora, y la "
                 "gente **no elige al azar**: juega cumpleaños (por eso el 1-31 va sobrecargado y el "
@@ -905,7 +912,7 @@ def render():
                 "condicionado a ganar, la popular paga una fracción de la otra.\n\n"
                 "`P(ganar)` → no la mueve nada, nunca.  \n"
                 "`E[premio | ganar]` → esto sí se puede mejorar, evitando lo que juegan los demás."
-            .format(combos=total_combinations()))
+            )
 
             st.warning(
                 "**Qué es este modelo, con precisión.** Una función heurística sobre los sesgos que "
@@ -1535,7 +1542,7 @@ def render():
 
             with st.expander("Ver el registro completo"):
                 st.caption(
-                    f"Se guarda en `predictions.csv`, en la raíz del repo y **no** ignorado por git. "
+                    "Se guarda en `predictions.csv`, en la raíz del repo y **no** ignorado por git. "
                     "Commitearlo pone cada predicción bajo control de versiones con una fecha encima, "
                     "que es un respaldo más fuerte que cualquier columna de timestamp que el propio "
                     "archivo se escriba."

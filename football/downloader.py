@@ -603,7 +603,7 @@ if __name__ == "__main__":
             )
     except (DownloadError, MatchFormatError, ValueError) as exc:
         print(f"\nDownload failed: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     print()
     if args.extra:

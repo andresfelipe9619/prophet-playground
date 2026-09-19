@@ -1,0 +1,60 @@
+# Project metadata and tool configuration.
+#
+# Dependencies still live in requirements.txt / requirements-test.txt; moving
+# them here is item 2 of docs/superpowers/plans/2026-09-19-platform-roadmap.md.
+# This file exists first because ruff and mypy need somewhere to be configured.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prophet-playground"
+version = "0.1.0"
+description = "Forecasting and evaluation over Baloto, football and cycling, each against a baseline named in advance."
+requires-python = ">=3.11"
+
+[tool.ruff]
+# 120, not the more usual 88 or 100. This codebase carries most of its reasoning
+# in prose -- long explanatory comments and docstrings, plus the dashboard's
+# Spanish copy strings, which must not be wrapped mid-sentence. Measured, the
+# code sits at p50=46 and p95=97 characters, so a limit exists to catch a
+# runaway line, not to reflow deliberate prose: at 100 there are 454 violations,
+# nearly all of them sentences; at 120 there are 15 and every one is a genuinely
+# over-long line of code.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["venv"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle + pyflakes. I: import order. UP: py311-era syntax.
+# B: bugbear, which is the only one of the five that finds real defects --
+# mutable default arguments and loop-variable capture, both of which are
+# silent-wrong rather than loud-wrong in a numerics codebase.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# E402: Streamlit re-executes the script top to bottom on every interaction, so
+# the dashboard's import-then-call order is load-bearing and E402 reads it as a
+# mistake. E501: these modules are mostly Spanish copy strings, and a sentence
+# broken across lines to satisfy a linter is harder to review for meaning --
+# which is the only thing that matters about them.
+"dashboard/*.py" = ["E402", "E501"]
+# The original matplotlib/seaborn script, superseded by the dashboard and kept
+# as-is; see CLAUDE.md. Not worth reformatting, but it still gets the rules that
+# find defects rather than style.
+"scripts/summary_charts.py" = ["E501"]
+
+[tool.mypy]
+# Scoped to core/ deliberately. It is ~150 lines of domain-free numerics, which
+# makes strict mode achievable, and it is the one package where a wrong type is
+# silently wrong rather than loud: a z-test handed the wrong shape returns a
+# number, not an error. The domain packages pass DataFrames through every
+# signature and would need a large ignore list to say very little.
+files = ["core"]
+python_version = "3.11"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true

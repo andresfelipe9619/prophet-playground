@@ -32,7 +32,7 @@ detectable effect alongside the result.
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
@@ -70,7 +70,7 @@ class RegistryError(RuntimeError):
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def load(path=DEFAULT_REGISTRY_PATH):
@@ -256,7 +256,11 @@ def status(path=DEFAULT_REGISTRY_PATH):
 if __name__ == "__main__":
     import argparse
 
-    from lottery.models.common import DEFAULT_DATA_PATH, build_position_series, infer_draw_weekdays, next_draw_dates
+    from lottery.models.common import (
+        DEFAULT_DATA_PATH,
+        infer_draw_weekdays,
+        next_draw_dates,
+    )
     from lottery.utils.processor import load_and_preprocess
 
     parser = argparse.ArgumentParser(description=__doc__,
@@ -284,7 +288,7 @@ if __name__ == "__main__":
         try:
             row = record(ticket, draw_date, args.label, note=args.note, path=args.registry)
         except RegistryError as exc:
-            raise SystemExit(f"Refused: {exc}")
+            raise SystemExit(f"Refused: {exc}") from exc
         print(f"Recorded {row['main']} + {row['super_ball']} for {row['draw_date']:%Y-%m-%d} "
               f"as {row['label']!r} at {row['recorded_at']}.")
 

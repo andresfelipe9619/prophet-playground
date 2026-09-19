@@ -6,7 +6,6 @@ training. Every test here is about that not coming back.
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from lottery.models.common import range_for_position
 from lottery.models.xgboost_model import (

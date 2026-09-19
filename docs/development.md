@@ -50,9 +50,39 @@ The three model scripts additionally expect
 
 ## 3. Verification
 
-**There is a test suite and CI; there is still no linter.** Work is verified in
-four ways locally, and CI re-runs the first and the fourth on every push to
-`master` and every pull request.
+**There is a test suite, a linter and CI.** Work is verified in four ways
+locally, and CI re-runs the first and the fourth on every push to `master` and
+every pull request.
+
+Lint and type-check first, because they are the fastest signal:
+
+```bash
+ruff check .          # everything; --fix applies the safe ones
+mypy                  # strict, scoped to core/ (the scope is in pyproject.toml)
+```
+
+Two configuration choices are worth knowing before you fight them. **The line
+limit is 120, not 88 or 100.** Measured, this codebase sits at p50 = 46 and
+p95 = 97 characters; the overruns are almost entirely explanatory prose and the
+dashboard's Spanish copy strings, and a sentence broken across lines to satisfy
+a linter is harder to review for meaning — which is the only thing that matters
+about those strings. At 100 there were 454 violations and essentially no
+defects among them; at 120 there are none, and the rule still catches a
+genuinely runaway line. **mypy runs `strict` over `core/` alone.** `core/` is
+~150 lines of domain-free numerics, so strict mode is achievable there, and it
+is the one package where a wrong type is silently wrong rather than loud: a
+z-test handed the wrong shape returns a number, not an error. The domain
+packages pass DataFrames through every signature and would need a long ignore
+list to say very little.
+
+One rule ruff enforces that is worth calling out, because it changed behaviour
+rather than formatting: **every `zip` carries an explicit `strict=`.** A `zip`
+over two sequences of different lengths silently truncates to the shorter one,
+which in this codebase would mean pairing riders with the wrong worths or
+columns with the wrong outcomes and producing a frame whose shape reveals
+nothing. Every call that pairs things which *must* line up is `strict=True`;
+the four `zip(x, x[1:])` pairwise-adjacent idioms are `strict=False` because
+their lengths differ by one on purpose.
 
 ```mermaid
 flowchart TD

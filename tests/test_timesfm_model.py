@@ -17,7 +17,6 @@ installs neither timesfm nor torch, and this file imports neither.
 """
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from lottery.models.common import MAIN_BALL_RANGE, SUPER_BALL_RANGE, build_position_series

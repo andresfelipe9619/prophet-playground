@@ -12,8 +12,8 @@ that bug deliberately and shows the detector reacting to it.
 import numpy as np
 import pytest
 
+from lottery.analysis.randomness import pooled_uniformity_test
 from lottery.analysis.sensitivity import (
-    DEFAULT_ALPHA,
     DEFAULT_FAVORED,
     DEFAULT_STRENGTHS,
     DETECTORS,
@@ -25,10 +25,8 @@ from lottery.analysis.sensitivity import (
     sensitivity_report,
     sensitivity_threshold,
 )
-from lottery.analysis.randomness import pooled_uniformity_test
 from lottery.models.common import MAIN_POOL, main_positions
 from lottery.utils.processor import format_violations
-
 
 # ------------------------------------------------------- independent_seeds
 
@@ -176,7 +174,7 @@ def test_sensitivity_report_covers_the_whole_grid():
                                 n_draws=300, n_seeds=4)
     assert len(report) == 2
     assert {"detector", "strength", "detection_rate", "favored_share"} <= set(report.columns)
-    by_strength = dict(zip(report["strength"], report["detection_rate"]))
+    by_strength = dict(zip(report["strength"], report["detection_rate"], strict=True))
     assert by_strength[2.0] > by_strength[0.0]
 
 

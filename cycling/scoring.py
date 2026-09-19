@@ -169,5 +169,5 @@ def _paired_ranks(predicted_order, result):
              for row in ranked.itertuples() if row.rider in predicted_rank]
     if not pairs:
         return np.array([]), np.array([])
-    predicted, actual = zip(*pairs)
+    predicted, actual = zip(*pairs, strict=True)
     return np.array(predicted, dtype=float), np.array(actual, dtype=float)

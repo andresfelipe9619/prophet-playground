@@ -191,7 +191,7 @@ def goodness_of_fit(table, min_expected=5.0):
 
     kept_observed, kept_expected = [], []
     carry_observed = carry_expected = 0.0
-    for obs, exp in zip(observed, expected):
+    for obs, exp in zip(observed, expected, strict=True):
         carry_observed += obs
         carry_expected += exp
         if carry_expected >= min_expected:

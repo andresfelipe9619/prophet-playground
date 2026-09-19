@@ -92,7 +92,9 @@ def test_more_data_narrows_the_interval_without_moving_the_effect():
     few = z_test_against_null([1.0] * 25, 1.0, 1.0)
     many = z_test_against_null([1.0] * 2500, 1.0, 1.0)
     assert few["effect"] == pytest.approx(many["effect"])
-    width = lambda r: r["ci_high"] - r["ci_low"]
+    def width(r):
+        return r["ci_high"] - r["ci_low"]
+
     assert width(many) == pytest.approx(width(few) / 10, rel=1e-6)
 
 

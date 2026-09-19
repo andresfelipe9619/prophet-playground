@@ -8,7 +8,7 @@ computed exactly (no simulation needed) and used by lottery/backtest.py to judge
 whether Prophet/StatsForecast/XGBoost add any real signal.
 """
 
-from functools import lru_cache
+from functools import cache
 
 import numpy as np
 from scipy.stats import hypergeom
@@ -17,7 +17,7 @@ from core.significance import EMPTY_RESULT, z_test_against_null
 from lottery.models.common import MAIN_BALLS_DRAWN, MAIN_POOL, SUPER_POOL
 
 
-@lru_cache(maxsize=None)
+@cache
 def expected_main_matches(m_guessed, pool_size=MAIN_POOL, n_drawn=MAIN_BALLS_DRAWN):
     """Mean and variance of matches when guessing m_guessed distinct numbers.
 

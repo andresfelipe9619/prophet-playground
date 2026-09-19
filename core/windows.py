@@ -5,10 +5,14 @@ observations — draws, matches, races — so neither knows anything about the
 domain being evaluated.
 """
 
+from collections.abc import Iterable
+from datetime import date, datetime
+from typing import Any
+
 import pandas as pd
 
 
-def window_bounds(n_observations, n_windows, min_train):
+def window_bounds(n_observations: int, n_windows: int, min_train: int) -> tuple[int, int]:
     """The (start, total) range a walk-forward backtest would evaluate.
 
     Single owner of the feasibility rule, so a CLI and a dashboard slider
@@ -20,7 +24,7 @@ def window_bounds(n_observations, n_windows, min_train):
     return start, n_observations
 
 
-def cutoff_bounds(dates, cutoff):
+def cutoff_bounds(dates: Iterable[Any], cutoff: str | date | datetime) -> tuple[int, int]:
     """(n_train, n_holdout) for a date cutoff.
 
     Observations dated on the cutoff day count as training: the cutoff reads

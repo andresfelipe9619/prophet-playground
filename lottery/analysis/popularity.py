@@ -43,7 +43,7 @@ import pandas as pd
 
 from lottery.analysis.prizes import category_probabilities, total_combinations
 from lottery.analysis.tickets import Ticket
-from lottery.models.common import MAIN_BALLS_DRAWN, MAIN_BALL_RANGE, MAIN_POOL, SUPER_POOL
+from lottery.models.common import MAIN_BALL_RANGE, MAIN_BALLS_DRAWN, SUPER_POOL
 
 # Numbers that fit a day of the month. The single largest documented bias in
 # lottery number choice: players use birthdays and anniversaries, so 1-31 are
@@ -84,7 +84,7 @@ def _low_fraction(main):
 
 def _consecutive_fraction(main):
     ordered = sorted(main)
-    runs = sum(1 for a, b in zip(ordered, ordered[1:]) if b - a == 1)
+    runs = sum(1 for a, b in zip(ordered, ordered[1:], strict=False) if b - a == 1)
     return runs / (len(ordered) - 1)
 
 
@@ -95,7 +95,7 @@ def _arithmetic_regularity(main):
     it is visually obvious on a ticket, which is what makes it popular.
     """
     ordered = sorted(main)
-    gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+    gaps = [b - a for a, b in zip(ordered, ordered[1:], strict=False)]
     mean = sum(gaps) / len(gaps)
     if mean == 0:
         return 1.0

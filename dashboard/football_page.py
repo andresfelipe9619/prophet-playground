@@ -27,6 +27,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 from football.backtest import MODEL_NAMES
 from football.common import (
     DEFAULT_DATA_DIR,
@@ -55,8 +56,6 @@ from football.processor import (
 )
 from football.sample_data import generate_matches
 from football.value import DEFAULT_KELLY_FRACTION, DISAGREEMENT_ONLY, NO_VALUE, VALUE
-
-from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 
 # Spanish labels for the three outcomes, since OUTCOME_LABELS is English (it is
 # code-facing). The order follows OUTCOMES, which is load-bearing everywhere.
@@ -392,7 +391,7 @@ def render():
             table = compare_methods(row[list(ODDS_COLUMNS)].to_numpy(dtype=float))
             table = table.rename(columns={"method": "método", **{
                 column: OUTCOME_ES[outcome]
-                for column, outcome in zip(PROBABILITY_COLUMNS, OUTCOMES)}})
+                for column, outcome in zip(PROBABILITY_COLUMNS, OUTCOMES, strict=True)}})
             st.dataframe(table, use_container_width=True)
             st.caption(
                 "Los tres discrepan más en los no favoritos, que es donde importa. Ninguno es "
@@ -411,7 +410,7 @@ def render():
         shares = [float(counts.get(outcome, 0)) / max(len(matches), 1) for outcome in OUTCOMES]
 
         columns = st.columns(3)
-        for column, outcome, share in zip(columns, OUTCOMES, shares):
+        for column, outcome, share in zip(columns, OUTCOMES, shares, strict=True):
             column.metric(OUTCOME_ES[outcome], f"{share:.1%}",
                           help=HELP["fb_outcome_share"])
 
@@ -664,7 +663,7 @@ def render_value_tab(matches, method):
         )
     else:
         st.caption(
-            f"Las cifras de apuesta son **un cuarto de Kelly**, no Kelly entero. Kelly es la "
+            "Las cifras de apuesta son **un cuarto de Kelly**, no Kelly entero. Kelly es la "
             "apuesta óptima suponiendo que tu probabilidad es correcta; la de un modelo es una "
             "estimación con error, y sobre una ventaja que no existe Kelly sube la apuesta justo "
             "cuando el modelo está más seguro y más equivocado.",
@@ -745,7 +744,7 @@ def render_forecast_tab(matches, method):
 
     section("El modelo", "fb_model_1x2")
     m1, m2, m3 = st.columns(3)
-    for col, label, value in zip((m1, m2, m3), ("Local", "Empate", "Visitante"), p_model):
+    for col, label, value in zip((m1, m2, m3), ("Local", "Empate", "Visitante"), p_model, strict=True):
         col.metric(label, f"{value:.1%}")
     if not all(o > 1.0 for o in (odd_home, odd_draw, odd_away)):
         st.caption(
@@ -763,7 +762,7 @@ def render_forecast_tab(matches, method):
     if p_elo is not None:
         st.markdown("**Y lo que dice el Elo**", help=HELP["fb_elo"])
         e1, e2, e3 = st.columns(3)
-        for col, label, value in zip((e1, e2, e3), ("Local", "Empate", "Visitante"), p_elo):
+        for col, label, value in zip((e1, e2, e3), ("Local", "Empate", "Visitante"), p_elo, strict=True):
             col.metric(label, f"{value:.1%}")
         st.caption(
             f"Elo de {home_team}: **{elo.rating(home_team):.0f}** · "
@@ -813,7 +812,7 @@ def render_forecast_tab(matches, method):
             "Resultado": ["Local", "Empate", "Visitante"],
             "Dixon-Coles": [f"{p:.1%}" for p in p_model],
             "Mercado": [f"{p:.1%}" for p in p_market],
-            "DC − Mercado": [f"{m - k:+.1%}" for m, k in zip(p_model, p_market)],
+            "DC − Mercado": [f"{m - k:+.1%}" for m, k in zip(p_model, p_market, strict=True)],
         }
         if p_elo is not None:
             comparison["Elo"] = [f"{p:.1%}" for p in p_elo]

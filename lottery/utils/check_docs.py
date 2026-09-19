@@ -16,7 +16,6 @@ actual behaviour, including its `-1`, `-2` suffixes for duplicate headings.
 import glob
 import os
 import re
-import sys
 
 # The punctuation github-slugger strips. Characters are removed, not replaced,
 # so the surrounding spaces survive and each becomes its own hyphen.

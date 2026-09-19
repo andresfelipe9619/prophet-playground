@@ -17,8 +17,8 @@ import pandas as pd
 import pytest
 
 from football.downloader import (
-    DownloadError,
     LEAGUES,
+    DownloadError,
     download_extra,
     download_seasons,
     inspect,

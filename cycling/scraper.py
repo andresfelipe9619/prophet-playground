@@ -505,7 +505,7 @@ if __name__ == "__main__":
         results = preprocess_results(scraped, validate=True)
     except (ScrapeError, ResultFormatError, ValueError) as exc:
         print(f"\nScrape failed: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     report = check_result_format(results)
     print(f"\n{len(results)} rows, {results['race'].nunique()} race(s), "

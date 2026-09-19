@@ -12,7 +12,6 @@ import warnings
 import pandas as pd
 import pytest
 
-from tests.conftest import draws_frame, parsed
 from lottery.utils.processor import (
     check_draw_format,
     current_format_mask,
@@ -20,6 +19,7 @@ from lottery.utils.processor import (
     load_and_preprocess,
     preprocess_draws,
 )
+from tests.conftest import draws_frame, parsed
 
 CLEAN = [
     ("05/01/2019", "3-12-19-27-41-8"),

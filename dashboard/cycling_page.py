@@ -25,8 +25,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-import numpy as np
-
 from cycling.baseline import (
     baseline_frame,
     form_worths,
@@ -46,7 +44,6 @@ from cycling.processor import (
 )
 from cycling.sample_data import generate_stage_race
 from cycling.scoring import METRICS, spearman, top_n_accuracy
-
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 
 # Spanish labels for the code-facing constants in cycling/common.py.
@@ -240,7 +237,7 @@ def render():
         else:
             counts = non_finishers["status"].value_counts()
             columns = st.columns(max(len(counts), 1))
-            for column, (status, count) in zip(columns, counts.items()):
+            for column, (status, count) in zip(columns, counts.items(), strict=True):
                 column.metric(STATUS_ES.get(status, status), int(count),
                               help=HELP["cy_status_counts"])
 
@@ -359,7 +356,7 @@ def render_forecast_tab(results):
 
     top_n = st.slider("Tamaño del «top N»", 3, 30, 10)
     table = baseline_frame(riders, model, n=top_n, n_samples=2000, seed=0)
-    ranking_probabilities = dict(zip(riders, win_probabilities(ranking)))
+    ranking_probabilities = dict(zip(riders, win_probabilities(ranking), strict=True))
     table["p_win_ranking"] = table["rider"].map(ranking_probabilities)
 
     c1, c2, c3 = st.columns(3)

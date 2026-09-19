@@ -1,14 +1,14 @@
 # Import the libraries
-import pandas as pd
-import numpy as np
-import matplotlib
-import plotly
 import cmdstanpy
+import matplotlib
+import numpy as np
+import pandas as pd
+import plotly
 import prophet
+import sklearn
 import statsforecast
 import streamlit
 import xgboost
-import sklearn
 
 # Print their versions
 print(f"Pandas version: {pd.__version__}")

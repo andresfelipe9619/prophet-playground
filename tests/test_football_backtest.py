@@ -21,8 +21,8 @@ that a real model beats a demonstrably soft market, not a realistic one.
 import pytest
 
 from football.backtest import MODEL_NAMES, compare_models, run_all, run_holdout
-from football.sample_data import generate_matches
 from football.processor import preprocess_matches
+from football.sample_data import generate_matches
 
 pytestmark = pytest.mark.slow
 

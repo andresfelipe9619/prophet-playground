@@ -11,10 +11,9 @@ rather than calendar dates, since draws only happen on Wed/Sat and there is
 no real daily frequency to align to.
 """
 
+import numpy as np
 from statsforecast import StatsForecast
 from statsforecast.models import AutoARIMA, AutoETS, AutoTheta
-
-import numpy as np
 
 from lottery.models.common import max_for_position, min_for_position, to_long_format
 

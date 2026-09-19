@@ -37,7 +37,12 @@ import pandas as pd
 from core.significance import bonferroni_threshold, verdicts
 from core.windows import cutoff_bounds, window_bounds
 from lottery.models.baseline import beats_chance_test, expected_super_match_rate, most_frequent_pick
-from lottery.models.common import DEFAULT_DATA_PATH, build_position_series, main_positions, super_position
+from lottery.models.common import (
+    DEFAULT_DATA_PATH,
+    build_position_series,
+    main_positions,
+    super_position,
+)
 from lottery.models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
 from lottery.models.xgboost_model import forecast_horizon, train_predict_one_step
 from lottery.utils.processor import load_and_preprocess
@@ -101,7 +106,7 @@ def _statsforecast_window(n_columns):
         preds_by_model = {}
         for name in MODEL_NAMES:
             clipped = adjusted_predictions(forecast, n_columns, model_name=name)
-            preds_by_model[name] = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"]))
+            preds_by_model[name] = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"], strict=True))
         return preds_by_model
     return predict
 

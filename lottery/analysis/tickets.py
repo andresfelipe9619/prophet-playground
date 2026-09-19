@@ -23,8 +23,8 @@ from core.significance import bonferroni_threshold, verdicts
 from lottery.analysis.prizes import total_combinations
 from lottery.models.baseline import beats_chance_test
 from lottery.models.common import (
-    MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
+    MAIN_BALLS_DRAWN,
     SUPER_BALL_RANGE,
     main_positions,
     super_position,
@@ -223,7 +223,7 @@ def check_ticket(ticket, main_drawn, super_drawn):
 def check_against_history(ticket, df, balls_expanded):
     """How this exact ticket would have done in every historical draw."""
     rows = []
-    for (_, draw_row), date in zip(balls_expanded.iterrows(), df["ds"]):
+    for (_, draw_row), date in zip(balls_expanded.iterrows(), df["ds"], strict=True):
         main_drawn, super_drawn = draw_from_row(draw_row)
         result = check_ticket(ticket, main_drawn, super_drawn)
         rows.append({"ds": date, **{k: v for k, v in result.items() if k != "matched_numbers"}})

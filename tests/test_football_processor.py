@@ -256,7 +256,7 @@ def test_closing_odds_only_refuses_a_soft_file(tmp_path):
 
 def test_seasons_sharing_a_source_concatenate(tmp_path):
     paths = []
-    for i, year in enumerate((2019, 2020)):
+    for year in (2019, 2020):
         frame = closing()
         frame["Date"] = [f"09/08/{year}", f"10/08/{year}", f"11/08/{year}"]
         path = tmp_path / f"E0_{year}.csv"

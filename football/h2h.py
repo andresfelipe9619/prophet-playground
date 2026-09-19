@@ -12,7 +12,6 @@ match here would make the form panel quietly disagree with what was knowable
 at kick-off.
 """
 
-import numpy as np
 import pandas as pd
 
 from football.common import DRAW

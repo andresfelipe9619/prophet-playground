@@ -251,7 +251,7 @@ if __name__ == "__main__":
         draws = scrape_years(parse_years(args.years), delay=args.delay)
     except ScrapeError as exc:
         print(f"\nScrape failed: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     if args.dry_run:
         print(f"\n{len(draws)} draws parsed (nothing written):")
