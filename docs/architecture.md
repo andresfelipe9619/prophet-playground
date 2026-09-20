@@ -56,6 +56,7 @@ flowchart TD
         WIN["core/windows.py<br/><i>walk-forward + cutoff splits</i>"]
         SIG["core/significance.py<br/><i>z-test vs null, Bonferroni</i>"]
         MAN["core/manifest.py<br/><i>commit, dirty flag, data fingerprint</i>"]
+        REG["core/registry.py<br/><i>pre-registration, three refusals</i>"]
     end
 
     DASH --> RAND & PRIZE & TICK & BT & SF & XGB & BASE

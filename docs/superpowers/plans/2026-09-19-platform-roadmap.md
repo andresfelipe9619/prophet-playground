@@ -215,22 +215,22 @@ accumulated in public.
 `football/registry.py` (new), `cycling/registry.py` (new), `tests/test_core_registry.py`
 (new), `tests/test_registry.py`, `docs/registry.md`.
 
-- [ ] Lift the domain-free half into `core/registry.py`: append-only storage, the refusal
+- [x] Lift the domain-free half into `core/registry.py`: append-only storage, the refusal
       to record against an event that has already happened, the refusal to record twice
       for the same (event, label), and score-all-or-none. **All three refusals are
       load-bearing and none may soften into a warning.**
-- [ ] The domain supplies: how to name an event, how to score a prediction against its
+- [x] The domain supplies: how to name an event, how to score a prediction against its
       result, and what to report alongside (the lottery attaches its minimum detectable
       effect; football should attach its own once item 7 lands).
-- [ ] `lottery/analysis/registry.py` keeps its public API and its file, now as a thin
+- [x] `lottery/analysis/registry.py` keeps its public API and its file, now as a thin
       domain adapter. Its existing tests must pass **unchanged** — that is the refactor's
       proof.
-- [ ] `football/registry.py`: record a probability vector for a future fixture, score it
+- [x] `football/registry.py`: record a probability vector for a future fixture, score it
       by RPS against the de-margined closing price on the same match, so a registered
       football prediction is a forward market test rather than a forward accuracy number.
-- [ ] `cycling/registry.py`: record predicted worths for a future race's start list, score
+- [x] `cycling/registry.py`: record predicted worths for a future race's start list, score
       by the Plackett-Luce log score against the ranking baseline.
-- [ ] Each domain's file is committed, not gitignored, for the reason the lottery's is.
+- [x] Each domain's file is committed, not gitignored, for the reason the lottery's is.
 
 ## Item 7: football power and sensitivity
 
