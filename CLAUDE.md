@@ -118,12 +118,23 @@ Pool sizes (`MAIN_POOL`, `SUPER_POOL`), the draw calendar and `DEFAULT_DATA_PATH
 
 **Order-agnostic summaries are a second, independent verdict.** `lottery/analysis/structure.py` compares the sum, odd count and calendar split of each draw against their exact combinatorial distributions. The pooled test asks about marginals and a machine can pass it while broken — five consecutive numbers use every number equally often and still have sums far narrower than combinatorics allows. These see that. They are also immune to the sorted-data trap for a stronger reason than the pooled test is: sorting cannot change a property of the *set*, so the outputs are bit-identical under a column shuffle, and a test asserts it.
 
+**A result carries what produced it.** Every walk-forward and holdout entry point attaches a
+`core/manifest.py` manifest — `lottery/backtest.py`'s `run_all` and `run_holdout` (on each result frame's `attrs`
+and carried through `summarize` to the table people actually read), `football/backtest.py`'s `compare_models`
+(`attrs`) and `run_all` / `run_holdout` (a `manifest` key, which the CLI prints as one compact provenance line),
+and `cycling/evaluation.py`'s `walk_forward` / `compare_forecasters` (`attrs`). Note `attrs` does not survive most
+pandas operations, so it is copied explicitly rather than inherited. The dirty flag is the load-bearing field:
+a result produced from an edited working tree is reproducible from no commit at all, which is the state most
+results are looked at in. A new evaluation entry point that attaches no manifest looks identical in every results
+table, so `tests/test_core_manifest.py` pins the wiring for all three domains.
+
 **Effect sizes travel with p-values.** `core/significance.py:z_test_against_null` returns `effect`, `ci_low`, `ci_high`, `relative_effect` and `n_observations` alongside both p-values, and `beats_chance_test` passes them straight through. A p-value alone cannot distinguish "no edge" from "no edge detectable here" — report the interval.
 
 ## Module layout
 
 - `core/significance.py` — `z_test_against_null` (both p-values, effect size, confidence interval), `bonferroni_threshold`, and `verdicts`, which returns the naive and corrected verdicts together so no surface can report one without the other. Domain-free: the caller supplies the null's mean and variance.
 - `core/windows.py` — `window_bounds` (walk-forward) and `cutoff_bounds` (date holdout). Pure index arithmetic over an ordered sequence.
+- `core/manifest.py` — provenance. `run_manifest(inputs)` records the commit, **whether the tree was dirty**, the UTC time, the Python version and the versions of the libraries whose arithmetic can move a number; `data_fingerprint(frame)` / `combined_fingerprint(frames)` hash values, columns *and* dtypes, so a single corrected cell or a moved column changes the digest where a row count would not. Domain-free: the caller names its own `inputs`.
 - `lottery/models/common.py` — ball ranges, draw calendar, position helpers, long-format conversion. Everything else imports its constants from here.
 - `lottery/models/baseline.py` — exact hypergeometric chance baseline and `beats_chance_test`, the domain half of the contract with `core/significance.py`: it turns `m_guessed` into a per-draw mean and variance and renames `null_mean` to `chance_mean`. `m_guessed` accepts a per-window list because collisions between positions change the distinct-guess count.
 - `lottery/models/statsforecast_model.py` — AutoARIMA/AutoETS/AutoTheta via Nixtla. `fit_predict_all` fits **every position and all three models in one call**; don't loop per position for these.

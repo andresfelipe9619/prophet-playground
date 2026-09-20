@@ -78,17 +78,19 @@ it pays into all twelve others.
 **Files:** `pyproject.toml` (new, shared with item 2), `requirements-test.txt`,
 `.github/workflows/tests.yml`, plus whatever the first clean run turns up.
 
-- [ ] Add `ruff` config to `pyproject.toml`: line length 100, rules `E,F,I,UP,B`, and an
+- [x] Add `ruff` config to `pyproject.toml`: line length 100, rules `E,F,I,UP,B`, and an
       explicit per-file ignore for `dashboard/` where Streamlit's import-then-call order
       is load-bearing.
-- [ ] Add `mypy` config scoped to `core/` only, `strict = true`. `core/` is 200 lines of
+- [x] Add `mypy` config scoped to `core/` only, `strict = true`. `core/` is 200 lines of
       pure numerics and is the one place a type error is silently wrong rather than loud.
-- [ ] `ruff check --fix` and hand-fix the rest. **No behaviour changes** — if a lint rule
+- [x] `ruff check --fix` and hand-fix the rest. **No behaviour changes** — if a lint rule
       wants a real change, note it and leave it.
-- [ ] Add `ruff` and `mypy` to `requirements-test.txt` (and `requirements.txt`).
-- [ ] Add a `lint` job to the `static` workflow — it needs no third-party install beyond
+- [x] Add `ruff` and `mypy` to `requirements-test.txt` (and `requirements.txt`).
+- [ ] Add a `lint` job to the `static` workflow — **still open**: the snippet is written and
+      documented in `docs/development.md`, but pushing a workflow file needs GitHub's `workflow`
+      scope, which the session that wrote it did not have. Everything else in this item is done — it needs no third-party install beyond
       the two tools, so it reports in seconds like the rest of that job.
-- [ ] `pytest` green, docs link check green.
+- [x] `pytest` green, docs link check green.
 
 ## Item 2: packaging and the run manifest
 
@@ -100,19 +102,19 @@ everywhere else.
 **Files:** `pyproject.toml`, `core/manifest.py` (new), `tests/test_core_manifest.py` (new),
 `lottery/backtest.py`, `football/backtest.py`, `cycling/evaluation.py`, `docs/development.md`.
 
-- [ ] `pyproject.toml`: project metadata, `requires-python = ">=3.11"`, dependencies moved
+- [x] `pyproject.toml`: project metadata, `requires-python = ">=3.11"`, dependencies moved
       off the two requirements files' `>=` pins into a single source of truth. Keep the
       requirements files as generated artefacts with a header saying so.
-- [ ] `core/manifest.py:run_manifest()` — returns git SHA (and a dirty flag), UTC
+- [x] `core/manifest.py:run_manifest()` — returns git SHA (and a dirty flag), UTC
       timestamp, Python version, the versions of the libraries that affect numerics
       (numpy, pandas, scipy, statsmodels), and a caller-supplied `inputs` dict for the
       data hash and seeds. Domain-free: the caller names its own inputs.
-- [ ] `core/manifest.py:data_fingerprint(df)` — a stable hash over a frame's values and
+- [x] `core/manifest.py:data_fingerprint(df)` — a stable hash over a frame's values and
       column order, so "the same data" is checkable rather than assumed.
-- [ ] Every backtest `run_*` attaches the manifest to its result's `attrs`.
-- [ ] Tests: manifest is JSON-serialisable; fingerprint is stable under re-read and
+- [x] Every backtest `run_*` attaches the manifest to its result's `attrs`.
+- [x] Tests: manifest is JSON-serialisable; fingerprint is stable under re-read and
       changes under a single edited cell; a dirty tree is flagged.
-- [ ] Document the reproducibility contract in `docs/development.md`.
+- [x] Document the reproducibility contract in `docs/development.md`.
 
 ## Item 3: leak canaries
 

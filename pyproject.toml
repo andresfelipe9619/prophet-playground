@@ -13,6 +13,21 @@ name = "prophet-playground"
 version = "0.1.0"
 description = "Forecasting and evaluation over Baloto, football and cycling, each against a baseline named in advance."
 requires-python = ">=3.11"
+# Read from requirements.txt rather than restated here. That file already
+# carries the reasoning for what is in it (and the note about the CPU torch
+# wheel), and a second list that *can* diverge from the first eventually does
+# -- which has happened in this repository before, when a hosted build silently
+# offered five models where the local one offered six.
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+optional-dependencies.test = { file = ["requirements-test.txt"] }
+
+[tool.setuptools]
+# A collection of packages run in place, not a library anyone installs; listing
+# them stops setuptools guessing and failing on the data and docs directories.
+packages = ["core", "lottery", "football", "cycling", "dashboard", "scripts"]
 
 [tool.ruff]
 # 120, not the more usual 88 or 100. This codebase carries most of its reasoning

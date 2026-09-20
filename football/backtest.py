@@ -33,6 +33,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from core.manifest import data_fingerprint, run_manifest
 from core.windows import cutoff_bounds, window_bounds
 from football.common import ODDS_COLUMNS, PROBABILITY_COLUMNS, UnknownTeamError
 from football.dixon_coles import DixonColes
@@ -159,8 +160,17 @@ def compare_models(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
         lambda t: matches.iloc[:t], matches, range(start, total), half_life, method, models)
     probs = _with_blend(probs, market_probs, models, blend_weight, pool)
 
-    return _summarise(probs, market_probs, outcomes, models, metric, skipped,
-                      "expanding_last_n", method, half_life, blend_weight, pool)
+    table = _summarise(probs, market_probs, outcomes, models, metric, skipped,
+                       "expanding_last_n", method, half_life, blend_weight, pool)
+    table.attrs["manifest"] = run_manifest({
+        "data": data_fingerprint(matches), "n_matches": int(len(matches)),
+        "n_windows": n_windows, "min_train": min_train, "half_life": half_life,
+        "method": method, "metric": metric, "models": list(models),
+        "blend_weight": blend_weight, "pool": pool,
+        "odds_are_closing": matches.attrs.get("odds_are_closing"),
+        "odds_source": matches.attrs.get("odds_source"),
+    })
+    return table
 
 
 def run_all(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
@@ -175,7 +185,15 @@ def run_all(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
     result = _score(probs[model], market_probs, outcomes, metric)
     result.update({"model": model, "n_windows_scored": len(outcomes),
                    "n_windows_skipped": skipped, "mode": "expanding_last_n",
-                   "method": method, "half_life": half_life})
+                   "method": method, "half_life": half_life,
+                   "manifest": run_manifest({
+                       "data": data_fingerprint(matches), "n_matches": int(len(matches)),
+                       "n_windows": n_windows, "min_train": min_train,
+                       "half_life": half_life, "method": method, "metric": metric,
+                       "model": model,
+                       "odds_are_closing": matches.attrs.get("odds_are_closing"),
+                       "odds_source": matches.attrs.get("odds_source"),
+                   })})
     return result
 
 
@@ -205,7 +223,16 @@ def run_holdout(matches, cutoff, mode="expanding", half_life=None,
     result = _score(probs[model], market_probs, outcomes, metric)
     result.update({"model": model, "n_windows_scored": len(outcomes),
                    "n_windows_skipped": skipped, "mode": mode, "method": method,
-                   "half_life": half_life})
+                   "half_life": half_life,
+                   "manifest": run_manifest({
+                       "data": data_fingerprint(matches), "n_matches": int(len(matches)),
+                       "cutoff": f"{pd.Timestamp(cutoff):%Y-%m-%d}", "mode": mode,
+                       "n_train": n_train, "n_holdout": n_holdout,
+                       "half_life": half_life, "method": method, "metric": metric,
+                       "model": model,
+                       "odds_are_closing": matches.attrs.get("odds_are_closing"),
+                       "odds_source": matches.attrs.get("odds_source"),
+                   })})
     return result
 
 
@@ -264,8 +291,15 @@ def main():
         result = run_all(matches, n_windows=args.n_windows, min_train=args.min_train,
                          half_life=args.half_life, method=args.method, metric=args.metric)
 
+    manifest = result.pop("manifest", None)
     for key, value in result.items():
         print(f"{key:>24}: {value}")
+    if manifest:
+        git = manifest["git"]
+        commit = (git["commit"] or "unknown")[:8]
+        dirty = " (dirty tree — not reproducible from any commit)" if git["dirty"] else ""
+        print(f"{'run':>24}: {commit}{dirty} · data {manifest['inputs']['data'][:12]} · "
+              f"{manifest['generated_at']}")
 
 
 if __name__ == "__main__":

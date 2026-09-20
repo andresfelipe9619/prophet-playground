@@ -27,6 +27,7 @@ why `n_races` travels with every verdict.
 import numpy as np
 import pandas as pd
 
+from core.manifest import data_fingerprint, run_manifest
 from core.significance import bonferroni_threshold, verdicts, z_test_against_null
 from cycling.processor import GROUP_KEYS
 from cycling.scoring import DEFAULT_METRIC, race_score
@@ -124,7 +125,13 @@ def walk_forward(results, forecasters, metric=DEFAULT_METRIC, min_history=1):
             rows.append({"race": key[0], "kind": key[1], "stage": key[2], "ds": as_of,
                          "forecaster": name, "score": score, "n_riders": len(riders)})
 
-    return pd.DataFrame(rows)
+    table = pd.DataFrame(rows)
+    table.attrs["manifest"] = run_manifest({
+        "data": data_fingerprint(results), "n_rows": int(len(results)),
+        "n_races": len(groups), "metric": metric, "min_history": min_history,
+        "forecasters": sorted(forecasters),
+    })
+    return table
 
 
 def compare_forecasters(results, forecasters, baseline, metric=DEFAULT_METRIC,
@@ -150,4 +157,10 @@ def compare_forecasters(results, forecasters, baseline, metric=DEFAULT_METRIC,
         result = beats_baseline_test(wide[name], wide[baseline], metric=metric, alpha=alpha,
                                      n_comparisons=max(len(challengers), 1))
         rows.append({"forecaster": name, "baseline": baseline, **result})
-    return pd.DataFrame(rows), scores
+    table = pd.DataFrame(rows)
+    # Carried over rather than recomputed, so the verdict table and the per-race
+    # scores it was derived from can never disagree about what they ran on.
+    manifest = scores.attrs["manifest"]
+    table.attrs["manifest"] = {**manifest,
+                               "inputs": {**manifest["inputs"], "baseline": baseline, "alpha": alpha}}
+    return table, scores
