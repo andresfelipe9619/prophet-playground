@@ -378,7 +378,91 @@ refused by name. **The limit:** opening odds mean the market baseline is the
 soft one, so no corrected edge claim is possible on Colombian data — a model
 that beats these prices has probably beaten a bookmaker's first guess.
 
-## 6. Legacy ingestion
+## 6. The store: a file that can describe itself
+
+`core/storage.py` and the store path in `lottery/utils/processor.py`.
+
+A CSV has no schema. That is fine until a column is renamed upstream, a dtype
+widens, or a re-scrape appends a window that is already there — each of which
+produces a file that **loads perfectly and means something different**. The
+contracts above catch that at load time; the store catches it at write time,
+which is where the evidence of what changed still exists.
+
+```bash
+python -m scripts.store_sync import --csv exported_data/final-final.csv
+python -m scripts.store_sync status
+python -m scripts.store_sync check          # exit 1 if the store is stale, missing or mis-versioned
+```
+
+### The store replaces the file, not the contract
+
+`load_and_preprocess` takes either path. A `.csv` goes through pandas and a
+`.sqlite` through `core/storage.py`, and **both hand the same raw `Date`/`Ball`
+rows to `preprocess_draws`** — so nothing downstream changes and nothing
+downstream has to know which it got. The store holds the raw contract rows
+rather than the tidy frame, deliberately: `preprocess_draws` stays the single
+owner of what a draw looks like, and the store is only where the rows live.
+
+`import_csv` validates **before** it writes, so a file whose format has drifted
+never reaches the store. That ordering is the whole point of having one.
+
+### Why SQLite and not Parquet
+
+Parquet is the better columnar format and it needs `pyarrow`. The deciding
+difference is appending: appending to Parquet means writing *another file*, and
+a store whose append is "another file in the directory" has reintroduced exactly
+the multi-file drift that `load_seasons` and `load_races` refuse to concatenate
+through. SQLite is in the standard library, appends in place, and keeps its own
+metadata in a sibling table, so a store is one file that describes itself — and
+there is nothing new to install in CI.
+
+### What it records, and what it refuses
+
+Each table carries its **schema version**, its column names, its **dtypes**, the
+row count, a `core/manifest.py` fingerprint and when it was written. From that:
+
+- **A schema version mismatch is refused on read.** Reading anyway hands back a
+  frame whose shape is wrong in a way the caller discovers three
+  transformations later.
+- **A column renamed or reordered on append is refused**, and so is a **dtype
+  drift** — pandas will concatenate a float column onto an int one and object
+  onto either, leaving a column that means two things.
+- **An empty write is refused.** A scraper that writes nothing when the markup
+  changes is the failure mode these parsers are already shaped against, and a
+  store that accepts the empty frame moves that failure one step further from
+  where it can be seen.
+- **A duplicate is a decision, not a default.** Re-scraping an overlapping
+  window is the ordinary case; `on_duplicate="error"` says the caller has not
+  decided and `"skip"` keeps the stored copy. There is no "overwrite", because
+  silently replacing a stored row with a re-scraped one is how a corrected
+  result quietly becomes an uncorrected one again.
+
+**Dtypes are restored, not re-inferred.** SQLite has no datetime type, so a `ds`
+column round-trips as text unless something puts it back — and an ISO date
+string compares *correctly* against another ISO date string, which is why this
+bug survives casual testing and then fails on the first arithmetic or the first
+non-ISO value. `read_frame` replays the recorded dtype map and raises on a
+column it cannot restore rather than handing back text.
+
+### The scheduled half, and what is still manual
+
+`store_sync check` is the piece written for a schedule. It exits non-zero on the
+three ways a pipeline goes quietly wrong — the store missing, the schema version
+not the one this code expects, or **no new draw in longer than `--max-age-days`**.
+That last one is the failure a cron job that only logs will hide: a scraper whose
+markup changed keeps exiting 0 and appending nothing, and every number downstream
+goes on being computed from a history that stopped.
+
+What is **not** built: the scheduled workflow itself. Adding
+`.github/workflows/refresh.yml` needs a push carrying GitHub's `workflow` scope,
+which this repository's automation does not currently have — the same block that
+keeps ruff and mypy out of CI (see
+[Development §3](development.md#3-verification)). The job it would run is three
+lines and they are the three commands above: scrape, `import`, `check`, with the
+non-zero exit doing the alerting. Re-scoring the registries on the same schedule
+is the natural next step and is not wired either.
+
+## 7. Legacy ingestion
 
 `lottery/utils/csv_merger.py` concatenates hand-exported yearly CSVs from `exported_data/`.
 It predates the scraper's `merge_into()` and is kept only for existing local files;

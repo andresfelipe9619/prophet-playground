@@ -364,13 +364,18 @@ is a single point of failure for a project whose entire thesis is data disciplin
 **Files:** `.github/workflows/refresh.yml` (new), a storage module, the three scrapers,
 `docs/data-pipeline.md`.
 
-- [ ] Parquet or SQLite with an explicit schema version, behind the existing
-      `load_and_preprocess` API so nothing downstream changes.
-- [ ] A scheduled job: scrape → validate against the contract → append → re-score the
-      registries (item 6) → fail loudly on a contract violation. **A scraper that writes
-      an empty file when the markup changes is the failure mode these modules are already
-      shaped against** — the schedule must not reintroduce it by swallowing the raise.
-- [ ] Alert on: contract violation, a source gone silent, a registry row now scoreable.
+- [x] SQLite (not Parquet — appending to Parquet means another file, which is the drift
+      `load_seasons` and `load_races` refuse) with an explicit schema version, recorded
+      dtypes and a fingerprint, behind the existing `load_and_preprocess` API so nothing
+      downstream changes. `core/storage.py` + the store path in `lottery/utils/processor.py`.
+- [~] The job's *steps* exist as `python -m scripts.store_sync import|status|check`, with
+      validation before the write and a non-zero exit on a stale or mis-versioned store.
+      **The schedule itself does not**: `.github/workflows/refresh.yml` needs a push carrying
+      GitHub's `workflow` scope, the same block that keeps ruff and mypy out of CI. Re-scoring
+      the registries on the same schedule is not wired either.
+- [~] `store_sync check` exits 1 on a contract violation, a mis-versioned store and a source
+      gone silent (no draw in `--max-age-days`). The registry half is not wired, and with no
+      scheduler there is nothing to carry the exit code to a person yet.
 
 ## Item 13: the dashboard bet/ticket log
 
