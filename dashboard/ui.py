@@ -448,6 +448,21 @@ HELP = {
         "1 − score(modelo)/score(mercado). Positivo = el modelo puntuó mejor. En una sola "
         "temporada un valor positivo pequeño está dentro del ruido."
     ),
+    "fb_bankroll": (
+        "Una ventaja es un número; una banca es un camino, y el camino es lo que decide si "
+        "alguien puede correr el sistema de verdad. Una ventaja del 3% con 40% de "
+        "probabilidad de caer a la mitad no es un sistema."
+    ),
+    "fb_bankroll_paths": (
+        "Dos curvas: lo que pasaría si la ventaja del modelo es real, y lo que pasaría con las "
+        "**mismas apuestas** si no lo es. La distancia entre ellas es la información; la curva "
+        "sola no dice nada."
+    ),
+    "fb_kelly_fraction": (
+        "Qué fracción de la apuesta óptima de Kelly poner. Kelly entero maximiza el "
+        "crecimiento si tu probabilidad es exacta; como no lo es, un cuarto es el valor por "
+        "defecto en todo este proyecto."
+    ),
     "fb_resolution": (
         "La resolución del resultado: la ventaja más pequeña que esta cantidad de partidos "
         "podía haber encontrado. Sin ella, «ningún modelo le ganó al mercado» y «no había "
@@ -845,6 +860,15 @@ PLAIN = {
         "ojo": "Un partido no prueba nada, gane quien gane. El único número de esta página que "
                "dice si el modelo vale algo está en **Resultados**, medido sobre muchos partidos "
                "y con corrección.",
+    },
+    "fb_bankroll": {
+        "veo": "Cómo se habría movido una banca apostando lo que el modelo recomienda, "
+               "simulado muchas veces.",
+        "concluyo": "Si la curva con ventaja real se separa de la otra, la información vale "
+                    "algo. La caída máxima te dice si podrías haberlo aguantado.",
+        "ojo": "**Esto no es una promesa.** La curva de arriba supone que la ventaja del "
+               "modelo es real; la de abajo enseña las mismas apuestas cuando no lo es. Sin "
+               "el veredicto medido arriba, la de abajo es la que aplica.",
     },
     "fb_clv": {
         "veo": "Cuánto se movió el precio entre la apertura y el cierre, hacia la apuesta o en "

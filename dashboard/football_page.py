@@ -719,7 +719,87 @@ def render():
     # reader nothing had been measured on the very click that measured it.
     with tabs[4]:
         render_value_tab(matches, method)
+        _render_bankroll(matches, method)
         _render_clv(raw_frame, method, is_demo)
+
+
+def _render_bankroll(matches, method):
+    """What running these bets would have felt like, with the null drawn beside it.
+
+    Gated behind the measured verdict, exactly as the staking table above is.
+    A bankroll curve is the most persuasive object this project can produce and
+    the easiest to mislead with, so it does not appear at all until the model
+    has been measured, and never appears without the companion curve showing
+    what the same bets do when the edge is not real.
+    """
+    from football.bankroll import DEFAULT_PATHS, simulate_bankroll, stake_fraction_sweep, summarise
+
+    verdict = st.session_state.get("fb_backtest")
+    forecasts = None if verdict is None else verdict.attrs.get("forecasts")
+    if not forecasts or not forecasts["models"]:
+        return
+
+    section("¿Cómo se sentiría correr estas apuestas?", "fb_bankroll")
+
+    # The forecasts come from the backtest's held-out matches; the raw prices
+    # have to be looked up for the same ones, because a bet pays the margin.
+    outcomes = forecasts["outcomes"]
+    priced = matches.dropna(subset=list(ODDS_COLUMNS)).tail(len(outcomes))
+    if len(priced) != len(outcomes):
+        st.info("No hay cuotas crudas para todos los partidos evaluados; no se puede simular.")
+        return
+
+    name = next(iter(forecasts["models"]))
+    model_probs = forecasts["models"][name]
+    odds = priced[list(ODDS_COLUMNS)].to_numpy(dtype=float)
+
+    fraction = st.slider("Fracción de Kelly", 0.05, 1.0, 0.25, step=0.05,
+                         help=HELP["fb_kelly_fraction"])
+    simulation = simulate_bankroll(model_probs, forecasts["market"], odds, outcomes,
+                                   fraction=fraction, n_paths=DEFAULT_PATHS, seed=0)
+    if not simulation["n_staked"]:
+        st.info(
+            f"**{MODEL_ES.get(name, name)}** no encontró ninguna apuesta con valor en estos "
+            "partidos: su probabilidad nunca superó a la cuota cruda. Es el resultado más "
+            "común y no es un error."
+        )
+        return
+
+    figure = go.Figure()
+    for label, paths, colour in (("Si la ventaja es real", simulation["paths"], None),
+                                 ("Si no lo es", simulation["null_paths"], "#999999")):
+        median = np.median(paths, axis=0)
+        figure.add_trace(go.Scatter(y=median, mode="lines", name=label,
+                                    line=dict(color=colour) if colour else None))
+        figure.add_trace(go.Scatter(y=np.quantile(paths, 0.9, axis=0), mode="lines",
+                                    line=dict(width=0), showlegend=False, hoverinfo="skip"))
+        figure.add_trace(go.Scatter(y=np.quantile(paths, 0.1, axis=0), mode="lines",
+                                    line=dict(width=0), fill="tonexty", opacity=0.2,
+                                    showlegend=False, hoverinfo="skip"))
+    figure.update_layout(xaxis_title="Apuestas", yaxis_title="Banca (empieza en 1)",
+                         yaxis_type="log", height=360)
+    chart(figure, "Banca simulada, con y sin ventaja real", "fb_bankroll_paths")
+
+    st.dataframe(summarise(simulation).style.format({
+        "median_roi": "{:+.1%}", "roi_ci_low": "{:+.1%}", "roi_ci_high": "{:+.1%}",
+        "share_losing": "{:.0%}", "median_drawdown": "{:.0%}",
+        "worst_drawdown_95": "{:.0%}", "risk_of_ruin": "{:.0%}"}),
+        use_container_width=True, hide_index=True)
+
+    st.markdown("**El precio de apostar más fuerte**", help=HELP["fb_kelly_fraction"])
+    sweep = stake_fraction_sweep(model_probs, forecasts["market"], odds, outcomes,
+                                 n_paths=200, seed=0)
+    st.dataframe(sweep.style.format({
+        "median_roi": "{:+.1%}", "median_drawdown": "{:.0%}",
+        "worst_drawdown_95": "{:.0%}", "risk_of_ruin": "{:.0%}",
+        "share_losing": "{:.0%}"}), use_container_width=True, hide_index=True)
+    st.caption(
+        "La caída máxima crece mucho más rápido que el retorno. Kelly entero maximiza el "
+        "crecimiento **si la probabilidad es correcta**, y la de un modelo es una estimación "
+        "con error — por eso el valor por defecto es un cuarto. En datos sintéticos, un modelo "
+        "al que se le da la verdad exacta se arruina igual apostando a Kelly entero.",
+        help=HELP["fb_bankroll"],
+    )
 
 
 def _render_clv(raw_frame, method, is_demo=False):

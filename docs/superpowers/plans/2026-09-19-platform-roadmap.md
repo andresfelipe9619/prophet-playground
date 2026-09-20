@@ -267,17 +267,18 @@ screen currently says so.
 **Files:** `football/bankroll.py` (new), `tests/test_football_bankroll.py` (new),
 `dashboard/football_page.py`, `dashboard/ui.py`, `docs/football.md`.
 
-- [ ] `simulate_bankroll(bets, stake_fraction, n_paths, seed)` — bankroll paths over a
+- [x] `simulate_bankroll(bets, stake_fraction, n_paths, seed)` — bankroll paths over a
       realised or bootstrapped bet sequence.
-- [ ] `drawdown_distribution`, `risk_of_ruin`, and a bootstrapped ROI interval.
-- [ ] **Show the zero-edge path beside every simulation.** A bankroll chart of a model
+- [x] `drawdown_distribution`, `risk_of_ruin`, and a bootstrapped ROI interval.
+- [x] **Show the zero-edge path beside every simulation.** A bankroll chart of a model
       with no measured edge is the football twin of presenting a lottery hindcast as a
       prediction, and the only thing that stops it reading as a promise is the null path
       drawn next to it.
-- [ ] Tests: at zero edge the median terminal bankroll is below the start (the margin);
+- [x] Tests: the null bleeds (**not** as this plan first assumed — a zero-edge bettor makes no
+      bets at all, so the null had to be redefined as the same bets in a world without the edge);
       full Kelly's drawdown distribution dominates the quarter's; risk of ruin rises with
       stake fraction.
-- [ ] Dashboard: gated behind the measured verdict, exactly as the staking surface
+- [x] Dashboard: gated behind the measured verdict, exactly as the staking surface
       already is.
 
 ## Item 9: parameter uncertainty
