@@ -29,6 +29,11 @@ import streamlit as st
 
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 from football.backtest import MODEL_NAMES
+from football.calibration import (
+    calibration_in_the_large,
+    expected_calibration_error,
+    reliability_curve,
+)
 from football.common import (
     DEFAULT_DATA_DIR,
     ODDS_COLUMNS,
@@ -160,6 +165,81 @@ def _fingerprint(matches):
         str(matches["ds"].max()),
         int(matches["home_goals"].sum()),
         int(matches["away_goals"].sum()),
+    )
+
+
+def _render_out_of_sample_calibration(table):
+    """Calibration of the backtest's own forecasts — the out-of-sample version.
+
+    Fed from `table.attrs["forecasts"]`, which `compare_models` attaches, so
+    nothing is refitted to ask this second question of the same run.
+
+    It sits **after** the verdict and says so in its own copy, because the one
+    way to misread it is as a result. A forecast that simply copies the closing
+    price is perfectly calibrated and has no edge whatsoever; calibration says
+    whether the numbers mean what they claim, not whether they beat anything.
+    """
+    forecasts = table.attrs.get("forecasts")
+    if not forecasts or not forecasts["models"]:
+        return
+
+    section("¿Sus porcentajes significan lo que dicen?", "fb_oos_calibration")
+    outcomes = forecasts["outcomes"]
+    series = {MODEL_ES.get(name, name): probs for name, probs in forecasts["models"].items()}
+    series["Mercado"] = forecasts["market"]
+
+    figure = go.Figure()
+    figure.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines",
+                                name="Calibración perfecta", line=dict(dash="dash")))
+    rows = []
+    for label, probs in series.items():
+        curve = reliability_curve(probs, outcomes)
+        usable = [r for r in curve if not np.isnan(r["observed_frequency"])]
+        if usable:
+            figure.add_trace(go.Scatter(
+                x=[r["mean_forecast"] for r in usable],
+                y=[r["observed_frequency"] for r in usable],
+                mode="markers+lines", name=label,
+                marker=dict(size=[min(6 + r["count"] / 12, 22) for r in usable]),
+                text=[f"{r['count']} pronósticos" for r in usable]))
+        report = expected_calibration_error(probs, outcomes)
+        rows.append({"Serie": label, "Error de calibración": report["ece"],
+                     "Cubre": report["coverage"], "Grupos usados": report["n_bins_used"]})
+
+    figure.update_layout(xaxis_title="Lo que dijo el modelo",
+                         yaxis_title="Lo que pasó de verdad", height=380,
+                         xaxis_tickformat=".0%", yaxis_tickformat=".0%")
+    chart(figure, "Curva de calibración fuera de muestra", "fb_oos_reliability")
+
+    st.dataframe(pd.DataFrame(rows).style.format(
+        {"Error de calibración": "{:.4f}", "Cubre": "{:.0%}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "«Cubre» es la parte de los pronósticos que cayó en grupos con partidos suficientes para "
+        "medirlos. Un error pequeño sobre una décima parte de los pronósticos no es un error "
+        "pequeño.",
+        help=HELP["fb_oos_calibration"],
+    )
+
+    st.markdown("**¿Pronostica cada resultado tan seguido como pasa?**", help=HELP["fb_citl"])
+    model_label, model_probs = next(iter(series.items()))
+    citl = pd.DataFrame(calibration_in_the_large(model_probs, outcomes))
+    citl["Resultado"] = citl["outcome"].map(OUTCOME_ES)
+    citl["¿Desviado? (corregido)"] = citl["miscalibrated_corrected"].map(
+        {True: "Sí", False: "No"})
+    st.dataframe(
+        citl[["Resultado", "mean_forecast", "base_rate", "difference", "p_value",
+              "¿Desviado? (corregido)"]]
+        .rename(columns={"mean_forecast": f"Media de {model_label}",
+                         "base_rate": "Frecuencia real", "difference": "Diferencia",
+                         "p_value": "p (dos colas)"})
+        .style.format({f"Media de {model_label}": "{:.1%}", "Frecuencia real": "{:.1%}",
+                       "Diferencia": "{:+.1%}", "p (dos colas)": "{:.3f}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "Son tres pruebas sobre los mismos partidos, así que la columna corregida es la que "
+        "cuenta. Aquí la prueba es de **dos colas** a propósito: pronosticar de más y "
+        "pronosticar de menos son los dos un error de calibración.",
     )
 
 
@@ -350,14 +430,16 @@ def render():
                 try:
                     model = _fit_dixon_coles(matches, model_cache_key)
                     model_probs = model.predict_matches(priced)
-                    p_home_model = pd.Series(model_probs[:, 0], index=priced.index)
-                    observed_model = (priced["outcome"] == "H").astype(float)
-                    m_buckets = pd.cut(p_home_model, bins=list(CALIBRATION_BINS),
-                                       include_lowest=True)
-                    m_grouped = pd.DataFrame(
-                        {"p": p_home_model, "y": observed_model, "bucket": m_buckets})
-                    m_summary = m_grouped.groupby("bucket", observed=True).agg(
-                        predicha=("p", "mean"), observada=("y", "mean"), partidos=("y", "size"))
+                    # The binning rule lives in football/calibration.py so that
+                    # this diagnostic and the out-of-sample curve in tab 4 drop
+                    # a too-sparse bin by the same standard.
+                    curve = reliability_curve(model_probs, list(priced["outcome"]),
+                                              bins=len(CALIBRATION_BINS) - 1, outcome="H")
+                    m_summary = pd.DataFrame([
+                        {"bucket": f"[{r['bin_low']:.1f}, {r['bin_high']:.1f})",
+                         "predicha": r["mean_forecast"], "observada": r["observed_frequency"],
+                         "partidos": r["count"]}
+                        for r in curve if r["count"]])
 
                     figure = go.Figure()
                     figure.add_trace(go.Scatter(
@@ -374,9 +456,12 @@ def render():
                     st.dataframe(m_summary.reset_index().astype({"bucket": str}),
                                  use_container_width=True)
                     st.caption(
-                        "Ajustado sobre las mismas temporadas que se muestran (dentro de muestra), "
-                        "así que esto favorece al modelo. El veredicto fuera de muestra está en "
-                        "**Resultados**."
+                        "Ajustado sobre las mismas temporadas que se muestran (dentro de "
+                        "muestra), así que esto favorece al modelo: la versión **fuera de "
+                        "muestra**, sobre partidos que el modelo no vio, está en "
+                        "**4 · ¿Le gana al mercado?**, debajo del veredicto. Los grupos con "
+                        "muy pocos partidos salen vacíos a propósito: una frecuencia sobre tres "
+                        "partidos no es una medición."
                     )
                 except Exception as exc:  # noqa: BLE001 - a fit warning must not kill the page
                     st.warning(f"No se pudo ajustar el modelo para la curva de calibración: {exc}")
@@ -545,6 +630,8 @@ def render():
                     "con el signo favorable.",
                     help=HELP["fb_beats_market"],
                 )
+
+                _render_out_of_sample_calibration(table)
 
     # ------------------------------------------------------------------ Valor
     # Rendered after the backtest block, not beside the forecast: Streamlit runs

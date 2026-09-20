@@ -285,6 +285,9 @@ exist:
 - **`football/backtest.py`** — walk-forward (`run_all`), date-cutoff
   (`run_holdout`, `expanding` / `frozen`) and multi-model (`compare_models`)
   evaluation.
+- **`football/calibration.py`** — whether a forecast's 30% is a real 30%, and a
+  recalibration that is never fitted on what it is then scored on
+  ([§12](#12-calibration-a-different-question-from-edge)).
 
 **What is still missing.** Lineups and injuries — the single largest thing the
 closing price knows and no model here does; in-play data; and any notion of a
@@ -454,3 +457,78 @@ one-sided against a null mean of 0. See [Evaluation](evaluation.md#9-football-di
 ---
 
 **Next:** [Cycling](cycling.md) · [Architecture](architecture.md) · [Evaluation](evaluation.md) · [Development](development.md)
+
+
+## 12. Calibration: a different question from edge
+
+`scoring.py` returns one number, and one number cannot separate two very
+different failures. A model that ranks matches well but states its case too
+strongly and a model that is appropriately humble about matches it has no idea
+about can post the same RPS. The first is fixable with one parameter; the
+second needs a better model.
+
+That distinction is not academic, because of what sits downstream.
+`value.py` turns a probability into a stake, and an over-confident probability
+sizes up **precisely when the model is most confidently wrong** — which is what
+the quarter-Kelly default was already hedging against without being able to say
+so. A calibration curve is the thing that can say so.
+
+### The one sentence that has to travel with it
+
+**A calibrated model is not a profitable one.** A forecast that simply copies
+the de-margined closing price is perfectly calibrated and has no edge
+whatsoever. Calibration asks whether the numbers mean what they claim; the
+verdict is still `beats_market_test`. This is why the dashboard renders the
+curve *after* the backtest verdict rather than beside it, and why every piece
+of copy on that surface says it outright. Treating a good calibration plot as a
+result is the football version of presenting a lottery hindcast as a
+prediction.
+
+### What it measures
+
+| Function | Question | Note |
+| --- | --- | --- |
+| `reliability_curve` | Does a 30% happen 30% of the time? | A bin below `MIN_BIN_COUNT` reports its count and **no** frequency |
+| `expected_calibration_error` | How far off, on average? | `coverage` says what share of forecasts it could measure — read it beside the error |
+| `calibration_in_the_large` | Is the whole model listing to one side? | **Two-sided**, and both verdicts |
+
+The sparse-bin rule is `lottery/analysis/structure.py:goodness_of_fit`'s, in a
+new costume: three matches cannot measure a frequency, and drawing them as if
+they could is how a reliability diagram invents a story. The only values a
+three-match bin can take are 0, ⅓, ⅔ and 1, none of which says anything about a
+forecast of 0.27.
+
+`calibration_in_the_large` being two-sided is a deliberate departure from the
+rest of this package, where only `p_value_greater` may back a claim because a
+model *worse* than its baseline is not a finding. Here it is: forecasting home
+wins at 50% when they happen 40% of the time, and forecasting them at 30%, are
+both mis-calibration, and a one-sided test waves one of them through. It is also
+three tests over one set of matches, so it emits `miscalibrated` and
+`miscalibrated_corrected` together like everything else here.
+
+### Fixing it, honestly
+
+`TemperatureScaler` raises every probability to 1/T and renormalises. That is
+the entire model, and its smallness is the point: it has nowhere to put noise,
+so a temperature fitted on a few hundred matches is a claim about
+over-confidence and nothing else. If a model's only fault is stating its case
+too strongly, this fixes it completely; if the fix is large, the diagnosis was
+wrong. `IsotonicCalibrator` is the free-form upper bound — run it to find out
+what recalibration could buy at most, and if it barely beats the temperature,
+the model's problem is not its confidence.
+
+**The gate.** `prequential_calibrate` fits each row's correction on the rows
+strictly before it and applies it to that row alone. The leading `min_fit` rows
+pass through untouched, because the alternative is fitting a correction on a
+handful of matches and calling the result out-of-sample. This is the same
+refusal `ensemble.py` makes about its blend weight, for the same reason: fitting
+a parameter on the matches you then score is the leak this package exists
+around, and a calibrator fitted in-sample improves every score it touches and
+means nothing.
+
+`compare_models(..., calibrate="temperature")` wires it in, and does one more
+thing that is easy to get wrong: it **trims every model, the market and the
+outcomes by the same `min_fit`**. Scoring the whole series would mix rows the
+correction reached with rows it could not and pull any difference toward zero —
+and trimming one model and not another would break the rule that several models
+are scored on the same held-out set or not compared at all.

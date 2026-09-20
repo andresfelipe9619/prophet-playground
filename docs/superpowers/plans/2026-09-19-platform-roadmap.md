@@ -153,23 +153,23 @@ hedging against.
 `football/backtest.py`, `dashboard/football_page.py`, `dashboard/ui.py`, `docs/football.md`,
 `docs/evaluation.md`.
 
-- [ ] `reliability_curve(probs, outcomes, bins=10)` — binned forecast vs realised
+- [x] `reliability_curve(probs, outcomes, bins=10)` — binned forecast vs realised
       frequency, per outcome and pooled, with a count per bin. Sparse bins return NaN
       rather than a point, the same rule `structure.py:goodness_of_fit` already follows.
-- [ ] `expected_calibration_error` and `calibration_in_the_large` (mean forecast minus
+- [x] `expected_calibration_error` and `calibration_in_the_large` (mean forecast minus
       base rate, with its interval through `core/significance.py`).
-- [ ] `TemperatureScaler` — one parameter, fitted by MLE on the log-odds. The minimal
+- [x] `TemperatureScaler` — one parameter, fitted by MLE on the log-odds. The minimal
       recalibrator, and the one that cannot overfit.
-- [ ] `IsotonicCalibrator` — per-outcome isotonic regression with renormalisation.
-- [ ] **Fitted walk-forward, never in-sample.** A `calibrate=` option on
+- [x] `IsotonicCalibrator` — per-outcome isotonic regression with renormalisation.
+- [x] **Fitted walk-forward, never in-sample.** A `calibrate=` option on
       `football/backtest.py` fits the recalibrator on the training window only and applies
       it to the held-out window. Fitting it on the matches you then score is the leak this
       package exists around, and `ensemble.py` already refuses the same temptation.
-- [ ] Tests: a perfectly calibrated forecast has ECE ≈ 0 and temperature ≈ 1; a
+- [x] Tests: a perfectly calibrated forecast has ECE ≈ 0 and temperature ≈ 1; a
       deliberately over-confident forecast is pulled toward the base rate and its RPS
       improves; the market's own de-margined vector is near-calibrated on sample data;
       calibrating in-sample vs walk-forward gives different answers (pins the gate).
-- [ ] Dashboard: reliability diagram in **¿Le gana al mercado?**, with `PLAIN` copy whose
+- [x] Dashboard: reliability diagram in **¿Le gana al mercado?**, with `PLAIN` copy whose
       third field says that a calibrated model is not a profitable one.
 
 ## Item 5: `football/clv.py`

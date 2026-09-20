@@ -124,3 +124,36 @@ def test_an_unknown_model_is_refused_by_name():
     with pytest.raises(ValueError, match="Unknown models"):
         compare_models(_matches(market_noise=0.5), n_windows=20, min_train=160,
                        models=("dixon_coles", "neural_net"))
+
+
+# ----------------------------------------------------- the recalibration gate
+
+
+def test_recalibration_scores_only_the_windows_where_it_applied():
+    """The leading forecasts pass through uncalibrated, so scoring them would
+    mix rows the correction reached with rows it could not and pull any
+    difference toward zero. Every model is trimmed by the same amount, so the
+    comparison stays on one identical set of matches."""
+    matches = _matches(market_noise=0.9)
+    plain = compare_models(matches, n_windows=120, min_train=160, models=("elo",))
+    tuned = compare_models(matches, n_windows=120, min_train=160, models=("elo",),
+                           calibrate="temperature", calibrate_min_fit=40)
+
+    assert int(tuned["n_windows_scored"].iloc[0]) == int(plain["n_windows_scored"].iloc[0]) - 40
+    assert tuned["calibrate"].iloc[0] == "temperature"
+    assert plain["calibrate"].iloc[0] is None
+
+
+def test_recalibration_keeps_every_model_on_the_same_matches():
+    table = compare_models(_matches(market_noise=0.9), n_windows=120, min_train=160,
+                           models=("dixon_coles", "elo"),
+                           calibrate="temperature", calibrate_min_fit=40)
+    assert table["n_windows_scored"].nunique() == 1
+
+
+def test_the_manifest_records_that_the_run_was_recalibrated():
+    """Two runs over the same matches that disagree are not comparable unless
+    the thing that differed is written down."""
+    table = compare_models(_matches(market_noise=0.9), n_windows=100, min_train=160,
+                           models=("elo",), calibrate="temperature")
+    assert table.attrs["manifest"]["inputs"]["calibrate"] == "temperature"
