@@ -572,6 +572,20 @@ HELP = {
     "cy_model_vs_baseline": "El modelo ajustado frente al ranking previo, ciclista a ciclista. "
                             "Donde discrepan está lo que el modelo cree ver; si vale algo o no lo "
                             "dice la pestaña Evaluación, no esta.",
+    "cy_tab_terreno": "El terreno de cada carrera, quién rinde en cuál, cómo va el equipo de "
+                      "cada ciclista y cuántos días lleva compitiendo.",
+    "cy_terrain_pick": "El terreno de la carrera que se pronostica lo pones tú, del libro de ruta. "
+                       "No se deduce del resultado: deducirlo sería mirar la carrera que se quiere "
+                       "predecir, y el número resultante se vería exactamente igual de bien.",
+    "cy_terrain_labels": "De cada carrera pasada se mira qué proporción de los que llegaron "
+                         "comparte el tiempo del ganador. Una llegada masiva la comparte casi "
+                         "toda; una etapa de montaña, casi nadie.",
+    "cy_specialisation": "Rendimiento medio en montaña menos rendimiento medio en llano. Positivo "
+                         "= escalador. Se calcula solo con carreras anteriores a la elegida.",
+    "cy_team_strength": "Cómo va el resto del equipo, **sin contar al ciclista**. Incluirlo sería "
+                        "su propia forma con el maillot del equipo puesto, contada dos veces.",
+    "cy_fatigue": "Días efectivamente competidos en las últimas tres semanas, no días de "
+                  "calendario: quien abandonó hace quince días dejó de acumular.",
     "cy_tab_evaluacion": "El veredicto: se recorre carrera por carrera, cada pronóstico se "
                          "construye **solo** con lo anterior, y se puntúa contra el ranking previo.",
     "cy_metric": "Plackett-Luce puntúa el orden de llegada completo y es el veredicto. Las otras "
@@ -933,6 +947,18 @@ PLAIN = {
                "corredores, un sorteo uniforme daría 0,55% — por eso ese sorteo **no** es la línea "
                "base contra la que hay que medirse, sino el ranking previo.",
     },
+    "cy_tab_terreno": {
+        "veo": "El terreno de cada carrera pasada, deducido de cómo terminó, y cuatro cifras por "
+               "ciclista: cómo rinde en montaña, cómo en llano, cómo va su equipo y cuántos días "
+               "lleva compitiendo.",
+        "concluyo": "Un esprínter y un escalador no son dos puntos de la misma escala, y una sola "
+                    "cifra de fuerza por ciclista no puede decir eso. Estas columnas son la "
+                    "materia prima de un modelo que sí puede.",
+        "ojo": "El terreno de una carrera **pasada** se deduce de su resultado; el de la carrera "
+               "que quieres predecir tiene que venir del libro de ruta. Deducirlo del resultado "
+               "sería usar la respuesta, y no se notaría: la etiqueta se ve igual de bien de las "
+               "dos maneras.",
+    },
     "cy_tab_evaluacion": {
         "veo": "Cada carrera puntuada dos veces: con el pronóstico del modelo y con el ranking "
                "previo, usando solo lo que se sabía antes de esa carrera.",
@@ -979,6 +1005,9 @@ PLAIN = {
 # without a new argument at the call site. Different job from HELP: the ⓘ says
 # what the chart means and does not mean, this says where to point your eyes.
 READ = {
+    "cy_terrain_labels": "Cada punto es una carrera. Arriba del corte, llegada en grupo (llano); "
+                         "abajo, la carrera se rompió (montaña). Un punto pegado a la línea es "
+                         "una etiqueta que no está clara.",
     "fb_oos_reliability": "Sigue la diagonal con la vista: los puntos deberían estar encima. Por "
                       "debajo = el modelo prometió más de lo que pasó; por encima = se quedó "
                       "corto. El tamaño del punto es cuántos partidos hay detrás.",

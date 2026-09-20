@@ -10,10 +10,12 @@ layer that lets a forecast mean something: a **ranking baseline**
 ordering ([§7](#7-scoring-an-ordering-cyclingscoringpy)), a fitted
 **Plackett-Luce** rider-strength model ([§8](#8-the-model-cyclingplackett_lucepy))
 and the paired evaluation against that baseline
-([§9](#9-evaluation-cyclingevaluationpy)), and the **market baseline** that is
-the bar wherever a price exists ([§10](#10-the-market-cyclingmarketpy-and-cyclingpricespy)).
-What is still missing is in [§12](#12-what-is-not-built-yet) — most of all a
-source for those prices, since nothing here fetches them.
+([§9](#9-evaluation-cyclingevaluationpy)), the **market baseline** that is the
+bar wherever a price exists ([§10](#10-the-market-cyclingmarketpy-and-cyclingpricespy)),
+and the covariates a single strength number leaves out
+([§11](#11-terrain-specialisation-team-and-fatigue-cyclingfeaturespy)). What is
+still missing is in [§13](#13-what-is-not-built-yet) — most of all a source for
+those prices, since nothing here fetches them.
 
 ## 1. Where it sits between the other two
 
@@ -193,6 +195,15 @@ test easier than reality:
 - **Terrain.** Ability is worth `CLIMBING_SECONDS_PER_ABILITY` on a hard day and
   `SPRINT_SECONDS_PER_ABILITY` on a flat one, so the front of a sprint stage
   arrives on one time while a mountain stage splits it by minutes.
+
+`specialisation` adds a fourth, off by default: above 0, a rider's mountain
+strength and flat strength are **different numbers** (`climb_true` and
+`sprint_true`, both answer keys), so the world contains real climbers and
+sprinters. At 0 they are one number, no extra randomness is drawn, and every
+seeded fixture is bit-identical to the race this generator has always made. It
+exists so "does conditioning on terrain help?" has a world with a known answer
+on both sides — [§11](#11-terrain-specialisation-team-and-fatigue-cyclingfeaturespy)
+uses it exactly the way `lottery/analysis/sensitivity.py` plants a bias.
 
 **One known limitation, stated rather than hidden.** Abandons are independent
 draws against a per-rider hazard, which is wrong in the way that matters most:
@@ -468,28 +479,148 @@ the shape a price file must have for the verdict to be against the market
 instead of against the ranking, so that the day prices are to hand the baseline
 is already there.
 
-## 11. The dashboard page
+## 11. Terrain, specialisation, team and fatigue: `cycling/features.py`
 
-`streamlit run dashboard/app.py`, then pick **🚴 Ciclismo** in the sidebar. Five
+`plackett_luce.py` gives every rider one worth. That is the right first model and
+it is wrong about the thing every cycling fan knows: a sprinter and a climber are
+not two points on one scale, they are good at different days. This module builds
+the covariates that say so, and `TerrainPlackettLuce` is the first model to use
+one.
+
+### Terrain is known before a race; a result's terrain is not
+
+The parcours of tomorrow's stage is published months ahead, so conditioning on it
+is not foresight. But nothing in this project's data contract carries it — a
+scraped result has a date, a rank and a time, and no roadbook. So terrain here is
+**inferred from the finish**, which is fine for a stage that has happened and is
+leakage for the stage being predicted.
+
+The leak would be invisible: a label read off tomorrow's result looks exactly
+like a label read off a roadbook. So the refusal is structural rather than
+advisory. `terrain_of` raises for a race at or after `as_of`, everything that
+conditions on terrain takes the target race's terrain as an argument, and
+`roadbook(dates, terrains)` is where the caller supplies it — from a published
+roadbook, a hand-written list, or, in tests, the generator's own stage plan,
+which is fixed before the race is simulated and is therefore honestly exogenous.
+
+### What the inference reads
+
+The share of finishers credited with the winner's **exact** time. A flat stage
+ends in a bunch sprint and most of the field shares one time; a mountain stage
+strings the race out and almost nobody does. Measured on the synthetic Grand
+Tour the two classes sit at 0.80 and 0.01 with nothing between them, so the 0.5
+threshold is the middle of a gap rather than a tuned number. It reads the time
+*structure* rather than the time *spread*, because a spread in seconds is not
+comparable between a four-hour stage and a 45-minute time trial.
+
+### The other three
+
+- **Specialisation** is climbing form minus sprinting form, not the two levels:
+  the levels are dominated by how good the rider is overall, and the tilt is the
+  part that is about what kind of rider they are.
+- **Team strength excludes the rider it describes.** A team mean that includes
+  them is their own form wearing a team jersey, and it would enter a model twice.
+- **Fatigue is race days, not calendar days.** A rider who has raced eighteen of
+  the last twenty-one and one who flew in are in different states and the date
+  cannot tell them apart. A rider who abandoned a fortnight ago correctly stops
+  accumulating.
+
+Every one of them goes through a single `_history` call whose `<` is the same
+refusal `form_worths` makes, and one test covers the lot by rebuilding each
+feature from a hand-truncated frame.
+
+### Terrain-conditional worths: `TerrainPlackettLuce`
+
+One strength per rider **per kind of day**: the whole calendar is fitted first,
+then each terrain's races on top of it, with the unconditional worths as the
+**prior mean** rather than the field average. That is the difference between a
+refinement and a noisier copy — seven mountain stages shrunk toward 1 is seven
+stages of noise around the field, while seven shrunk toward the rider's own
+overall strength is a correction to it. A rider who has ridden no mountain
+stages keeps their overall worth rather than being reset to the field, which was
+a real defect in the first version of this and an invisible one: the reset
+produces a perfectly ordinary number.
+
+A terrain with fewer than `MIN_TERRAIN_RACES` races **falls back to the
+unconditional fit**, and `available` says which terrains got their own. A silent
+fallback would leave the model looking conditional everywhere while being
+unconditional half the time, which is exactly what a results table cannot show.
+
+### Does it help? Measured, in a world with specialists and a world without
+
+`cycling/sample_data.py` gained a `specialisation` dial for this — at 0 the race
+is exactly the one it has always generated, and above 0 a rider's mountain
+strength and flat strength are different numbers. This is `sensitivity.py`'s move
+in a third domain: a null result about terrain means nothing unless the same
+machinery finds terrain when it was planted.
+
+Every number below is the terrain-conditional fit against the **unconditional
+one**, paired per race through `beats_baseline_test`, with the ranking and the
+uniform draw in the same corrected family. Positive means the conditional model
+scored lower, which is better.
+
+| calendar | specialists planted | races scored | effect | p (one-sided) | corrected verdict |
+| --- | --- | --- | --- | --- | --- |
+| 21 stages, seeds 0 / 3 / 7 | none | 15 | +0.043 / +0.051 / +0.058 | 0.063 / 0.076 / 0.056 | no |
+| 21 stages, seeds 0 / 3 / 7 | `specialisation=2.0` | 15 | +0.080 / +0.075 / +0.095 | 0.024 / 0.028 / 0.019 | no |
+| 60 stages, seed 0 | none | 54 | +0.140 | < 1e-5 | **yes** |
+| 60 stages, seed 0 | `specialisation=2.0` | 54 | +0.176 | < 1e-5 | **yes** |
+
+At 15 races nothing clears the corrected threshold even where the edge is real
+and planted — which is §9's sample-size point arriving exactly where it was
+predicted to, and is why the 60-stage rows exist. In the same 60-stage runs the
+ranking (-0.011) and the uniform draw (-0.057) both lose to the plain
+Plackett-Luce fit, which is the comparison table doing its usual job.
+
+Two things in that table are worth more than the verdicts.
+
+**The effect grows with the planted specialisation**, which is the control
+working: the machinery finds specialists in proportion to how many there are.
+
+**And it is positive even with no specialists at all.** That is not a bug and it
+is not luck. On this generator ability is worth three minutes on a mountain stage
+and four seconds in a sprint, so a flat stage is very nearly pure noise — and a
+conditional fit for the mountains simply excludes it. Terrain conditioning here
+buys *weighting the informative days*, not only *finding specialists*, and on a
+long enough calendar that alone clears the corrected bar. How much of this
+carries to real racing is an open question: real sprints are less purely random
+than these, so expect less.
+
+**Nothing on this is wired into a verdict by default.** The dashboard's
+walk-forward stays unconditional, because a roadbook column does not exist in
+the contract and the alternative — inferring the target race's terrain — is the
+leak this section is built around.
+
+## 12. The dashboard page
+
+`streamlit run dashboard/app.py`, then pick **🚴 Ciclismo** in the sidebar. Six
 tabs: **Datos**, **Abandonos** and **Tiempos** put the three invariants of §3 on
 screen, since none of them is visible in the shape of a frame; **Pronóstico**
 shows the baseline and the model side by side for one race, built only from what
-came before its date; **¿Le gana al ranking?** runs the walk-forward comparison.
+came before its date, with a terrain selector the reader fills in *from the
+roadbook* — and a caption saying so, plus how many past races of that terrain
+were behind the fit or that it fell back to the unconditional one; **Terreno y
+forma** puts §11's covariates on screen descriptively, including the warning
+that where sprints are near-random every strong rider reads as a climber;
+**¿Le gana al ranking?** runs the walk-forward comparison.
 Loading a stage result together with a general classification renders the
 refusal. Details in
 [Dashboard §4](dashboard.md#4-ciclismo-the-result-contract-the-ranking-and-the-model).
 
-## 12. What is not built yet
+## 13. What is not built yet
 
 1. **A price source.** The market baseline exists ([§10](#10-the-market-cyclingmarketpy-and-cyclingpricespy))
    and nothing fetches prices for it, so in practice every verdict is still
    against the ranking and says so. This is now a data problem rather than a
    modelling one, which is the smaller of the two.
-2. **Course and terrain.** A climber and a sprinter are not one strength number,
-   and a model that cannot tell a mountain stage from a bunch sprint is leaving
-   most of the available signal on the table.
-3. **Teams.** Riders work for each other, which is the largest piece of structure
-   the current model ignores entirely.
+2. **A roadbook.** The terrain machinery exists
+   ([§11](#11-terrain-specialisation-team-and-fatigue-cyclingfeaturespy)) and
+   the one thing it needs — the terrain of the race being predicted, from
+   outside its own result — is not in the data contract. Until it is, the
+   walk-forward stays unconditional.
+3. **Teams riding for each other.** `team_strength` is a covariate about the
+   eight riders around someone; the tactics are not modelled at all, and they
+   are the largest piece of structure still missing.
 4. **Correlated abandons.** The synthetic generator draws them independently,
    which is wrong in the way that matters most — real abandons cluster on the
    same day, in the same crash.

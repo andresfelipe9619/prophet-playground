@@ -2,12 +2,8 @@
 
 Run through `dashboard/app.py`, which owns the sidebar's domain selector.
 
-**What this page deliberately does not do.** There is no cycling model here yet,
-no scoring rule for a finishing order, and not even the ranking baseline a model
-would have to beat. So nothing on this page predicts or scores anything; it
-describes the data.
-
-What it *is* for is the part that costs most when it goes unnoticed. The three
+**What this page is for**, before anything it forecasts, is the part that costs
+most when it goes unnoticed. The three
 things the contract protects — one kind of result per frame, non-finishers kept,
 times stored as totals rather than gaps — are all invisible in the shape of a
 frame, so this page puts them on screen: which kind of result is loaded, how many
@@ -34,7 +30,8 @@ from cycling.baseline import (
 )
 from cycling.common import DEFAULT_DATA_DIR, FINISHED, STAGE, format_seconds
 from cycling.evaluation import compare_forecasters, race_groups
-from cycling.plackett_luce import PlackettLuce
+from cycling.features import CLIMB, SPRINT, feature_frame, infer_terrain
+from cycling.plackett_luce import PlackettLuce, TerrainPlackettLuce
 from cycling.processor import (
     ResultFormatError,
     check_result_format,
@@ -63,7 +60,20 @@ METRIC_ES = {"plackett_luce": "Orden completo (Plackett-Luce) — el veredicto",
 
 
 @st.cache_data(show_spinner=False)
-def _fit_and_forecast(_results, cache_key, riders, as_of):
+def _terrain_labels(_results, cache_key):
+    """Terrain of every race in the frame, read off how each one finished."""
+    return infer_terrain(_results)
+
+
+@st.cache_data(show_spinner=False)
+def _features(_results, cache_key, riders, as_of, terrain, teams):
+    """Per-rider covariates for one start list, from results strictly before the race."""
+    return feature_frame(_results, list(riders), as_of=as_of, terrain=terrain,
+                         teams=dict(teams) if teams else None)
+
+
+@st.cache_data(show_spinner=False)
+def _fit_and_forecast(_results, cache_key, riders, as_of, terrain=None):
     """The ranking baseline and the fitted model for one race, from prior results only.
 
     `_results` is underscore-prefixed because the frame carries `.attrs` that
@@ -73,8 +83,18 @@ def _fit_and_forecast(_results, cache_key, riders, as_of):
     """
     history = _results[_results["ds"] < as_of]
     ranking = form_worths(history, riders, as_of=as_of)
-    model = PlackettLuce.fit(history).worths_for(riders) if len(history) else None
-    return ranking, model
+    if not len(history):
+        return ranking, None, None
+    if terrain is None:
+        return ranking, PlackettLuce.fit(history).worths_for(riders), None
+
+    # The terrain of the race being forecast comes from the reader's roadbook,
+    # never from its result — the fit only ever labels races that already
+    # happened. `n_races` says whether this terrain got its own fit or fell back
+    # to the unconditional one, which is a thing the numbers cannot show.
+    fitted = TerrainPlackettLuce.fit(history)
+    available = terrain in fitted.available
+    return ranking, fitted.worths_for(riders, terrain), (available, fitted.n_races.get(terrain, 0))
 
 
 @st.cache_data(show_spinner=False)
@@ -190,7 +210,7 @@ def render():
     shown = results[results["status"] == FINISHED] if show_finishers_only else results
 
     tabs = st.tabs(["1 · Datos", "2 · Abandonos", "3 · Tiempos", "4 · Pronóstico",
-                    "5 · ¿Le gana al ranking?"])
+                    "5 · Terreno y forma", "6 · ¿Le gana al ranking?"])
 
     # ------------------------------------------------------------------ Datos
     with tabs[0]:
@@ -307,8 +327,12 @@ def render():
     with tabs[3]:
         render_forecast_tab(results)
 
-    # ------------------------------------------------------------- Evaluación
+    # ---------------------------------------------------------------- Terreno
     with tabs[4]:
+        render_terrain_tab(results)
+
+    # ------------------------------------------------------------- Evaluación
+    with tabs[5]:
         render_evaluation_tab(results)
 
 
@@ -348,11 +372,31 @@ def render_forecast_tab(results):
         help=HELP["cy_baseline_pick"],
     )
 
-    ranking, model = _fit_and_forecast(results, (len(results), str(as_of), len(riders)),
-                                       riders, as_of)
+    terrain_label = st.radio(
+        "Terreno de esta carrera (del libro de ruta)",
+        ["Sin especificar", "Montaña", "Llano"], horizontal=True, help=HELP["cy_terrain_pick"])
+    terrain = {"Montaña": CLIMB, "Llano": SPRINT}.get(terrain_label)
+
+    ranking, model, terrain_fit = _fit_and_forecast(
+        results, (len(results), str(as_of), len(riders), terrain), riders, as_of, terrain)
     if model is None:
         st.info("No hay historia previa suficiente para ajustar el modelo.")
         return
+
+    if terrain_fit is not None:
+        fitted, n_terrain = terrain_fit
+        if fitted:
+            st.caption(
+                f"El modelo se ajustó **por terreno**: {n_terrain} carrera(s) anteriores de este "
+                "tipo, con cada ciclista encogido hacia su propia fuerza general y no hacia la "
+                "media del pelotón. El terreno de esta carrera lo pusiste tú; de su resultado no "
+                "se lee nada.", help=HELP["cy_terrain_pick"])
+        else:
+            st.caption(
+                f"Solo hay {n_terrain} carrera(s) anteriores de este terreno — muy pocas para "
+                "ajustar por separado, así que esto es el modelo sin condicionar. Se dice en vez "
+                "de callarlo: un modelo que parece condicionado y no lo está es peor que uno que "
+                "no lo pretende.", help=HELP["cy_terrain_pick"])
 
     top_n = st.slider("Tamaño del «top N»", 3, 30, 10)
     table = baseline_frame(riders, model, n=top_n, n_samples=2000, seed=0)
@@ -416,6 +460,75 @@ def render_forecast_tab(results):
             "acertar el centro del pelotón, que es la parte fácil. El veredicto está en la "
             "pestaña siguiente."
         )
+
+
+def render_terrain_tab(results):
+    """What a single strength number leaves out: terrain, specialisation, team, fatigue.
+
+    Descriptive, and it says so. Nothing here forecasts: these are the covariates
+    a terrain-conditional model is built from, put on screen so the reader can
+    see whether the data even distinguishes a mountain stage from a sprint
+    before any model claims to.
+    """
+    section("Terreno, especialistas y desgaste", "cy_tab_terreno")
+
+    labels = _terrain_labels(results, (len(results), str(results["ds"].max())))
+    readable = labels[labels["bunch_share"].notna()]
+    if readable.empty:
+        st.info(
+            "Ningún resultado cargado trae tiempos, y el terreno se lee de cuánta gente comparte "
+            "el tiempo del ganador. Sin tiempos no hay etiqueta — y una inventada sería peor que "
+            "ninguna."
+        )
+        return
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Carreras de montaña", int((readable["terrain"] == CLIMB).sum()))
+    c2.metric("Carreras de llano", int((readable["terrain"] == SPRINT).sum()))
+    c3.metric("Sin etiqueta", int(len(labels) - len(readable)))
+
+    figure = go.Figure()
+    for terrain, name in ((SPRINT, "Llano (llegada en grupo)"), (CLIMB, "Montaña")):
+        rows = readable[readable["terrain"] == terrain]
+        figure.add_scatter(x=rows["ds"], y=rows["bunch_share"], mode="markers", name=name)
+    figure.add_hline(y=0.5, line_dash="dot", line_color="gray", annotation_text="Corte")
+    figure.update_layout(yaxis_title="Comparten el tiempo del ganador",
+                         yaxis_tickformat=".0%", height=340)
+    chart(figure, "Cómo terminó cada carrera", "cy_terrain_labels")
+
+    groups = race_groups(results)
+    if len(groups) < 2:
+        return
+
+    key, group = groups[-1]
+    as_of = group["ds"].min()
+    riders = tuple(group["rider"])
+    teams = tuple(zip(group["rider"], group["team"], strict=True))
+    frame = _features(results, (len(results), str(as_of), len(riders)), riders, as_of, None, teams)
+
+    st.markdown(
+        f"**Ciclistas de la última carrera ({key[0]}, {as_of:%Y-%m-%d}), con lo que se sabía "
+        "antes de ella**")
+    table = (frame[["rider", "climb_form", "sprint_form", "specialisation",
+                    "team_strength", "race_days"]]
+             .sort_values("specialisation", ascending=False).head(20))
+    st.dataframe(
+        table.rename(columns={"rider": "Ciclista", "climb_form": "Montaña",
+                              "sprint_form": "Llano", "specialisation": "Escalador ↔ esprínter",
+                              "team_strength": "Equipo (sin él)", "race_days": "Días compitiendo"})
+        .style.format({"Montaña": "{:.2f}", "Llano": "{:.2f}", "Escalador ↔ esprínter": "{:+.2f}",
+                       "Equipo (sin él)": "{:.2f}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "«Montaña» y «Llano» son el promedio de puesto relativo (1 = ganó, 0 = último o no "
+        "clasificó) en cada tipo de día. La diferencia es la especialización. El equipo se calcula "
+        "**sin** el ciclista, y los días son días realmente competidos.",
+        help=HELP["cy_specialisation"])
+    st.caption(
+        "Cuidado con una lectura fácil: si en los esprints el orden es casi ruido, **todos** los "
+        "buenos parecen escaladores, porque es el único día donde su fuerza se ve. La columna "
+        "mide dónde se nota un ciclista, no necesariamente qué tipo de ciclista es.",
+        help=HELP["cy_team_strength"])
 
 
 def render_evaluation_tab(results):

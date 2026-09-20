@@ -314,16 +314,21 @@ than the model they test.
 **Files:** `cycling/market.py` (new), `cycling/features.py` (new), `cycling/scraper.py`,
 `cycling/plackett_luce.py`, `tests/`, `dashboard/cycling_page.py`, `docs/cycling.md`.
 
-- [ ] `cycling/market.py` — outright prices to de-margined worths. Cycling's book has
+- [x] `cycling/market.py` — outright prices to de-margined worths. Cycling's book has
       ~180 runners and an overround far above football's; `football/market.py`'s three
       normalisations disagree most exactly here, so `compare_methods` is not optional.
-- [ ] A price source and the contract for it, with the same "one source per frame" guard
+- [x] The contract for a price source (`cycling/prices.py`) — the source itself does not exist and the docs say so, with the same "one source per frame" guard
       the other two domains enforce.
-- [ ] `cycling/features.py` — parcours/terrain, rider specialisation (sprinter / climber /
-      rouleur / TT), team strength, days of accumulated fatigue.
-- [ ] Terrain-conditional worths in `plackett_luce.py`, gated behind `beats_baseline_test`
-      against the **market** where a price exists.
-- [ ] The uniform draw stays in every comparison table, for the reason it always has.
+- [x] `cycling/features.py` — parcours/terrain, rider specialisation, team strength (excluding
+      the rider it describes), days of accumulated fatigue. Specialisation shipped as **two**
+      classes, climb and sprint, not four: the label is inferred from how a race finished, and a
+      bunch share separates mountain from flat cleanly while nothing in a result distinguishes a
+      rouleur from a time triallist. Four classes would need a roadbook, which is the same
+      missing input as everything else here.
+- [x] Terrain-conditional worths in `plackett_luce.py` (`TerrainPlackettLuce`), gated behind
+      `beats_baseline_test` — against the unconditional fit, since no price source exists to
+      make the market the bar in practice. Measured with and without planted specialists.
+- [x] The uniform draw stays in every comparison table, for the reason it always has.
 
 ## Item 11: football shot-level data and features
 
