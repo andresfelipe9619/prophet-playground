@@ -1,24 +1,16 @@
 """Pre-registration: a timestamped, append-only log of predictions made *before* the draw.
 
-Everything else in this project is retrospective, and retrospective analysis can
-always be tuned after the fact — a window shifted, a model swapped, a run
-quietly not counted. None of that is dishonesty; it is what analysing data you
-have already seen does to anyone. The one thing that cannot be tuned afterwards
-is a prediction written down before the result existed.
+The reasoning, the three refusals and the storage now live in
+[`core/registry.py`](../../core/registry.py); this module is the lottery half
+of that contract. What it supplies is what `core/` deliberately lacks: what a
+prediction *is* here (five main numbers plus a superbalota), how to score one
+against a draw that has happened, and what to report beside the verdict.
 
-That is all this module is. Record a prediction against a future draw date, and
-score it once the draw has happened. What makes it evidence rather than
-bookkeeping is what it refuses to do:
-
-- **A prediction for a draw that already happened is rejected.** Not warned
-  about — rejected. A registry that accepts backdated entries proves nothing,
-  and one entry is enough to make the whole file worthless.
-- **Rows are append-only and never edited.** `record` refuses to write a second
-  prediction for the same (draw date, label) pair. Change your mind by
-  registering under a different label, which leaves both on the record.
-- **Every row is scored, or none are.** `score_pending` fills in results for
-  every draw that has since happened. There is no way to score selected rows,
-  because choosing which predictions to count is exactly the failure mode.
+The lift was not cosmetic. The lottery is the one domain where everybody
+already knows the answer is no, and a forward record meant nothing here beyond
+demonstrating the discipline. Football and cycling are where such a record
+would be evidence, and they had none — so the machinery moved out and they
+grew their own adapters beside this one.
 
 The file lives at the repo root and is **not** gitignored, unlike
 `exported_data/`. That is deliberate: committing it puts each prediction in
@@ -28,15 +20,15 @@ timestamp column the file writes about itself.
 At three draws a week, a year of this is 156 honest observations — enough, per
 `lottery/analysis/power.py`, to detect an edge of about +23% and nothing subtler. Worth
 knowing before you start, and it is why the summary reports the minimum
-detectable effect alongside the result.
+detectable effect alongside the result. `core/registry.py:status` deliberately
+reports no such thing, because what counts as resolution is a domain question.
 """
-
-import os
-from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
 
+from core import registry as core_registry
+from core.registry import RegistryError, RegistrySchema
 from lottery.analysis.power import minimum_detectable_effect
 from lottery.analysis.tickets import Ticket, check_ticket, draw_from_row
 from lottery.models.baseline import beats_chance_test, expected_super_match_rate
@@ -44,54 +36,28 @@ from lottery.models.common import MAIN_BALLS_DRAWN
 
 DEFAULT_REGISTRY_PATH = "predictions.csv"
 
-COLUMNS = [
-    "recorded_at",     # UTC timestamp, written by this module
-    "draw_date",       # the draw being predicted — must be in the future when recorded
-    "label",           # free text: which model, strategy or hunch produced it
-    "main",            # "3-12-19-27-41"
-    "super_ball",
-    "note",
-    "scored_at",       # filled by score_pending
-    "actual_main",
-    "actual_super",
-    "main_matches",
-    "super_match",
-]
+# What a Baloto prediction is, and what scoring it produces. `core/registry.py`
+# assembles the column order from this and never looks inside any of it.
+SCHEMA = RegistrySchema(
+    event_column="draw_date",       # must be in the future when recorded
+    prediction_columns=("main", "super_ball"),   # main is "3-12-19-27-41"
+    result_columns=("actual_main", "actual_super", "main_matches", "super_match"),
+)
 
-# Everything a pending row leaves blank. Held as `object` rather than letting
-# pandas infer: an unscored registry has these all-NA, pandas would type them
-# float64, and the first real score would then be an incompatible-dtype
-# assignment — a FutureWarning today and an error later.
-RESULT_COLUMNS = ["scored_at", "actual_main", "actual_super", "main_matches", "super_match"]
+COLUMNS = list(SCHEMA.columns)
 
+# Everything a pending row leaves blank, kept as a module constant because the
+# dashboard and the tests both read it.
+RESULT_COLUMNS = list(SCHEMA.late_columns)
 
-class RegistryError(RuntimeError):
-    """A write that would make the registry stop being evidence."""
-
-
-def _now():
-    return datetime.now(timezone.utc)
+__all__ = ["COLUMNS", "DEFAULT_REGISTRY_PATH", "RESULT_COLUMNS", "RegistryError",
+           "load", "pending", "record", "record_predictions", "score_pending",
+           "status", "summary"]
 
 
 def load(path=DEFAULT_REGISTRY_PATH):
     """Read the registry, or an empty frame with the right columns if it does not exist yet."""
-    if not os.path.exists(path):
-        return _typed(pd.DataFrame({column: pd.Series(dtype=object) for column in COLUMNS}))
-
-    registry = pd.read_csv(path)
-    for column in COLUMNS:
-        if column not in registry.columns:
-            registry[column] = pd.NA
-    return _typed(registry[COLUMNS])
-
-
-def _typed(registry):
-    """Pin the columns whose values arrive late to `object`, and draw_date to a timestamp."""
-    registry = registry.copy()
-    registry["draw_date"] = pd.to_datetime(registry["draw_date"])
-    for column in RESULT_COLUMNS:
-        registry[column] = registry[column].astype(object)
-    return registry
+    return core_registry.load(SCHEMA, path)
 
 
 def record(ticket, draw_date, label, note="", path=DEFAULT_REGISTRY_PATH, now=None):
@@ -103,39 +69,12 @@ def record(ticket, draw_date, label, note="", path=DEFAULT_REGISTRY_PATH, now=No
     if not isinstance(ticket, Ticket):
         raise TypeError(f"ticket must be a Ticket, got {type(ticket).__name__}")
 
-    draw_date = pd.Timestamp(draw_date).normalize()
-    moment = now or _now()
-    today = pd.Timestamp(moment.date())
-    if draw_date <= today:
-        raise RegistryError(
-            f"Draw date {draw_date:%Y-%m-%d} is not in the future (today is {today:%Y-%m-%d}). "
-            "A prediction recorded after its draw proves nothing, so the registry will not hold "
-            "one — every row in the file has to have been unfalsifiable when it was written."
-        )
-
-    registry = load(path)
-    clash = registry[(registry["draw_date"] == draw_date) & (registry["label"] == label)]
-    if not clash.empty:
-        raise RegistryError(
-            f"A prediction labelled {label!r} for {draw_date:%Y-%m-%d} is already on the record "
-            f"({clash.iloc[0]['main']} + {clash.iloc[0]['super_ball']}). Rows are append-only — "
-            "register a revision under a different label so both stay visible."
-        )
-
-    row = {
-        "recorded_at": moment.isoformat(timespec="seconds"),
-        "draw_date": draw_date,
-        "label": label,
-        "main": "-".join(str(n) for n in sorted(ticket.main)),
-        "super_ball": ticket.super_ball,
-        "note": note,
-        "scored_at": pd.NA, "actual_main": pd.NA, "actual_super": pd.NA,
-        "main_matches": pd.NA, "super_match": pd.NA,
-    }
-    new_row = _typed(pd.DataFrame([row]))
-    updated = new_row if registry.empty else pd.concat([registry, new_row], ignore_index=True)
-    _write(updated, path)
-    return row
+    return core_registry.record(
+        SCHEMA,
+        {"main": "-".join(str(n) for n in sorted(ticket.main)),
+         "super_ball": ticket.super_ball},
+        draw_date, label, path=path, note=note, now=now,
+    )
 
 
 def record_predictions(predictions_by_position, draw_date, label, rng=None, **kwargs):
@@ -151,46 +90,33 @@ def record_predictions(predictions_by_position, draw_date, label, rng=None, **kw
                   draw_date, label, **kwargs)
 
 
-def _write(registry, path):
-    registry = registry.sort_values(["draw_date", "label"]).reset_index(drop=True)
-    registry.to_csv(path, index=False)
-
-
 def score_pending(df, balls_expanded, path=DEFAULT_REGISTRY_PATH):
     """Fill in results for every registered draw that has since happened.
 
     All of them, every time — there is no argument for scoring a subset, because
     picking which predictions to count is the failure this whole module exists
-    to prevent. Already-scored rows are left untouched, so re-running is safe
-    and cannot rewrite history.
+    to prevent. That rule lives in `core/registry.py`; what this function
+    supplies is the lottery's `resolve`, which returns a result for a draw that
+    has happened and None for one that has not.
     """
-    registry = load(path)
-    if registry.empty:
-        return registry
+    by_date = {pd.Timestamp(date).normalize(): index for index, date in enumerate(df["ds"])}
 
-    results = {pd.Timestamp(date).normalize(): index
-               for index, date in enumerate(df["ds"])}
-
-    scored = 0
-    for i, row in registry.iterrows():
-        if pd.notna(row["scored_at"]) or row["draw_date"] not in results:
-            continue
-
-        main_drawn, super_drawn = draw_from_row(balls_expanded.iloc[results[row["draw_date"]]])
+    def resolve(row):
+        position = by_date.get(row["draw_date"])
+        if position is None:
+            return None  # the draw has not happened, or is not in this history
+        main_drawn, super_drawn = draw_from_row(balls_expanded.iloc[position])
         ticket = Ticket(main=tuple(int(n) for n in str(row["main"]).split("-")),
                         super_ball=int(row["super_ball"]))
         outcome = check_ticket(ticket, main_drawn, super_drawn)
+        return {
+            "actual_main": "-".join(str(n) for n in sorted(main_drawn)),
+            "actual_super": int(super_drawn),
+            "main_matches": outcome["main_matches"],
+            "super_match": outcome["super_match"],
+        }
 
-        registry.loc[i, "scored_at"] = _now().isoformat(timespec="seconds")
-        registry.loc[i, "actual_main"] = "-".join(str(n) for n in sorted(main_drawn))
-        registry.loc[i, "actual_super"] = int(super_drawn)
-        registry.loc[i, "main_matches"] = outcome["main_matches"]
-        registry.loc[i, "super_match"] = outcome["super_match"]
-        scored += 1
-
-    if scored:
-        _write(registry, path)
-    return registry
+    return core_registry.score_pending(SCHEMA, path, resolve)
 
 
 def summary(path=DEFAULT_REGISTRY_PATH, registry=None, by_label=False):
@@ -233,21 +159,22 @@ def summary(path=DEFAULT_REGISTRY_PATH, registry=None, by_label=False):
 
 def pending(path=DEFAULT_REGISTRY_PATH, registry=None):
     """Predictions whose draw has not happened, or has not been scored yet."""
-    registry = load(path) if registry is None else registry
-    return registry[registry["main_matches"].isna()].sort_values("draw_date")
+    return core_registry.pending(SCHEMA, path=path, registry=registry)
 
 
 def status(path=DEFAULT_REGISTRY_PATH):
-    """Counts plus what the registry could currently prove, for a one-glance answer."""
-    registry = load(path)
-    n_scored = int(registry["main_matches"].notna().sum())
+    """Counts plus what the registry could currently prove, for a one-glance answer.
+
+    `core/registry.py:status` deliberately reports no resolution, because what
+    counts as resolution is a domain question; the minimum detectable effect is
+    this domain's answer and is added here.
+    """
+    state = core_registry.status(SCHEMA, path)
+    n_scored = state["n_scored"]
+    next_draw = state.pop("next_event")   # popped, not shadowed: one name per fact
     return {
-        "path": path,
-        "n_recorded": len(registry),
-        "n_scored": n_scored,
-        "n_pending": len(registry) - n_scored,
-        "first_recorded": registry["recorded_at"].min() if len(registry) else None,
-        "next_draw": pending(registry=registry)["draw_date"].min() if len(registry) else None,
+        **state,
+        "next_draw": next_draw,
         "min_detectable_effect": (minimum_detectable_effect(n_scored)["relative"]
                                   if n_scored else np.nan),
     }
@@ -256,7 +183,11 @@ def status(path=DEFAULT_REGISTRY_PATH):
 if __name__ == "__main__":
     import argparse
 
-    from lottery.models.common import DEFAULT_DATA_PATH, build_position_series, infer_draw_weekdays, next_draw_dates
+    from lottery.models.common import (
+        DEFAULT_DATA_PATH,
+        infer_draw_weekdays,
+        next_draw_dates,
+    )
     from lottery.utils.processor import load_and_preprocess
 
     parser = argparse.ArgumentParser(description=__doc__,
@@ -284,7 +215,7 @@ if __name__ == "__main__":
         try:
             row = record(ticket, draw_date, args.label, note=args.note, path=args.registry)
         except RegistryError as exc:
-            raise SystemExit(f"Refused: {exc}")
+            raise SystemExit(f"Refused: {exc}") from exc
         print(f"Recorded {row['main']} + {row['super_ball']} for {row['draw_date']:%Y-%m-%d} "
               f"as {row['label']!r} at {row['recorded_at']}.")
 

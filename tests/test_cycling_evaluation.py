@@ -53,7 +53,7 @@ def test_a_forecaster_identical_to_the_baseline_scores_exactly_zero():
 def test_knowing_the_truth_beats_the_ranking():
     """The positive control: the answer key has to win where signal exists."""
     results = _mountain_race()
-    truth = dict(zip(*rider_abilities(seed=0)[["rider", "ability_true"]].to_numpy().T))
+    truth = dict(zip(*rider_abilities(seed=0)[["rider", "ability_true"]].to_numpy().T, strict=True))
 
     def oracle(history, riders, as_of):
         return worths_from_rating(
@@ -142,7 +142,7 @@ def test_the_fitted_strengths_recover_the_generators_truth():
     """A model estimating rider strength has to find the strength that made the data."""
     results = _mountain_race()
     truth = rider_abilities(seed=0)
-    ability = dict(zip(truth["rider"], truth["ability_true"]))
+    ability = dict(zip(truth["rider"], truth["ability_true"], strict=True))
 
     model = PlackettLuce.fit(results)
     riders = sorted(results["rider"].unique())

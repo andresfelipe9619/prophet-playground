@@ -10,8 +10,6 @@ import pandas as pd
 import pytest
 
 import lottery.backtest as bt
-from lottery.models.common import build_position_series
-
 
 # -------------------------------------------------------------------- splits
 
@@ -191,7 +189,7 @@ def test_run_all_end_to_end(position_series):
     """
     results = bt.run_all(position_series, 6, n_windows=25, min_train=100)
     assert set(results) >= {"FrequencyBaseline", "XGBoost", "AutoARIMA", "AutoETS", "AutoTheta"}
-    for name, frame in results.items():
+    for frame in results.values():
         assert list(frame.columns) == bt.RESULT_COLUMNS
         assert frame["main_hits"].between(0, 5).all()
         assert frame["m_guessed"].between(1, 5).all()

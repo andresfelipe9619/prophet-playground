@@ -224,6 +224,10 @@ HELP = {
                        "normal haberlo saltado. Para instalarlo: `pip install -r requirements.txt` "
                        "— y si no tienes GPU, añade "
                        "`--extra-index-url https://download.pytorch.org/whl/cpu`.",
+    "timesfm_opt_in": "TimesFM va desmarcado a propósito: es el modelo más caro de la lista (una "
+                      "pasada por ventana, y la primera vez descarga cientos de MB). Márcalo cuando "
+                      "quieras incluirlo — la corrección de Bonferroni cuenta solo los modelos que "
+                      "realmente corrieron, así que la tabla sigue siendo honesta con o sin él.",
     "timesfm_first_run": "La primera predicción descarga el modelo preentrenado (cientos de MB) y "
                          "puede tardar varios minutos. Las siguientes son inmediatas.",
     "timesfm_download_failed": "No se pudo descargar el modelo preentrenado de TimesFM. Se baja de "
@@ -443,6 +447,33 @@ HELP = {
     "fb_skill_score": (
         "1 − score(modelo)/score(mercado). Positivo = el modelo puntuó mejor. En una sola "
         "temporada un valor positivo pequeño está dentro del ruido."
+    ),
+    "fb_clv": (
+        "Valor de línea de cierre: tomaste un precio, el mercado siguió moviéndose hasta el "
+        "pitazo inicial, ¿terminó a tu favor? Converge en cientos de apuestas en vez de miles, "
+        "porque es una medición directa y no la diferencia de dos puntajes ruidosos. Valor "
+        "positivo **no** es ganancia: dice que ibas por delante de la revisión del mercado."
+    ),
+    "fb_oos_calibration": (
+        "Un modelo bien calibrado es uno cuyo 30% pasa 30 veces de cada 100. Es una pregunta "
+        "distinta de «¿le gana al mercado?»: un pronóstico perfectamente calibrado puede no "
+        "tener ninguna ventaja, y de hecho copiar la cuota lo sería."
+    ),
+    "fb_oos_reliability": (
+        "Cada punto es un grupo de pronósticos parecidos. El eje X es lo que el modelo dijo; el "
+        "eje Y, la frecuencia con que de verdad pasó. La diagonal es la calibración perfecta. "
+        "Los grupos con muy pocos partidos no se dibujan: una frecuencia sobre tres partidos no "
+        "es una medición."
+    ),
+    "fb_citl": (
+        "La revisión más gruesa que hay: ¿el modelo pronostica «local» tantas veces como los "
+        "locales ganan? Son tres pruebas sobre los mismos partidos, así que la columna a leer es "
+        "la corregida."
+    ),
+    "fb_recalibrate": (
+        "Reajusta la confianza del modelo usando **solo los partidos anteriores a cada uno**, "
+        "nunca los que después se puntúan. Si esto mejora el resultado, el problema del modelo "
+        "era cómo decía las cosas, no lo que sabía."
     ),
     "fb_beats_market": (
         "Veredicto de una prueba pareada de una cola. Mira siempre la columna corregida: con "
@@ -809,6 +840,26 @@ PLAIN = {
                "dice si el modelo vale algo está en **Resultados**, medido sobre muchos partidos "
                "y con corrección.",
     },
+    "fb_clv": {
+        "veo": "Cuánto se movió el precio entre la apertura y el cierre, hacia la apuesta o en "
+               "contra, con el margen quitado de los dos lados.",
+        "concluyo": "Si la línea se mueve hacia tus apuestas más de lo que se aleja, ibas por "
+                    "delante del mercado. Es la pregunta medible de esta pestaña: «¿le gana al "
+                    "cierre?» necesita miles de partidos, ésta cientos.",
+        "ojo": "**Valor positivo no es ganancia.** Dice que tu información era real, no que la "
+               "ventaja sobrevive al margen que pagas por entrar. Esa sigue siendo la sección "
+               "de arriba.",
+    },
+    "fb_oos_calibration": {
+        "veo": "Si los porcentajes del modelo significan lo que dicen: cuando anuncia 30%, con "
+               "qué frecuencia pasa de verdad.",
+        "concluyo": "Si los puntos caen sobre la diagonal, el modelo dice la verdad sobre su "
+                    "propia confianza. Si caen por debajo arriba y por encima abajo, está "
+                    "exagerando, y eso tiene arreglo con un solo parámetro.",
+        "ojo": "**Estar bien calibrado no es tener ventaja.** Copiar la cuota del mercado da una "
+               "calibración perfecta y cero ventaja. El veredicto sigue siendo la sección de "
+               "arriba, no este gráfico.",
+    },
     "fb_eval_tab": {
         "veo": "El modelo puntuado contra la cuota de cierre en partidos que **no** vio al "
                "entrenar.",
@@ -898,6 +949,9 @@ PLAIN = {
 # without a new argument at the call site. Different job from HELP: the ⓘ says
 # what the chart means and does not mean, this says where to point your eyes.
 READ = {
+    "fb_oos_reliability": "Sigue la diagonal con la vista: los puntos deberían estar encima. Por "
+                      "debajo = el modelo prometió más de lo que pasó; por encima = se quedó "
+                      "corto. El tamaño del punto es cuántos partidos hay detrás.",
     "category_chart": "La escala vertical es logarítmica — cada marca vale 10× la anterior. Las "
                       "barras más bajas son las que más pagan, y por eso están tan abajo.",
     "freq_chart": "Compara cada barra con la línea punteada, que es lo que saldría si todo fuera "
@@ -968,6 +1022,11 @@ READ = {
 # meets the term, not alphabetically — a glossary you read top to bottom teaches
 # more than one you only look things up in.
 GLOSSARY = [
+    ("Calibración",
+     "Que un 30% quiera decir 30%. Se mide agrupando pronósticos parecidos y contando cuántas "
+     "veces pasó lo anunciado. Ejemplo: de 100 partidos a los que el modelo dio 30% de empate, "
+     "deberían empatar unos 30. Ojo: un modelo perfectamente calibrado puede no servir para "
+     "apostar — copiar la cuota del mercado lo está y no tiene ninguna ventaja."),
     ("Línea base",
      "Con qué se compara un pronóstico para saber si vale algo. En Baloto es el azar puro; en "
      "fútbol es la cuota de cierre; en ciclismo es el ranking previo. Sin línea base fijada de "

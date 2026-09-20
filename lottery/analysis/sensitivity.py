@@ -41,8 +41,8 @@ import pandas as pd
 from lottery.analysis.randomness import pooled_uniformity_test
 from lottery.analysis.tickets import evaluate_strategy
 from lottery.models.common import (
-    MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
+    MAIN_BALLS_DRAWN,
     MAIN_POOL,
     SUPER_BALL_RANGE,
     main_positions,

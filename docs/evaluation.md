@@ -421,6 +421,40 @@ plausible-looking wrong answer rather than a crash.
 | Per-position chi-square on sorted data | Spurious "non-random" structure | `is_sorted_ascending` + pooled test |
 | One seed driving both the draw generator and the ticket generator | A 17.5% false-positive rate on bias-free data, blamed on the estimator | `sensitivity.independent_seeds` — `SeedSequence.spawn`, never the loop variable |
 
+### Leak canaries: the conventions, proved
+
+Every row above about a split is a *convention* — chronological ordering, an
+`as_of` cutoff, "results strictly before the race" — and a convention is
+something a reviewer can check, not something the suite can.
+[`tests/test_leakage.py`](../tests/test_leakage.py) is the other half. It is
+`lottery/analysis/sensitivity.py` turned around: that module plants a signal and
+measures that the detectors fire; these plant the *absence* of one and measure
+that they stay quiet.
+
+**Shuffled targets.** Move every result to a different fixture and refit. No
+verdict may survive, and one that does is the pipeline reading the row it is
+scoring. This needs no knowledge of how the split is implemented, which is what
+makes it the strongest statement available.
+
+**Cutoffs.** Delete everything from `as_of` onward and compare, then invent an
+absurd future and compare. The second is the one that catches a `<=` where a
+`<` was meant.
+
+**Positive controls for both**, because a canary that cannot fire is
+decoration. A forecaster that reads the race it is forecasting must beat the
+ranking; a forecast that has seen the result must beat the market.
+
+Getting the first one right took two attempts, and the mistake is worth
+recording because it is the same mistake in a new costume. The first version
+shuffled the outcomes and left the odds where they were — which does not make
+the market uninformed, it makes it **actively wrong**, pricing results that no
+longer happened. Elo, fitted on a history with nothing in it, converged on the
+base rates, beat a confidently mispriced book, and the canary fired on a
+pipeline with nothing whatsoever wrong with it. The result and its prices have
+to move together: a sharp market and a blind model is the only arrangement in
+which "the model won" means one thing. Suspect the harness before the
+statistic, again.
+
 ### The one that nearly got "fixed"
 
 The last row deserves its own note, because it is the only entry here that

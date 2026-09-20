@@ -10,7 +10,6 @@ import pytest
 from lottery.models.common import (
     MAIN_BALL_RANGE,
     SUPER_BALL_RANGE,
-    build_position_series,
     clip_to_range,
     infer_draw_weekdays,
     main_positions,
@@ -72,14 +71,14 @@ def test_next_draw_dates_only_lands_on_draw_weekdays():
     dates = next_draw_dates(start, 10, weekdays=(0, 2, 5))
     assert len(dates) == 10
     assert all(d.weekday() in (0, 2, 5) for d in dates)
-    assert all(b > a for a, b in zip(dates, dates[1:]))
+    assert all(b > a for a, b in zip(dates, dates[1:], strict=False))
     assert dates[0] > start
 
 
 def test_next_draw_dates_is_not_a_fixed_frequency():
     """Draw days are 2 and 3 days apart — a fixed freq= would produce phantom draws."""
     dates = next_draw_dates(pd.Timestamp("2024-01-01"), 12, weekdays=(0, 2, 5))
-    gaps = {(b - a).days for a, b in zip(dates, dates[1:])}
+    gaps = {(b - a).days for a, b in zip(dates, dates[1:], strict=False)}
     assert gaps == {2, 3}
 
 
@@ -102,7 +101,7 @@ def test_infer_draw_weekdays_follows_a_schedule_change():
 def test_build_position_series_shape(position_series, sample, n_columns):
     df, balls_expanded = sample
     assert set(position_series) == set(range(n_columns))
-    for position, frame in position_series.items():
+    for frame in position_series.values():
         assert list(frame.columns) == ["ds", "y"]
         assert len(frame) == len(df)
         assert frame["ds"].is_monotonic_increasing
@@ -114,7 +113,7 @@ def test_to_long_format_uses_a_sequential_draw_index(position_series, n_columns)
     long_df = to_long_format(position_series)
     assert set(long_df.columns) == {"ds", "y", "unique_id"}
     assert set(long_df["unique_id"]) == set(range(n_columns))
-    for position, group in long_df.groupby("unique_id"):
+    for _, group in long_df.groupby("unique_id"):
         assert list(group["ds"]) == list(range(1, len(group) + 1))
 
 

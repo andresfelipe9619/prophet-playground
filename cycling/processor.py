@@ -89,7 +89,7 @@ def _group_index(results):
     stage is filled with a sentinel here rather than losing every one-day row
     from every check that groups.
     """
-    keys = zip(results["race"], results["kind"], results["stage"].fillna(-1))
+    keys = zip(results["race"], results["kind"], results["stage"].fillna(-1), strict=True)
     return pd.Series(list(keys), index=results.index, dtype=object)
 
 

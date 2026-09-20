@@ -120,7 +120,7 @@ def round_robin(teams, rounds=2):
 
 def generate_matches(n_teams=DEFAULT_TEAMS, seed=0, start_date="2019-08-09",
                      home_advantage=HOME_ADVANTAGE, market_noise=0.0, margin=DEFAULT_MARGIN,
-                     include_odds=True, closing_odds=True):
+                     include_odds=True, closing_odds=True, opening_noise=None):
     """A season of results in football-data.co.uk's own column shape.
 
     Output goes through the real parser in `football/processor.py`, so the
@@ -130,6 +130,14 @@ def generate_matches(n_teams=DEFAULT_TEAMS, seed=0, start_date="2019-08-09",
     `closing_odds=False` writes the odds into the opening columns instead, so
     the opening-versus-closing guard can be tested on data that actually looks
     like a pre-2019 file.
+
+    `opening_noise` writes **both** column families, the way a real 2019/20-or-
+    later file does: the opening columns get prices blurred by `opening_noise`
+    and the closing ones by `market_noise`. Set the opening blur higher than
+    the closing one and the line sharpens toward kick-off, which is what makes
+    closing line value measurable at all. This is the only knob here that
+    produces a file carrying two prices for one match, so `football/clv.py`
+    cannot be tested without it.
     """
     rng = np.random.default_rng(seed)
     strengths = team_strengths(n_teams, seed=seed)
@@ -144,7 +152,7 @@ def generate_matches(n_teams=DEFAULT_TEAMS, seed=0, start_date="2019-08-09",
     )
 
     rows = []
-    for (home, away), date in zip(fixtures, dates):
+    for (home, away), date in zip(fixtures, dates, strict=True):
         home_rate, away_rate = expected_goals(strengths, home, away, home_advantage)
         truth = outcome_probabilities(home_rate, away_rate)
 
@@ -162,8 +170,18 @@ def generate_matches(n_teams=DEFAULT_TEAMS, seed=0, start_date="2019-08-09",
                                              row["FTHG"] < row["FTAG"]]))]
         if include_odds:
             prefix = ("AvgCH", "AvgCD", "AvgCA") if closing_odds else ("AvgH", "AvgD", "AvgA")
-            for column, price in zip(prefix, _market_odds(truth, rng, market_noise, margin)):
+            for column, price in zip(prefix, _market_odds(truth, rng, market_noise, margin),
+                                     strict=True):
                 row[column] = round(price, 2)
+            if opening_noise is not None:
+                # Drawn from the same generator but a *separate* call, so the
+                # opening and closing prices for a match are two independent
+                # blurs of one truth rather than the same blur twice — which
+                # would make every CLV exactly zero and the fixture useless.
+                for column, price in zip(("AvgH", "AvgD", "AvgA"),
+                                         _market_odds(truth, rng, opening_noise, margin),
+                                         strict=True):
+                    row[column] = round(price, 2)
         rows.append(row)
 
     return pd.DataFrame(rows).sort_values("Date", key=lambda s: pd.to_datetime(s, dayfirst=True))
@@ -198,6 +216,6 @@ def load_sample_and_preprocess(validate=False, **kwargs):
 
     truth = raw.sort_values("Date", key=lambda s: pd.to_datetime(s, dayfirst=True))
     for column, source in zip(("p_true_home", "p_true_draw", "p_true_away"),
-                              ("TrueH", "TrueD", "TrueA")):
+                              ("TrueH", "TrueD", "TrueA"), strict=True):
         matches[column] = truth[source].to_numpy()
     return matches

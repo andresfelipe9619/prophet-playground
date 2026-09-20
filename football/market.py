@@ -132,7 +132,7 @@ def market_probabilities(matches, method=DEFAULT_METHOD):
 
     probabilities = implied_probabilities(matches[list(ODDS_COLUMNS)].to_numpy(), method=method)
     out = matches.copy()
-    for column, values in zip(PROBABILITY_COLUMNS, probabilities.T):
+    for column, values in zip(PROBABILITY_COLUMNS, probabilities.T, strict=True):
         out[column] = values
     out.attrs.update(matches.attrs)
     out.attrs["probability_method"] = method
@@ -150,7 +150,7 @@ def compare_methods(odds, methods=METHODS):
     for method in methods:
         probabilities = implied_probabilities(odds, method=method)
         row = {"method": method}
-        row.update(dict(zip(PROBABILITY_COLUMNS, np.atleast_2d(probabilities)[0])))
+        row.update(dict(zip(PROBABILITY_COLUMNS, np.atleast_2d(probabilities)[0], strict=True)))
         rows.append(row)
     table = pd.DataFrame(rows)
     table["overround"] = float(np.sum(1.0 / np.asarray(odds, dtype=float)) - 1.0)

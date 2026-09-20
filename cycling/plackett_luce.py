@@ -100,7 +100,7 @@ class PlackettLuce:
         if not orders:
             return cls({rider: PRIOR_WORTH for rider in riders})
         worths = _fit_mm(orders, fields, weights, len(riders), iterations, prior_strength)
-        return cls(dict(zip(riders, worths)))
+        return cls(dict(zip(riders, worths, strict=True)))
 
 
 def _races_from_results(results, half_life=None):
@@ -151,7 +151,7 @@ def _fit_mm(orders, fields, weights, n_riders, iterations, prior_strength):
         wins = np.full(n_riders, prior)
         exposure = np.full(n_riders, prior)
 
-        for order, field, weight in zip(orders, fields, weights):
+        for order, field, weight in zip(orders, fields, weights, strict=True):
             available = np.zeros(n_riders, dtype=bool)
             available[field] = True
             remaining = float(worths[available].sum())

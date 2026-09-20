@@ -68,7 +68,13 @@ def test_rho_moves_the_low_score_cells_only():
         attack={"X": 0.0, "Y": 0.0}, defence={"X": 0.0, "Y": 0.0}, rho=-0.15,
     )
     grid = model._grid(lh, la, max_goals=8)
-    changed = ~np.isclose(grid / grid.sum(), base)
+    # "only" is about tau, so it has to be read off the unnormalised grid: tau
+    # multiplies four cells and renormalising afterwards moves every cell by the
+    # same factor, which would make an "only" assertion on the normalised grid
+    # fail while the model is perfectly correct.
+    ratio = grid / base
+    outside_the_corner = np.delete(ratio.reshape(-1), [0, 1, ratio.shape[1], ratio.shape[1] + 1])
+    assert np.allclose(outside_the_corner, 1.0)
     corners = np.array([grid[0, 0], grid[0, 1], grid[1, 0], grid[1, 1]])
     base_corners = np.array([base[0, 0], base[0, 1], base[1, 0], base[1, 1]])
     assert np.abs(corners / grid.sum() - base_corners).max() > 1e-3

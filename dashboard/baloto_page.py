@@ -22,28 +22,20 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import lottery.backtest as bt
-from lottery.analysis.randomness import (
-    autocorrelation_check,
-    frequency_table,
-    gap_table,
-    hot_cold_numbers,
-    is_sorted_ascending,
-    pooled_uniformity_test,
-    randomness_report,
-)
-from lottery.analysis.power import (
-    DEFAULT_RELATIVE_EDGES,
-    describe as power_describe,
-    minimum_detectable_effect,
-    power_curve,
-    required_draws_table,
-    super_minimum_detectable_effect,
-)
+from dashboard.ui import HELP, chart, glossary, plain_verdict, section, verdict_badge
 from lottery.analysis.popularity import (
     compare_tickets,
     popularity_components,
     popularity_score,
-    split_adjusted_value,
+)
+from lottery.analysis.power import (
+    describe as power_describe,
+)
+from lottery.analysis.power import (
+    minimum_detectable_effect,
+    power_curve,
+    required_draws_table,
+    super_minimum_detectable_effect,
 )
 from lottery.analysis.prizes import (
     breakeven_jackpot,
@@ -51,26 +43,31 @@ from lottery.analysis.prizes import (
     expected_value,
     total_combinations,
 )
-from lottery.analysis.tickets import (
-    STRATEGIES,
-    Ticket,
-    check_against_history,
-    check_ticket,
-    compare_strategies,
-    draw_from_row,
-    generate_portfolio,
-    history_summary,
-    portfolio_coverage,
-    stability_check,
-    ticket_from_predictions,
+from lottery.analysis.randomness import (
+    frequency_table,
+    gap_table,
+    hot_cold_numbers,
+    is_sorted_ascending,
+    pooled_uniformity_test,
+    randomness_report,
 )
 from lottery.analysis.registry import (
     RegistryError,
-    load as load_registry,
-    pending as pending_predictions,
-    record as record_prediction,
     score_pending,
+)
+from lottery.analysis.registry import (
+    load as load_registry,
+)
+from lottery.analysis.registry import (
+    pending as pending_predictions,
+)
+from lottery.analysis.registry import (
+    record as record_prediction,
+)
+from lottery.analysis.registry import (
     status as registry_status,
+)
+from lottery.analysis.registry import (
     summary as registry_summary,
 )
 from lottery.analysis.sensitivity import (
@@ -83,11 +80,23 @@ from lottery.analysis.structure import (
     structure_report,
     sum_percentile,
 )
+from lottery.analysis.tickets import (
+    STRATEGIES,
+    Ticket,
+    check_against_history,
+    check_ticket,
+    compare_strategies,
+    draw_from_row,
+    generate_portfolio,
+    history_summary,
+    portfolio_coverage,
+    stability_check,
+)
 from lottery.models.baseline import expected_main_matches, most_frequent_pick
 from lottery.models.common import (
     DEFAULT_DATA_PATH,
-    MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
+    MAIN_BALLS_DRAWN,
     SUPER_BALL_RANGE,
     build_position_series,
     infer_draw_weekdays,
@@ -108,8 +117,6 @@ from lottery.utils.processor import (
     preprocess_draws,
 )
 from lottery.utils.sample_data import load_sample_and_preprocess
-
-from dashboard.ui import HELP, chart, glossary, plain, plain_verdict, section, verdict_badge
 
 MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
 
@@ -591,7 +598,7 @@ def render():
         section("Veredicto por posición", "verdict_table")
         reports = randomness_reports(position_series, n_columns)
         rows = []
-        for p, rep in reports.items():
+        for rep in reports.values():
             rows.append({
                 "Posición": rep["label"],
                 "Sorteos": rep["n_draws"],
@@ -650,10 +657,18 @@ def render():
         if not TIMESFM_AVAILABLE:
             st.caption(HELP["timesfm_missing"])
         elif model_choice == "TimesFM":
-            st.caption(HELP["timesfm_first_run"])
+            # A warning, not a caption. The first run can take minutes with
+            # nothing on screen, and a reader who was not told that is looking
+            # at what a hung app looks like.
+            st.warning(HELP["timesfm_first_run"])
 
         if st.button("Generar predicción del próximo sorteo"):
-            with st.spinner("Entrenando..."):
+            # TimesFM fits nothing -- it is the one model here that only reads.
+            # "Entrenando..." was wrong for it, and wrong in the direction that
+            # makes a long wait more confusing rather than less.
+            waiting = ("Descargando el modelo si hace falta, y leyendo tu historial…"
+                       if model_choice == "TimesFM" else "Entrenando…")
+            with st.spinner(waiting):
                 history = position_series[0]["ds"]
                 next_date = next_draw_dates(history.max(), 1, weekdays=infer_draw_weekdays(history))[0]
 
@@ -671,7 +686,7 @@ def render():
                 elif model_choice in MODEL_NAMES:
                     raw = fit_predict_all(position_series, h=1)
                     clipped = adjusted_predictions(raw, n_columns, model_name=model_choice)
-                    preds = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"].astype(int)))
+                    preds = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"].astype(int), strict=True))
                 elif model_choice == "XGBoost":
                     for p in range(n_columns):
                         preds[p] = forecast_next(position_series[p], p, n_columns, next_date)
@@ -691,6 +706,20 @@ def render():
                         st.caption(str(exc))
                         preds = None
 
+                # Held across reruns. Without this a forecast that took minutes
+                # is discarded by the next widget click, and after a dropped
+                # connection the reader has to pay for it a second time -- which
+                # is what turns a slow run into a wasted one.
+                st.session_state["forecast"] = {"model": model_choice, "preds": preds}
+
+        stored = st.session_state.get("forecast")
+        if stored is not None:
+            # `shown_model` rather than reusing `model_choice`: the held result
+            # outlives the selector, so after changing the dropdown the numbers
+            # on screen are still the previous model's until the button is
+            # pressed again. Naming it in the message is what stops that being
+            # a quiet mislabelling.
+            shown_model, preds = stored["model"], stored["preds"]
             # preds is None only when the block above already put an explanation
             # on screen; anything else here would print a second, vaguer one.
             if preds is None:
@@ -700,8 +729,14 @@ def render():
             else:
                 main_numbers = sorted({preds[p] for p in main_positions(n_columns)})
                 super_number = preds[n_columns - 1]
-                st.success(f"Balotas principales sugeridas: **{' - '.join(str(n) for n in main_numbers)}**  |  "
+                st.success(f"**{shown_model}** — balotas principales sugeridas: "
+                           f"**{' - '.join(str(n) for n in main_numbers)}**  |  "
                            f"Superbalota: **{super_number}**")
+                if shown_model != model_choice:
+                    st.caption(
+                        f"Estos números son de **{shown_model}**, el modelo con el que corriste la "
+                        f"última predicción. Pulsa el botón para correr **{model_choice}**."
+                    )
                 if len(main_numbers) < MAIN_BALLS_DRAWN:
                     st.caption(f"Nota: hubo {MAIN_BALLS_DRAWN - len(main_numbers)} coincidencia(s) entre posiciones, "
                                "por eso hay menos de 5 números distintos — típico cuando el modelo no tiene señal real "
@@ -896,7 +931,7 @@ def render():
             section("El premio mayor se reparte", "tab_split")
             st.markdown(
                 "Todo lo demás en este panel termina igual: nada cambia tu **probabilidad** de ganar, "
-                "porque las {combos:,} combinaciones son igual de probables. Eso sigue siendo cierto "
+                f"porque las {total_combinations():,} combinaciones son igual de probables. Eso sigue siendo cierto "
                 "aquí. Lo que cambia es la otra mitad del valor esperado.\n\n"
                 "El premio mayor se reparte entre todos los que tengan la combinación ganadora, y la "
                 "gente **no elige al azar**: juega cumpleaños (por eso el 1-31 va sobrecargado y el "
@@ -905,7 +940,7 @@ def render():
                 "condicionado a ganar, la popular paga una fracción de la otra.\n\n"
                 "`P(ganar)` → no la mueve nada, nunca.  \n"
                 "`E[premio | ganar]` → esto sí se puede mejorar, evitando lo que juegan los demás."
-            .format(combos=total_combinations()))
+            )
 
             st.warning(
                 "**Qué es este modelo, con precisión.** Una función heurística sobre los sesgos que "
@@ -1041,15 +1076,24 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
-            # On when installed: the checkpoint is cached after the first run, so
-            # the only cost that ever surprised anyone is paid once. A comparison
-            # table that quietly leaves out an installed model is the bug this
-            # project already fixed once, for Prophet.
-            include_timesfm = c3.checkbox("Incluir TimesFM", value=TIMESFM_AVAILABLE,
+            # Off by default, unlike Prophet, and the caption below says so.
+            #
+            # The rule this project already fixed once for Prophet is that a
+            # comparison table must not *quietly* leave out an installed model.
+            # An unticked box with a sentence under it is not quiet -- it is the
+            # reader's choice, made before the cost. What it was before was an
+            # ambush: TimesFM ticked itself, and a reader who clicked "Ejecutar
+            # backtest" to see the other five models paid a forward pass per
+            # window plus, on a first run, a checkpoint download of hundreds of
+            # MB. On a machine without a GPU that is minutes of apparently
+            # nothing happening, which is what a hung app looks like.
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=False,
                                           key="wf_timesfm",
                                           disabled=not TIMESFM_AVAILABLE,
                                           help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
                                           else HELP["timesfm_missing"])
+            if TIMESFM_AVAILABLE and not include_timesfm:
+                st.caption(HELP["timesfm_opt_in"])
 
             start_idx, total = bt.window_bounds(n_draws, n_windows, min_train)
             if start_idx >= total:
@@ -1090,11 +1134,16 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
-            include_timesfm = c3.checkbox("Incluir TimesFM", value=TIMESFM_AVAILABLE,
+            # Off by default for the reason spelled out on the walk-forward
+            # checkbox above: visible opt-in rather than a silent omission, and
+            # rather than an ambush.
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=False,
                                           key="holdout_timesfm",
                                           disabled=not TIMESFM_AVAILABLE,
                                           help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
                                           else HELP["timesfm_missing"])
+            if TIMESFM_AVAILABLE and not include_timesfm:
+                st.caption(HELP["timesfm_opt_in"])
 
             n_train_preview, n_holdout_preview = bt.cutoff_bounds(df["ds"], pd.Timestamp(cutoff))
             st.caption(
@@ -1535,7 +1584,7 @@ def render():
 
             with st.expander("Ver el registro completo"):
                 st.caption(
-                    f"Se guarda en `predictions.csv`, en la raíz del repo y **no** ignorado por git. "
+                    "Se guarda en `predictions.csv`, en la raíz del repo y **no** ignorado por git. "
                     "Commitearlo pone cada predicción bajo control de versiones con una fecha encima, "
                     "que es un respaldo más fuerte que cualquier columna de timestamp que el propio "
                     "archivo se escriba."

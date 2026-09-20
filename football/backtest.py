@@ -33,7 +33,9 @@ import os
 import numpy as np
 import pandas as pd
 
+from core.manifest import data_fingerprint, run_manifest
 from core.windows import cutoff_bounds, window_bounds
+from football.calibration import CALIBRATORS, prequential_calibrate
 from football.common import ODDS_COLUMNS, PROBABILITY_COLUMNS, UnknownTeamError
 from football.dixon_coles import DixonColes
 from football.elo import Elo
@@ -120,9 +122,50 @@ def _with_blend(probs, market_probs, models, weight, pool):
     return {**probs, "blend": list(blended)}
 
 
+DEFAULT_CALIBRATION_MIN_FIT = 50
+
+
+def _recalibrate(probs, market_probs, outcomes, models, calibrate, min_fit):
+    """Apply a prequentially-fitted recalibration, then trim every series to match.
+
+    The correction for each forecast is fitted on the forecasts that came before
+    it and on nothing else -- see `football/calibration.py`, where the gate and
+    the reason for it live.
+
+    The trim is the part that is easy to get wrong. The leading `min_fit`
+    forecasts pass through a recalibrator uncalibrated, so scoring the whole
+    series mixes rows where the correction applied with rows where it could not
+    and pulls any difference toward zero. Every model is trimmed by the same
+    amount, along with the market and the outcomes, so the comparison stays on
+    one identical set of matches -- the rule `compare_models` already follows
+    for a window a model cannot predict.
+    """
+    calibrated, kept = {}, None
+    for name in models:
+        series = probs[name]
+        if not series:
+            calibrated[name] = series
+            continue
+        adjusted, n = prequential_calibrate(np.array(series), outcomes,
+                                            calibrator=calibrate, min_fit=min_fit)
+        calibrated[name] = list(adjusted)
+        kept = n if kept is None else min(kept, n)
+
+    if not kept:
+        return calibrated, market_probs, outcomes
+    return ({name: series[-kept:] if series else series
+             for name, series in calibrated.items()},
+            market_probs[-kept:], outcomes[-kept:])
+
+
 def _summarise(probs, market_probs, outcomes, models, metric, skipped, mode, method,
-               half_life, weight, pool):
-    """One row per model, all sharing the same Bonferroni threshold."""
+               half_life, weight, pool, calibrate=None, calibrate_min_fit=None):
+    """One row per model, all sharing the same Bonferroni threshold.
+
+    `calibrate` is a column rather than only a manifest field: two runs over the
+    same matches that disagree are not comparable unless what differed between
+    them is on the table someone reads.
+    """
     rows = []
     for name in models:
         result = _score(probs[name], market_probs, outcomes, metric,
@@ -132,13 +175,16 @@ def _summarise(probs, market_probs, outcomes, models, metric, skipped, mode, met
                      "half_life": half_life,
                      "blend_weight": weight if name == "blend" else None,
                      "pool": pool if name == "blend" else None,
+                     "calibrate": calibrate,
+                     "calibrate_min_fit": calibrate_min_fit if calibrate else None,
                      **result})
     return pd.DataFrame(rows)
 
 
 def compare_models(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
                    method="multiplicative", metric="rps", models=MODEL_NAMES,
-                   blend_weight=DEFAULT_BLEND_WEIGHT, pool="linear"):
+                   blend_weight=DEFAULT_BLEND_WEIGHT, pool="linear",
+                   calibrate=None, calibrate_min_fit=DEFAULT_CALIBRATION_MIN_FIT):
     """Score several models over the same held-out matches, corrected together.
 
     Returns one row per model. Read `beats_market_corrected`: the threshold is
@@ -158,9 +204,33 @@ def compare_models(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
     probs, market_probs, outcomes, skipped = _collect(
         lambda t: matches.iloc[:t], matches, range(start, total), half_life, method, models)
     probs = _with_blend(probs, market_probs, models, blend_weight, pool)
+    if calibrate:
+        # After the blend, not before: the blend pools a model with the price,
+        # and recalibrating its inputs separately would change what is being
+        # pooled rather than how the pool is stated.
+        probs, market_probs, outcomes = _recalibrate(
+            probs, market_probs, outcomes, models, calibrate, calibrate_min_fit)
 
-    return _summarise(probs, market_probs, outcomes, models, metric, skipped,
-                      "expanding_last_n", method, half_life, blend_weight, pool)
+    table = _summarise(probs, market_probs, outcomes, models, metric, skipped,
+                       "expanding_last_n", method, half_life, blend_weight, pool,
+                       calibrate=calibrate, calibrate_min_fit=calibrate_min_fit)
+    # The forecasts themselves, so a calibration surface does not have to refit
+    # every model a second time to ask a different question of the same run.
+    table.attrs["forecasts"] = {
+        "market": np.array(market_probs),
+        "outcomes": list(outcomes),
+        "models": {name: np.array(probs[name]) for name in models if probs.get(name)},
+    }
+    table.attrs["manifest"] = run_manifest({
+        "data": data_fingerprint(matches), "n_matches": int(len(matches)),
+        "n_windows": n_windows, "min_train": min_train, "half_life": half_life,
+        "method": method, "metric": metric, "models": list(models),
+        "blend_weight": blend_weight, "pool": pool,
+        "calibrate": calibrate, "calibrate_min_fit": calibrate_min_fit if calibrate else None,
+        "odds_are_closing": matches.attrs.get("odds_are_closing"),
+        "odds_source": matches.attrs.get("odds_source"),
+    })
+    return table
 
 
 def run_all(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
@@ -175,7 +245,15 @@ def run_all(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
     result = _score(probs[model], market_probs, outcomes, metric)
     result.update({"model": model, "n_windows_scored": len(outcomes),
                    "n_windows_skipped": skipped, "mode": "expanding_last_n",
-                   "method": method, "half_life": half_life})
+                   "method": method, "half_life": half_life,
+                   "manifest": run_manifest({
+                       "data": data_fingerprint(matches), "n_matches": int(len(matches)),
+                       "n_windows": n_windows, "min_train": min_train,
+                       "half_life": half_life, "method": method, "metric": metric,
+                       "model": model,
+                       "odds_are_closing": matches.attrs.get("odds_are_closing"),
+                       "odds_source": matches.attrs.get("odds_source"),
+                   })})
     return result
 
 
@@ -205,7 +283,16 @@ def run_holdout(matches, cutoff, mode="expanding", half_life=None,
     result = _score(probs[model], market_probs, outcomes, metric)
     result.update({"model": model, "n_windows_scored": len(outcomes),
                    "n_windows_skipped": skipped, "mode": mode, "method": method,
-                   "half_life": half_life})
+                   "half_life": half_life,
+                   "manifest": run_manifest({
+                       "data": data_fingerprint(matches), "n_matches": int(len(matches)),
+                       "cutoff": f"{pd.Timestamp(cutoff):%Y-%m-%d}", "mode": mode,
+                       "n_train": n_train, "n_holdout": n_holdout,
+                       "half_life": half_life, "method": method, "metric": metric,
+                       "model": model,
+                       "odds_are_closing": matches.attrs.get("odds_are_closing"),
+                       "odds_source": matches.attrs.get("odds_source"),
+                   })})
     return result
 
 
@@ -229,6 +316,12 @@ def main():
     parser.add_argument("--blend-weight", type=float, default=DEFAULT_BLEND_WEIGHT,
                         help="weight on the model in 'blend'; 0 is the market itself")
     parser.add_argument("--pool", choices=tuple(POOLS), default="linear")
+    parser.add_argument("--calibrate", choices=tuple(CALIBRATORS), default=None,
+                        help="recalibrate each forecast on the forecasts before it "
+                             "(prequential, never in-sample); only with --models")
+    parser.add_argument("--calibrate-min-fit", type=int, default=DEFAULT_CALIBRATION_MIN_FIT,
+                        help="forecasts to accumulate before the correction starts applying; "
+                             "the leading ones are dropped from the comparison")
     parser.add_argument("--extra", action="store_true", help="load via the extra-file contract")
     parser.add_argument("--league", default=None, help="league to pick from an --extra file")
     args = parser.parse_args()
@@ -247,7 +340,8 @@ def main():
             matches, n_windows=args.n_windows, min_train=args.min_train,
             half_life=args.half_life, method=args.method, metric=args.metric,
             models=tuple(name.strip() for name in args.models.split(",")),
-            blend_weight=args.blend_weight, pool=args.pool)
+            blend_weight=args.blend_weight, pool=args.pool,
+            calibrate=args.calibrate, calibrate_min_fit=args.calibrate_min_fit)
         columns = ["model", "n_windows_scored", "model_score", "market_score", "skill_score",
                    "effect", "ci_low", "ci_high", "p_value_greater", "bonferroni_threshold",
                    "beats_market", "beats_market_corrected"]
@@ -255,6 +349,10 @@ def main():
         print("\nRead beats_market_corrected, not beats_market: "
               f"{len(table)} models scored against the same matches means "
               f"{len(table)} chances for one of them to clear an uncorrected 5% by luck.")
+        if args.calibrate:
+            print(f"Recalibrated ({args.calibrate}, fitted only on earlier forecasts). "
+                  "A better score here means the model was stating its case wrongly, "
+                  "not that it knows more than the price.")
         return
 
     if args.cutoff:
@@ -264,8 +362,15 @@ def main():
         result = run_all(matches, n_windows=args.n_windows, min_train=args.min_train,
                          half_life=args.half_life, method=args.method, metric=args.metric)
 
+    manifest = result.pop("manifest", None)
     for key, value in result.items():
         print(f"{key:>24}: {value}")
+    if manifest:
+        git = manifest["git"]
+        commit = (git["commit"] or "unknown")[:8]
+        dirty = " (dirty tree — not reproducible from any commit)" if git["dirty"] else ""
+        print(f"{'run':>24}: {commit}{dirty} · data {manifest['inputs']['data'][:12]} · "
+              f"{manifest['generated_at']}")
 
 
 if __name__ == "__main__":

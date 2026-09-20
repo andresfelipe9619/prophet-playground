@@ -11,13 +11,12 @@ contract is exercised rather than bypassed.
 """
 
 import pandas as pd
-import pytest
 
 from cycling.common import DNF, FINISHED, GC, STAGE
 from cycling.processor import preprocess_results, time_order_violations
 from cycling.sample_data import (
-    generate_stage_race,
     general_classification,
+    generate_stage_race,
     load_sample_and_preprocess,
     load_sample_gc,
     rider_abilities,

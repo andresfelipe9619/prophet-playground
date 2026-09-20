@@ -11,8 +11,8 @@ import warnings
 import pandas as pd
 
 from lottery.models.common import (
-    MAIN_BALLS_DRAWN,
     MAIN_BALL_RANGE,
+    MAIN_BALLS_DRAWN,
     SUPER_BALL_RANGE,
     main_positions,
     super_position,

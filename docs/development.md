@@ -50,9 +50,56 @@ The three model scripts additionally expect
 
 ## 3. Verification
 
-**There is a test suite and CI; there is still no linter.** Work is verified in
-four ways locally, and CI re-runs the first and the fourth on every push to
-`master` and every pull request.
+**There is a test suite, a linter and CI.** Work is verified in four ways
+locally, and CI re-runs the first and the fourth on every push to `master` and
+every pull request.
+
+Lint and type-check first, because they are the fastest signal:
+
+```bash
+ruff check .          # everything; --fix applies the safe ones
+mypy                  # strict, scoped to core/ (the scope is in pyproject.toml)
+```
+
+These are **not yet wired into CI.** They belong in the `static` job, which
+needs no third-party install and reports in seconds — add these steps after
+the documentation-link check in `.github/workflows/tests.yml`:
+
+```yaml
+      # numpy and pandas-stubs are here because mypy reads core/'s imports;
+      # nothing in this job runs any of this project's code.
+      - name: Install lint tools
+        run: pip install ruff mypy pandas-stubs numpy
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type-check core/
+        run: mypy
+```
+
+Two configuration choices are worth knowing before you fight them. **The line
+limit is 120, not 88 or 100.** Measured, this codebase sits at p50 = 46 and
+p95 = 97 characters; the overruns are almost entirely explanatory prose and the
+dashboard's Spanish copy strings, and a sentence broken across lines to satisfy
+a linter is harder to review for meaning — which is the only thing that matters
+about those strings. At 100 there were 454 violations and essentially no
+defects among them; at 120 there are none, and the rule still catches a
+genuinely runaway line. **mypy runs `strict` over `core/` alone.** `core/` is
+~150 lines of domain-free numerics, so strict mode is achievable there, and it
+is the one package where a wrong type is silently wrong rather than loud: a
+z-test handed the wrong shape returns a number, not an error. The domain
+packages pass DataFrames through every signature and would need a long ignore
+list to say very little.
+
+One rule ruff enforces that is worth calling out, because it changed behaviour
+rather than formatting: **every `zip` carries an explicit `strict=`.** A `zip`
+over two sequences of different lengths silently truncates to the shorter one,
+which in this codebase would mean pairing riders with the wrong worths or
+columns with the wrong outcomes and producing a frame whose shape reveals
+nothing. Every call that pairs things which *must* line up is `strict=True`;
+the four `zip(x, x[1:])` pairwise-adjacent idioms are `strict=False` because
+their lengths differ by one on purpose.
 
 ```mermaid
 flowchart TD
@@ -249,6 +296,53 @@ No linter, no coverage gate, no deployment. The dashboard is run locally
 running Streamlit server, and the value it adds is a human looking at the
 result. Treat it as a pre-merge step for dashboard changes, not something the
 build will catch for you.
+
+## 3.6 Reproducibility
+
+A backtest result is evidence only for as long as you can say what produced it.
+Six months on, "nothing beat chance" and "some version of this beat nothing on
+some version of the data" read identically in a results table, and nothing in
+its shape tells them apart.
+
+So every walk-forward and holdout entry point attaches a manifest from
+[`core/manifest.py`](../core/manifest.py):
+
+```python
+results = bt.run_all(position_series, n_columns)
+bt.summarize(results).attrs["manifest"]
+# {'generated_at': '2026-09-20T...', 'git': {'commit': '...', 'dirty': False, 'branch': 'master'},
+#  'python': '3.11.15', 'platform': ..., 'libraries': {'numpy': '2.1.0', ...},
+#  'inputs': {'data': '9f3c...', 'n_draws': 1035, 'n_windows': 15, ...}}
+```
+
+Three things about it are deliberate.
+
+**The dirty flag matters more than the commit.** A result produced from an
+edited working tree is reproducible from no commit at all, and mid-change is
+the state most results get looked at in. A manifest recording only a SHA would
+be confidently wrong exactly there.
+
+**The fingerprint covers dtypes and column order, not just values.** Row counts
+and date ranges are the usual stand-ins and both miss a single corrected cell.
+Column order is in there because a frame whose superbalota column moved scores
+differently while hashing identically under a values-only digest, and position
+semantics are the thing this codebase is most careful about.
+
+**The library list is not a dependency list.** It holds the libraries whose
+version can move a number. Adding streamlit would record something that cannot
+change a result, which is the whole point of the list.
+
+`attrs` does not survive most pandas operations, so a manifest is copied
+explicitly from one frame to the next rather than inherited —
+`lottery/backtest.py:summarize` and `cycling/evaluation.py:compare_forecasters`
+both do this, and both say why in a comment. The football CLI prints it as one
+compact provenance line rather than in the aligned key column, because a nested
+dict there is one unreadable row.
+
+A new evaluation entry point that forgets the manifest looks identical in every
+results table, so the wiring is pinned by a test per domain in
+[`tests/test_core_manifest.py`](../tests/test_core_manifest.py) rather than
+left to review.
 
 ## 4. Conventions
 

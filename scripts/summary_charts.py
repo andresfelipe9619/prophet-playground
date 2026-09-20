@@ -1,8 +1,8 @@
-import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
+
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
-import matplotlib.dates as mdates
 
 # Constants
 FIRST_FIVE_BALLS_RANGE = range(1, 44)
@@ -25,7 +25,7 @@ def create_summary_dataframe(draws_data, column_name):
     summary_data = []
     number_range = FIRST_FIVE_BALLS_RANGE if column_name == 'FirstFive' else LAST_BALL_RANGE
     for number in number_range:
-        relevant_draws = draws_data[draws_data[column_name].apply(lambda x: number in x)]
+        relevant_draws = draws_data[draws_data[column_name].apply(lambda x, n=number: n in x)]
         repetitions = len(relevant_draws)
         last_date = relevant_draws['Date'].max()
         date_differences = calculate_date_differences(relevant_draws['Date'])
@@ -61,8 +61,10 @@ print(f"CSV file for the last ball saved: {csv_file_path_last}")
 
 
 # Función general para graficar las distribuciones y frecuencias
-def plot_data_side_by_side(df1, df2, title1, title2, x_label, y_label, kind, fig_size=(28, 8), bins=None, palette=['royalblue']):
+def plot_data_side_by_side(df1, df2, title1, title2, x_label, y_label, kind, fig_size=(28, 8),
+                           bins=None, palette=None):
     """Plot side by side plots for given data."""
+    palette = list(palette) if palette is not None else ['royalblue']
     fig, axes = plt.subplots(1, 2, figsize=fig_size)  # 1 fila, 2 columnas
     
     # Asignar una columna constante para usar en 'hue'

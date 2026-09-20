@@ -35,7 +35,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from football.common import MATCH_COLUMNS, ODDS_COLUMNS, outcome_from_goals
+from football.common import MATCH_COLUMNS as MATCH_COLUMNS  # re-exported: this module owns the contract
+from football.common import ODDS_COLUMNS, outcome_from_goals
 
 REQUIRED_COLUMNS = ("Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG")
 
@@ -152,14 +153,14 @@ def preprocess_matches(df, validate=True):
     out["home_goals"] = out["home_goals"].astype(int)
     out["away_goals"] = out["away_goals"].astype(int)
     out["outcome"] = [outcome_from_goals(h, a)
-                      for h, a in zip(out["home_goals"], out["away_goals"])]
+                      for h, a in zip(out["home_goals"], out["away_goals"], strict=True)]
 
     source = resolve_odds_source(df.columns)
     if source is None:
         for column in ODDS_COLUMNS:
             out[column] = np.nan
     else:
-        for column, raw in zip(ODDS_COLUMNS, source["columns"]):
+        for column, raw in zip(ODDS_COLUMNS, source["columns"], strict=True):
             out[column] = pd.to_numeric(df[raw], errors="coerce")
         # A price triple is usable or it is not — there is no partial market.
         # Two of three prices cannot be normalised into probabilities, and

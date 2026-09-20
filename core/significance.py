@@ -29,10 +29,18 @@ distribution; for a match-outcome model they would come from the market's
 implied probabilities. The arithmetic below does not change.
 """
 
+from typing import Any
+
 import numpy as np
+from numpy.typing import ArrayLike
 from scipy.stats import norm
 
-EMPTY_RESULT = {
+# Every result is a flat, JSON-shaped mapping rather than a dataclass: these
+# rows go straight into a DataFrame and onto a dashboard, and the keys are the
+# column names. `Any` is honest about the mix of float, int and bool.
+Result = dict[str, Any]
+
+EMPTY_RESULT: Result = {
     "z": np.nan,
     "p_value": np.nan,
     "p_value_greater": np.nan,
@@ -46,7 +54,12 @@ EMPTY_RESULT = {
 }
 
 
-def z_test_against_null(observed, null_means, null_variances, confidence=0.95):
+def z_test_against_null(
+    observed: ArrayLike,
+    null_means: ArrayLike,
+    null_variances: ArrayLike,
+    confidence: float = 0.95,
+) -> Result:
     """z-test of a sum of independent scores against the null it is judged on.
 
     `observed` is one score per held-out observation. `null_means` and
@@ -95,21 +108,24 @@ def z_test_against_null(observed, null_means, null_variances, confidence=0.95):
     }
 
 
-def bonferroni_threshold(alpha, n_comparisons):
+def bonferroni_threshold(alpha: float, n_comparisons: int) -> float:
     """The per-test threshold that keeps the family-wise error rate at alpha."""
     return alpha / max(n_comparisons, 1)
 
 
-def verdicts(p_value, alpha, threshold):
+def verdicts(p_value: float | None, alpha: float, threshold: float) -> Result:
     """The naive and corrected verdicts for one row of a comparison table.
 
     Returned together, and named the same way everywhere, so that no
     evaluation surface can report one without the other. A missing p-value is
     not a pass.
     """
-    decidable = p_value is not None and not (isinstance(p_value, float) and np.isnan(p_value))
+    if p_value is None or (isinstance(p_value, float) and np.isnan(p_value)):
+        return {"beats_chance": False,
+                "bonferroni_threshold": threshold,
+                "beats_chance_corrected": False}
     return {
-        "beats_chance": bool(p_value < alpha) if decidable else False,
+        "beats_chance": bool(p_value < alpha),
         "bonferroni_threshold": threshold,
-        "beats_chance_corrected": bool(p_value < threshold) if decidable else False,
+        "beats_chance_corrected": bool(p_value < threshold),
     }

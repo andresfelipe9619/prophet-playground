@@ -15,7 +15,7 @@ from football.h2h import head_to_head, team_form
 def _frame(rows):
     out = pd.DataFrame(rows, columns=["ds", "home_team", "away_team", "home_goals", "away_goals"])
     out["ds"] = pd.to_datetime(out["ds"])
-    out["outcome"] = [outcome_from_goals(h, a) for h, a in zip(out["home_goals"], out["away_goals"])]
+    out["outcome"] = [outcome_from_goals(h, a) for h, a in zip(out["home_goals"], out["away_goals"], strict=True)]
     return out.sort_values("ds").reset_index(drop=True)
 
 

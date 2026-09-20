@@ -11,7 +11,6 @@ import pytest
 
 from lottery.analysis.prizes import total_combinations
 from lottery.analysis.tickets import (
-    MAIN_NUMBERS,
     STRATEGIES,
     Ticket,
     check_against_history,
@@ -29,7 +28,6 @@ from lottery.analysis.tickets import (
     ticket_from_predictions,
 )
 from lottery.models.common import MAIN_BALLS_DRAWN
-
 
 # ------------------------------------------------------------------ validity
 

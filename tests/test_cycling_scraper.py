@@ -55,8 +55,8 @@ def page(body_rows, date="29 June 2024", sidebar=True):
     """A results page in the site's shape: an info list, a small sidebar table
     sharing the results layout, and the classification itself."""
     sidebar_html = (
-        f"<table class='basic'><thead><tr><th>Rnk</th><th>Rider</th></tr></thead><tbody>"
-        f"<tr><td>1</td><td><a href='rider/x'>Sprint Winner</a></td></tr></tbody></table>"
+        "<table class='basic'><thead><tr><th>Rnk</th><th>Rider</th></tr></thead><tbody>"
+        "<tr><td>1</td><td><a href='rider/x'>Sprint Winner</a></td></tr></tbody></table>"
         if sidebar else ""
     )
     date_html = (f"<ul class='infolist'><li><div>Date:</div><div>{date}</div></li>"

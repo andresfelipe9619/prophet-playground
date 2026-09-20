@@ -34,10 +34,16 @@ import time
 
 import pandas as pd
 
+from core.manifest import combined_fingerprint, run_manifest
 from core.significance import bonferroni_threshold, verdicts
 from core.windows import cutoff_bounds, window_bounds
 from lottery.models.baseline import beats_chance_test, expected_super_match_rate, most_frequent_pick
-from lottery.models.common import DEFAULT_DATA_PATH, build_position_series, main_positions, super_position
+from lottery.models.common import (
+    DEFAULT_DATA_PATH,
+    build_position_series,
+    main_positions,
+    super_position,
+)
 from lottery.models.statsforecast_model import MODEL_NAMES, adjusted_predictions, fit_predict_all
 from lottery.models.xgboost_model import forecast_horizon, train_predict_one_step
 from lottery.utils.processor import load_and_preprocess
@@ -101,7 +107,7 @@ def _statsforecast_window(n_columns):
         preds_by_model = {}
         for name in MODEL_NAMES:
             clipped = adjusted_predictions(forecast, n_columns, model_name=name)
-            preds_by_model[name] = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"]))
+            preds_by_model[name] = dict(zip(clipped["unique_id"].astype(int), clipped["yhat_adjusted"], strict=True))
         return preds_by_model
     return predict
 
@@ -190,11 +196,39 @@ def summarize(results_by_model, alpha=0.05):
             "super_hit_rate": df["super_hit"].mean(),
             "chance_super_hit_rate": expected_super_match_rate(),
         })
-    return pd.DataFrame(summary).sort_values("avg_main_hits", ascending=False).reset_index(drop=True)
+    table = pd.DataFrame(summary).sort_values("avg_main_hits", ascending=False).reset_index(drop=True)
+    # Carried through from the result frames: the summary is the table anyone
+    # actually reads, so it is the one that must be able to say what produced
+    # it. `attrs` does not survive most pandas operations, which is why this is
+    # an explicit copy rather than something inherited.
+    for frame in results_by_model.values():
+        if "manifest" in frame.attrs:
+            table.attrs["manifest"] = frame.attrs["manifest"]
+            break
+    return table
 
 
 def run_all(position_series, n_columns, n_windows=15, min_train=60, include_prophet=False,
             include_timesfm=False):
+    """Walk-forward over the last `n_windows` draws, one result frame per model.
+
+    Every frame carries `attrs["manifest"]`: the commit, the library versions
+    and a fingerprint of the draws this ran on. A backtest summary is evidence
+    only for as long as you can say what produced it, and six months later
+    "nothing beat chance" and "some version of this beat nothing on some
+    version of the data" are different claims that a results table cannot tell
+    apart on its own.
+    """
+    manifest = run_manifest({
+        "data": combined_fingerprint(position_series),
+        "n_columns": n_columns,
+        "n_draws": int(len(next(iter(position_series.values())))),
+        "n_windows": n_windows,
+        "min_train": min_train,
+        "include_prophet": include_prophet,
+        "include_timesfm": include_timesfm,
+    })
+
     predictors = [
         _frequency_window,
         _statsforecast_window(n_columns),
@@ -210,6 +244,8 @@ def run_all(position_series, n_columns, n_windows=15, min_train=60, include_prop
         t0 = time.time()
         results.update(_run_windows(position_series, n_columns, n_windows, min_train, predict_window))
         print(f"{', '.join(predict_window.model_names)} done in {time.time() - t0:.1f}s")
+    for frame in results.values():
+        frame.attrs["manifest"] = manifest
     return results
 
 
@@ -323,13 +359,30 @@ def run_holdout(position_series, n_columns, cutoff, mode="expanding", include_pr
     info = {"cutoff": pd.Timestamp(cutoff), "mode": mode, "n_train": n_train,
             "n_holdout": n_holdout,
             "holdout_start": pd.Timestamp(dates.iloc[n_train]),
-            "holdout_end": pd.Timestamp(dates.iloc[-1])}
+            "holdout_end": pd.Timestamp(dates.iloc[-1]),
+            "manifest": run_manifest({
+                "data": combined_fingerprint(position_series),
+                "n_columns": n_columns,
+                "n_draws": int(len(dates)),
+                "cutoff": f"{pd.Timestamp(cutoff):%Y-%m-%d}",
+                "mode": mode,
+                "n_train": n_train,
+                "n_holdout": n_holdout,
+                "include_prophet": include_prophet,
+                "include_timesfm": include_timesfm,
+            })}
 
     if mode == "expanding":
         # Same loop as run_all, with the split pinned to the cutoff instead of a window count.
-        return run_all(position_series, n_columns, n_windows=n_holdout, min_train=n_train,
-                       include_prophet=include_prophet,
-                       include_timesfm=include_timesfm), info
+        results = run_all(position_series, n_columns, n_windows=n_holdout, min_train=n_train,
+                          include_prophet=include_prophet,
+                          include_timesfm=include_timesfm)
+        # run_all wrote its own manifest describing a window count; this run was
+        # specified by a cutoff, and the manifest has to describe the experiment
+        # that was actually asked for.
+        for frame in results.values():
+            frame.attrs["manifest"] = info["manifest"]
+        return results, info
 
     builders = [_frozen_frequency, _frozen_statsforecast, _frozen_xgboost]
     if include_prophet:
@@ -347,6 +400,7 @@ def run_holdout(position_series, n_columns, cutoff, mode="expanding", include_pr
         produced = {name: by_step for name, by_step in by_model.items() if by_step is not None}
         for name, by_step in produced.items():
             results[name] = _score_frozen(by_step, position_series, n_columns, n_train)
+            results[name].attrs["manifest"] = info["manifest"]
         skipped = sorted(set(by_model) - set(produced))
         label = ", ".join(produced) or "nothing"
         note = f" (skipped {', '.join(skipped)}: not enough context)" if skipped else ""

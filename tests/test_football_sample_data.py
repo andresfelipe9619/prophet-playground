@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from football.common import ODDS_COLUMNS, OUTCOMES, PROBABILITY_COLUMNS
-from football.market import implied_probabilities, market_probabilities, overround
+from football.market import market_probabilities, overround
 from football.processor import check_match_format
 from football.sample_data import (
     DEFAULT_MARGIN,
@@ -197,7 +197,7 @@ def test_the_market_is_calibrated_against_what_actually_happened():
     generator rather than a finding.
     """
     matches = market_probabilities(load_sample_and_preprocess(n_teams=20, seed=0))
-    for column, outcome in zip(PROBABILITY_COLUMNS, OUTCOMES):
+    for column, outcome in zip(PROBABILITY_COLUMNS, OUTCOMES, strict=True):
         predicted = matches[column].mean()
         observed = (matches["outcome"] == outcome).mean()
         assert predicted == pytest.approx(observed, abs=0.05), outcome

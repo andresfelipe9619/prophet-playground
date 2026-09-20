@@ -27,7 +27,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 from football.backtest import MODEL_NAMES
+from football.calibration import (
+    calibration_in_the_large,
+    expected_calibration_error,
+    reliability_curve,
+)
 from football.common import (
     DEFAULT_DATA_DIR,
     ODDS_COLUMNS,
@@ -55,8 +61,6 @@ from football.processor import (
 )
 from football.sample_data import generate_matches
 from football.value import DEFAULT_KELLY_FRACTION, DISAGREEMENT_ONLY, NO_VALUE, VALUE
-
-from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 
 # Spanish labels for the three outcomes, since OUTCOME_LABELS is English (it is
 # code-facing). The order follows OUTCOMES, which is load-bearing everywhere.
@@ -98,11 +102,33 @@ def load_matches(uploaded_bytes, paths, closing_odds_only):
         matches = load_seasons(list(paths), validate=False, closing_odds_only=closing_odds_only)
         is_demo = False
     else:
+        # `opening_noise` writes the opening columns as well, the way a real
+        # 2019/20-or-later file does. The closing source still wins resolution,
+        # so every other surface sees exactly the frame it saw before; what it
+        # buys is a CLV panel that has something to show on demo data.
         matches = preprocess_matches(
-            generate_matches(seed=0).drop(columns=["TrueH", "TrueD", "TrueA"]), validate=False)
+            generate_matches(seed=0, opening_noise=1.2).drop(
+                columns=["TrueH", "TrueD", "TrueA"]), validate=False)
         is_demo = True
 
     return matches, is_demo, check_match_format(matches)
+
+
+@st.cache_data(show_spinner=False)
+def load_raw_frames(uploaded_bytes, paths):
+    """The season files as published, before `processor.py` resolves one source.
+
+    Every other surface wants the resolved frame; closing line value is the one
+    question that needs both column families at once, and resolution is exactly
+    what throws the second one away. Returns None when there is nothing to read.
+    """
+    if uploaded_bytes is not None:
+        return pd.read_csv(io.BytesIO(uploaded_bytes))
+    if paths:
+        frames = [pd.read_csv(path) for path in paths]
+        return pd.concat(frames, ignore_index=True) if frames else None
+    return generate_matches(seed=0, opening_noise=1.2).drop(
+        columns=["TrueH", "TrueD", "TrueA"])
 
 
 @st.cache_data(show_spinner=False)
@@ -164,6 +190,81 @@ def _fingerprint(matches):
     )
 
 
+def _render_out_of_sample_calibration(table):
+    """Calibration of the backtest's own forecasts — the out-of-sample version.
+
+    Fed from `table.attrs["forecasts"]`, which `compare_models` attaches, so
+    nothing is refitted to ask this second question of the same run.
+
+    It sits **after** the verdict and says so in its own copy, because the one
+    way to misread it is as a result. A forecast that simply copies the closing
+    price is perfectly calibrated and has no edge whatsoever; calibration says
+    whether the numbers mean what they claim, not whether they beat anything.
+    """
+    forecasts = table.attrs.get("forecasts")
+    if not forecasts or not forecasts["models"]:
+        return
+
+    section("¿Sus porcentajes significan lo que dicen?", "fb_oos_calibration")
+    outcomes = forecasts["outcomes"]
+    series = {MODEL_ES.get(name, name): probs for name, probs in forecasts["models"].items()}
+    series["Mercado"] = forecasts["market"]
+
+    figure = go.Figure()
+    figure.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines",
+                                name="Calibración perfecta", line=dict(dash="dash")))
+    rows = []
+    for label, probs in series.items():
+        curve = reliability_curve(probs, outcomes)
+        usable = [r for r in curve if not np.isnan(r["observed_frequency"])]
+        if usable:
+            figure.add_trace(go.Scatter(
+                x=[r["mean_forecast"] for r in usable],
+                y=[r["observed_frequency"] for r in usable],
+                mode="markers+lines", name=label,
+                marker=dict(size=[min(6 + r["count"] / 12, 22) for r in usable]),
+                text=[f"{r['count']} pronósticos" for r in usable]))
+        report = expected_calibration_error(probs, outcomes)
+        rows.append({"Serie": label, "Error de calibración": report["ece"],
+                     "Cubre": report["coverage"], "Grupos usados": report["n_bins_used"]})
+
+    figure.update_layout(xaxis_title="Lo que dijo el modelo",
+                         yaxis_title="Lo que pasó de verdad", height=380,
+                         xaxis_tickformat=".0%", yaxis_tickformat=".0%")
+    chart(figure, "Curva de calibración fuera de muestra", "fb_oos_reliability")
+
+    st.dataframe(pd.DataFrame(rows).style.format(
+        {"Error de calibración": "{:.4f}", "Cubre": "{:.0%}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "«Cubre» es la parte de los pronósticos que cayó en grupos con partidos suficientes para "
+        "medirlos. Un error pequeño sobre una décima parte de los pronósticos no es un error "
+        "pequeño.",
+        help=HELP["fb_oos_calibration"],
+    )
+
+    st.markdown("**¿Pronostica cada resultado tan seguido como pasa?**", help=HELP["fb_citl"])
+    model_label, model_probs = next(iter(series.items()))
+    citl = pd.DataFrame(calibration_in_the_large(model_probs, outcomes))
+    citl["Resultado"] = citl["outcome"].map(OUTCOME_ES)
+    citl["¿Desviado? (corregido)"] = citl["miscalibrated_corrected"].map(
+        {True: "Sí", False: "No"})
+    st.dataframe(
+        citl[["Resultado", "mean_forecast", "base_rate", "difference", "p_value",
+              "¿Desviado? (corregido)"]]
+        .rename(columns={"mean_forecast": f"Media de {model_label}",
+                         "base_rate": "Frecuencia real", "difference": "Diferencia",
+                         "p_value": "p (dos colas)"})
+        .style.format({f"Media de {model_label}": "{:.1%}", "Frecuencia real": "{:.1%}",
+                       "Diferencia": "{:+.1%}", "p (dos colas)": "{:.3f}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "Son tres pruebas sobre los mismos partidos, así que la columna corregida es la que "
+        "cuenta. Aquí la prueba es de **dos colas** a propósito: pronosticar de más y "
+        "pronosticar de menos son los dos un error de calibración.",
+    )
+
+
 def render():
     st.title("⚽ Fútbol")
     st.caption(
@@ -222,8 +323,13 @@ def render():
                 "Descárgalo con `python -m football.downloader --extra --leagues COL`."
             )
         report = check_match_format(matches)
+        # Colombia's extra files are opening prices only, so there is no second
+        # end of the line to measure against. The panel says so rather than
+        # silently not appearing.
+        raw_frame = None
     else:
         paths = tuple(os.path.join(directory, name) for name in chosen) if not uploaded else ()
+        raw_frame = load_raw_frames(uploaded.getvalue() if uploaded else None, paths)
 
         try:
             matches, is_demo, report = load_matches(
@@ -351,14 +457,16 @@ def render():
                 try:
                     model = _fit_dixon_coles(matches, model_cache_key)
                     model_probs = model.predict_matches(priced)
-                    p_home_model = pd.Series(model_probs[:, 0], index=priced.index)
-                    observed_model = (priced["outcome"] == "H").astype(float)
-                    m_buckets = pd.cut(p_home_model, bins=list(CALIBRATION_BINS),
-                                       include_lowest=True)
-                    m_grouped = pd.DataFrame(
-                        {"p": p_home_model, "y": observed_model, "bucket": m_buckets})
-                    m_summary = m_grouped.groupby("bucket", observed=True).agg(
-                        predicha=("p", "mean"), observada=("y", "mean"), partidos=("y", "size"))
+                    # The binning rule lives in football/calibration.py so that
+                    # this diagnostic and the out-of-sample curve in tab 4 drop
+                    # a too-sparse bin by the same standard.
+                    curve = reliability_curve(model_probs, list(priced["outcome"]),
+                                              bins=len(CALIBRATION_BINS) - 1, outcome="H")
+                    m_summary = pd.DataFrame([
+                        {"bucket": f"[{r['bin_low']:.1f}, {r['bin_high']:.1f})",
+                         "predicha": r["mean_forecast"], "observada": r["observed_frequency"],
+                         "partidos": r["count"]}
+                        for r in curve if r["count"]])
 
                     figure = go.Figure()
                     figure.add_trace(go.Scatter(
@@ -375,9 +483,12 @@ def render():
                     st.dataframe(m_summary.reset_index().astype({"bucket": str}),
                                  use_container_width=True)
                     st.caption(
-                        "Ajustado sobre las mismas temporadas que se muestran (dentro de muestra), "
-                        "así que esto favorece al modelo. El veredicto fuera de muestra está en "
-                        "**Resultados**."
+                        "Ajustado sobre las mismas temporadas que se muestran (dentro de "
+                        "muestra), así que esto favorece al modelo: la versión **fuera de "
+                        "muestra**, sobre partidos que el modelo no vio, está en "
+                        "**4 · ¿Le gana al mercado?**, debajo del veredicto. Los grupos con "
+                        "muy pocos partidos salen vacíos a propósito: una frecuencia sobre tres "
+                        "partidos no es una medición."
                     )
                 except Exception as exc:  # noqa: BLE001 - a fit warning must not kill the page
                     st.warning(f"No se pudo ajustar el modelo para la curva de calibración: {exc}")
@@ -392,7 +503,7 @@ def render():
             table = compare_methods(row[list(ODDS_COLUMNS)].to_numpy(dtype=float))
             table = table.rename(columns={"method": "método", **{
                 column: OUTCOME_ES[outcome]
-                for column, outcome in zip(PROBABILITY_COLUMNS, OUTCOMES)}})
+                for column, outcome in zip(PROBABILITY_COLUMNS, OUTCOMES, strict=True)}})
             st.dataframe(table, use_container_width=True)
             st.caption(
                 "Los tres discrepan más en los no favoritos, que es donde importa. Ninguno es "
@@ -411,7 +522,7 @@ def render():
         shares = [float(counts.get(outcome, 0)) / max(len(matches), 1) for outcome in OUTCOMES]
 
         columns = st.columns(3)
-        for column, outcome, share in zip(columns, OUTCOMES, shares):
+        for column, outcome, share in zip(columns, OUTCOMES, shares, strict=True):
             column.metric(OUTCOME_ES[outcome], f"{share:.1%}",
                           help=HELP["fb_outcome_share"])
 
@@ -547,6 +658,8 @@ def render():
                     help=HELP["fb_beats_market"],
                 )
 
+                _render_out_of_sample_calibration(table)
+
     # ------------------------------------------------------------------ Valor
     # Rendered after the backtest block, not beside the forecast: Streamlit runs
     # every tab body on each rerun in source order, so a Valor placed earlier
@@ -554,6 +667,75 @@ def render():
     # reader nothing had been measured on the very click that measured it.
     with tabs[4]:
         render_value_tab(matches, method)
+        _render_clv(raw_frame, method, is_demo)
+
+
+def _render_clv(raw_frame, method, is_demo=False):
+    """Closing line value: did the price move toward the bet after it was taken?
+
+    Rendered inside **Valor** and after the staking block, because it belongs
+    to the same question and answers a narrower version of it. "Does this model
+    beat the closing line" needs thousands of matches to answer; "did the line
+    move toward me" needs hundreds, because it is a direct measurement rather
+    than a difference of two noisy scores.
+
+    The three fixed strategies are the point of the table, not filler. Backing
+    every home side involves no selection at all, so its CLV is a fact about how
+    this book's line drifts and nothing about anyone's skill. They are the
+    control the model's row is read against.
+    """
+    from football.clv import PriceJoinError, beats_closing_test, clv_table, paired_prices
+
+    section("¿Se movió el precio hacia ti?", "fb_clv")
+    if raw_frame is None:
+        st.info(
+            "Los archivos «extra» (Colombia) traen **solo cuotas de apertura**, así que no hay "
+            "un segundo extremo de la línea contra el cual medir. Esto necesita un archivo "
+            "europeo de 2019/20 en adelante, donde las columnas de apertura y de cierre vienen "
+            "juntas."
+        )
+        return
+
+    try:
+        joined = paired_prices(raw_frame)
+    except (PriceJoinError, ValueError) as exc:
+        st.info(
+            "Estos datos no traen los dos extremos de la línea. football-data publica cuotas de "
+            "cierre solo desde 2019/20; antes de eso lo mejor disponible es la apertura, y medir "
+            "una apertura contra sí misma no es valor de línea de cierre."
+        )
+        st.caption(f"Detalle: {exc}")
+        return
+
+    strategies = {OUTCOME_ES[outcome]: [outcome] * len(joined) for outcome in OUTCOMES}
+    rows = []
+    for label, bets in strategies.items():
+        table = clv_table(joined, bets=bets, method=method)
+        result = beats_closing_test(table["clv"], n_comparisons=len(strategies))
+        rows.append({"Apuesta": label, "Partidos": result["n_bets"],
+                     "Valor medio": result["mean_clv"],
+                     "% a favor": result["hit_rate"],
+                     "¿Gana al cierre? (corregido)":
+                         "Sí" if result["beats_closing_corrected"] else "No"})
+
+    st.dataframe(pd.DataFrame(rows).style.format(
+        {"Valor medio": "{:+.4f}", "% a favor": "{:.0%}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        f"Medido sobre {len(joined)} partidos, de la cuota de apertura "
+        f"(**{joined.attrs['bet_odds_source']}**) a la de cierre "
+        f"(**{joined.attrs['closing_odds_source']}**), con el margen quitado de los dos lados. "
+        "Estas tres son estrategias sin ninguna selección: apostar siempre al local no requiere "
+        "saber nada, así que su valor dice cómo se mueve la línea de esta casa y nada sobre "
+        "nadie. Son el control contra el que se leería la fila de un modelo.",
+        help=HELP["fb_clv"],
+    )
+    if is_demo:
+        st.warning(
+            "Son **datos sintéticos**. Si alguna fila sale «Sí», es una propiedad del generador "
+            "—la apertura se simula como una versión borrosa del cierre— y no una estrategia. "
+            "Carga una temporada real para que esta tabla diga algo."
+        )
 
 
 def render_value_tab(matches, method):
@@ -664,7 +846,7 @@ def render_value_tab(matches, method):
         )
     else:
         st.caption(
-            f"Las cifras de apuesta son **un cuarto de Kelly**, no Kelly entero. Kelly es la "
+            "Las cifras de apuesta son **un cuarto de Kelly**, no Kelly entero. Kelly es la "
             "apuesta óptima suponiendo que tu probabilidad es correcta; la de un modelo es una "
             "estimación con error, y sobre una ventaja que no existe Kelly sube la apuesta justo "
             "cuando el modelo está más seguro y más equivocado.",
@@ -745,7 +927,7 @@ def render_forecast_tab(matches, method):
 
     section("El modelo", "fb_model_1x2")
     m1, m2, m3 = st.columns(3)
-    for col, label, value in zip((m1, m2, m3), ("Local", "Empate", "Visitante"), p_model):
+    for col, label, value in zip((m1, m2, m3), ("Local", "Empate", "Visitante"), p_model, strict=True):
         col.metric(label, f"{value:.1%}")
     if not all(o > 1.0 for o in (odd_home, odd_draw, odd_away)):
         st.caption(
@@ -763,7 +945,7 @@ def render_forecast_tab(matches, method):
     if p_elo is not None:
         st.markdown("**Y lo que dice el Elo**", help=HELP["fb_elo"])
         e1, e2, e3 = st.columns(3)
-        for col, label, value in zip((e1, e2, e3), ("Local", "Empate", "Visitante"), p_elo):
+        for col, label, value in zip((e1, e2, e3), ("Local", "Empate", "Visitante"), p_elo, strict=True):
             col.metric(label, f"{value:.1%}")
         st.caption(
             f"Elo de {home_team}: **{elo.rating(home_team):.0f}** · "
@@ -813,7 +995,7 @@ def render_forecast_tab(matches, method):
             "Resultado": ["Local", "Empate", "Visitante"],
             "Dixon-Coles": [f"{p:.1%}" for p in p_model],
             "Mercado": [f"{p:.1%}" for p in p_market],
-            "DC − Mercado": [f"{m - k:+.1%}" for m, k in zip(p_model, p_market)],
+            "DC − Mercado": [f"{m - k:+.1%}" for m, k in zip(p_model, p_market, strict=True)],
         }
         if p_elo is not None:
             comparison["Elo"] = [f"{p:.1%}" for p in p_elo]
