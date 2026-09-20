@@ -324,7 +324,7 @@ prices is against a soft market, not a finding.
 | **Mercado** | Overround distribution, the market's calibration curve for home wins, **the Dixon-Coles model's own calibration curve** (in-sample, and it says so), the three de-margining methods side by side on one match | The margin has to come off before prices mean anything, and how it comes off is a modelling choice. The model curve is fit on the seasons shown, so it flatters the model — the out-of-sample verdict is in **Resultados**. |
 | **Pronóstico** | Two team pickers, optional current decimal odds; head-to-head and recent form (descriptive), then the Dixon-Coles 1X2 vector, **the Elo vector and rating table**, a scoreline heatmap, over/under and BTTS | The two-team view. Model probabilities appear **only beside the de-margined market**, or under an explicit "no baseline for this match" caption — never alone. Elo is here as the cheap baseline: if Dixon-Coles cannot separate itself from one number per team, that is worth seeing. |
 | **¿Le gana al mercado?** | Outcome shares, goals per side, observed rates against the market's mean probabilities, then a gated **multi-model walk-forward backtest against the closing line**, and below it the **out-of-sample calibration** of that backtest's own forecasts | The descriptive charts carry the usual disclaimer — two matching bars are not a result. The backtest is the verdict: one row per selected model, the corrected threshold printed as 0.05 divided by however many ran, and the effect with its 95% interval, through the same `core/` machinery as the lottery backtest. The calibration block sits **after** the verdict and says in its own copy that being calibrated is not having an edge — copying the closing price is perfectly calibrated and worth nothing. |
-| **Valor** | The market's belief, its margin stacked on top, the model as a diamond; then edge, the break-even price and a quarter-Kelly stake per outcome | The staking surface, and the one able to lose someone money. It shows **no stake at all** until the measured verdict from the previous tab is on screen beside it, and it draws the margin rather than describing it: there is a bet only when the diamond clears the whole column. |
+| **Valor** | The market's belief, its margin stacked on top, the model as a diamond; then edge, the break-even price and a quarter-Kelly stake per outcome; and below that **closing line value** — how far the price moved between open and close, de-margined on both ends | The staking surface, and the one able to lose someone money. It shows **no stake at all** until the measured verdict from the previous tab is on screen beside it, and it draws the margin rather than describing it: there is a bet only when the diamond clears the whole column. |
 
 The backtest is behind a button and needs ~150 matches; it exposes a
 walk-forward window count, a half-life for time decay, which models to score, and
@@ -345,6 +345,16 @@ measured against.
 The same binning rule powers the in-sample curve in **Mercado**, from
 `football/calibration.py`, so a bin too sparse to measure is dropped by one
 standard in both places rather than by two hand-rolled ones.
+
+The CLV panel needs both column families at once, which is exactly what
+resolving one odds source per frame throws away, so the page loads the season
+files a second time unresolved and hands them to `football/clv.py:paired_prices`
+— which runs the contract twice rather than around it. Colombia mode has no
+closing prices at all, so the panel says that instead of quietly not appearing,
+and on synthetic data it warns that any "Sí" row is a property of the generator.
+Its three rows are fixed strategies with no selection in them: backing every home
+side requires knowing nothing, so its CLV describes the book's drift and nobody's
+skill.
 
 **Valor is rendered after the backtest block, not beside Pronóstico.** Streamlit
 executes every tab body on each rerun in source order, so a Valor placed earlier

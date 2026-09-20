@@ -102,11 +102,33 @@ def load_matches(uploaded_bytes, paths, closing_odds_only):
         matches = load_seasons(list(paths), validate=False, closing_odds_only=closing_odds_only)
         is_demo = False
     else:
+        # `opening_noise` writes the opening columns as well, the way a real
+        # 2019/20-or-later file does. The closing source still wins resolution,
+        # so every other surface sees exactly the frame it saw before; what it
+        # buys is a CLV panel that has something to show on demo data.
         matches = preprocess_matches(
-            generate_matches(seed=0).drop(columns=["TrueH", "TrueD", "TrueA"]), validate=False)
+            generate_matches(seed=0, opening_noise=1.2).drop(
+                columns=["TrueH", "TrueD", "TrueA"]), validate=False)
         is_demo = True
 
     return matches, is_demo, check_match_format(matches)
+
+
+@st.cache_data(show_spinner=False)
+def load_raw_frames(uploaded_bytes, paths):
+    """The season files as published, before `processor.py` resolves one source.
+
+    Every other surface wants the resolved frame; closing line value is the one
+    question that needs both column families at once, and resolution is exactly
+    what throws the second one away. Returns None when there is nothing to read.
+    """
+    if uploaded_bytes is not None:
+        return pd.read_csv(io.BytesIO(uploaded_bytes))
+    if paths:
+        frames = [pd.read_csv(path) for path in paths]
+        return pd.concat(frames, ignore_index=True) if frames else None
+    return generate_matches(seed=0, opening_noise=1.2).drop(
+        columns=["TrueH", "TrueD", "TrueA"])
 
 
 @st.cache_data(show_spinner=False)
@@ -301,8 +323,13 @@ def render():
                 "Descárgalo con `python -m football.downloader --extra --leagues COL`."
             )
         report = check_match_format(matches)
+        # Colombia's extra files are opening prices only, so there is no second
+        # end of the line to measure against. The panel says so rather than
+        # silently not appearing.
+        raw_frame = None
     else:
         paths = tuple(os.path.join(directory, name) for name in chosen) if not uploaded else ()
+        raw_frame = load_raw_frames(uploaded.getvalue() if uploaded else None, paths)
 
         try:
             matches, is_demo, report = load_matches(
@@ -640,6 +667,75 @@ def render():
     # reader nothing had been measured on the very click that measured it.
     with tabs[4]:
         render_value_tab(matches, method)
+        _render_clv(raw_frame, method, is_demo)
+
+
+def _render_clv(raw_frame, method, is_demo=False):
+    """Closing line value: did the price move toward the bet after it was taken?
+
+    Rendered inside **Valor** and after the staking block, because it belongs
+    to the same question and answers a narrower version of it. "Does this model
+    beat the closing line" needs thousands of matches to answer; "did the line
+    move toward me" needs hundreds, because it is a direct measurement rather
+    than a difference of two noisy scores.
+
+    The three fixed strategies are the point of the table, not filler. Backing
+    every home side involves no selection at all, so its CLV is a fact about how
+    this book's line drifts and nothing about anyone's skill. They are the
+    control the model's row is read against.
+    """
+    from football.clv import PriceJoinError, beats_closing_test, clv_table, paired_prices
+
+    section("¿Se movió el precio hacia ti?", "fb_clv")
+    if raw_frame is None:
+        st.info(
+            "Los archivos «extra» (Colombia) traen **solo cuotas de apertura**, así que no hay "
+            "un segundo extremo de la línea contra el cual medir. Esto necesita un archivo "
+            "europeo de 2019/20 en adelante, donde las columnas de apertura y de cierre vienen "
+            "juntas."
+        )
+        return
+
+    try:
+        joined = paired_prices(raw_frame)
+    except (PriceJoinError, ValueError) as exc:
+        st.info(
+            "Estos datos no traen los dos extremos de la línea. football-data publica cuotas de "
+            "cierre solo desde 2019/20; antes de eso lo mejor disponible es la apertura, y medir "
+            "una apertura contra sí misma no es valor de línea de cierre."
+        )
+        st.caption(f"Detalle: {exc}")
+        return
+
+    strategies = {OUTCOME_ES[outcome]: [outcome] * len(joined) for outcome in OUTCOMES}
+    rows = []
+    for label, bets in strategies.items():
+        table = clv_table(joined, bets=bets, method=method)
+        result = beats_closing_test(table["clv"], n_comparisons=len(strategies))
+        rows.append({"Apuesta": label, "Partidos": result["n_bets"],
+                     "Valor medio": result["mean_clv"],
+                     "% a favor": result["hit_rate"],
+                     "¿Gana al cierre? (corregido)":
+                         "Sí" if result["beats_closing_corrected"] else "No"})
+
+    st.dataframe(pd.DataFrame(rows).style.format(
+        {"Valor medio": "{:+.4f}", "% a favor": "{:.0%}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        f"Medido sobre {len(joined)} partidos, de la cuota de apertura "
+        f"(**{joined.attrs['bet_odds_source']}**) a la de cierre "
+        f"(**{joined.attrs['closing_odds_source']}**), con el margen quitado de los dos lados. "
+        "Estas tres son estrategias sin ninguna selección: apostar siempre al local no requiere "
+        "saber nada, así que su valor dice cómo se mueve la línea de esta casa y nada sobre "
+        "nadie. Son el control contra el que se leería la fila de un modelo.",
+        help=HELP["fb_clv"],
+    )
+    if is_demo:
+        st.warning(
+            "Son **datos sintéticos**. Si alguna fila sale «Sí», es una propiedad del generador "
+            "—la apertura se simula como una versión borrosa del cierre— y no una estrategia. "
+            "Carga una temporada real para que esta tabla diga algo."
+        )
 
 
 def render_value_tab(matches, method):

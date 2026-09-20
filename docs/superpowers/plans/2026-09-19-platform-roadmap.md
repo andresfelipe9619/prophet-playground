@@ -183,20 +183,24 @@ contract**: `extra_processor.py` carries opening odds, `processor.py` carries cl
 **Files:** `football/clv.py` (new), `tests/test_football_clv.py` (new),
 `dashboard/football_page.py`, `dashboard/ui.py`, `docs/football.md`, `docs/evaluation.md`.
 
-- [ ] `clv(bet_odds, closing_odds)` — the de-margined probability shift, not the raw price
+- [x] `clv(bet_odds, closing_odds)` — the de-margined probability shift, not the raw price
       ratio. Raw-price CLV credits you for the bookmaker's margin changing.
-- [ ] `clv_table(bets, closing)` — per-bet CLV, hit rate (share of bets with positive
+- [x] `clv_table(bets, closing)` — per-bet CLV, hit rate (share of bets with positive
       CLV), and the mean shift with its interval.
-- [ ] `beats_closing_test` — one-sided, through `core/significance.py`, emitting
+- [x] `beats_closing_test` — one-sided, through `core/significance.py`, emitting
       `beats_closing` / `beats_closing_corrected`. Same shape as `beats_market_test`.
-- [ ] **The opening/closing guard applies here too.** CLV needs an opening-priced frame
+- [x] **The opening/closing guard applies here too.** CLV needs an opening-priced frame
       and a closing-priced frame for the *same* matches; the join is explicit and raises
       rather than silently producing a one-sided result. A CLV computed against the same
       prices you bet is identically zero, and a test pins that endpoint the way
       `ensemble.py`'s weight-0 endpoint is pinned.
-- [ ] Note in the docs that Colombian extra files are opening-only, so CLV there needs a
+- [x] Note in the docs that Colombian extra files are opening-only, so CLV there needs a
       closing source this project does not yet have.
-- [ ] Dashboard: CLV beside realised results in **Valor**, never instead of the market
+- [x] **Found while building it:** a European file from 2019/20 on carries *both* column
+      families, so CLV is computable from one file after all — `paired_prices` runs the
+      contract twice rather than around it. `sample_data.generate_matches` gained
+      `opening_noise`, without which none of this is testable.
+- [x] Dashboard: CLV beside realised results in **Valor**, never instead of the market
       verdict.
 
 ## Item 6: `core/registry.py`

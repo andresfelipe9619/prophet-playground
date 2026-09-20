@@ -288,6 +288,8 @@ exist:
 - **`football/calibration.py`** — whether a forecast's 30% is a real 30%, and a
   recalibration that is never fitted on what it is then scored on
   ([§12](#12-calibration-a-different-question-from-edge)).
+- **`football/clv.py`** — closing line value, the measurement that converges
+  inside a season ([§13](#13-closing-line-value)).
 
 **What is still missing.** Lineups and injuries — the single largest thing the
 closing price knows and no model here does; in-play data; and any notion of a
@@ -532,3 +534,72 @@ outcomes by the same `min_fit`**. Scoring the whole series would mix rows the
 correction reached with rows it could not and pull any difference toward zero —
 and trimming one model and not another would break the rule that several models
 are scored on the same held-out set or not compared at all.
+
+
+## 13. Closing line value
+
+`beats_market_test` asks the right question and is nearly unanswerable in a
+season. The per-match score differences are tiny against their own variance, so
+a few hundred matches cannot separate a real 2% edge from nothing — the lesson
+`power.py` already taught on the lottery side, transplanted.
+
+Closing line value asks something smaller. You took a price; the market went on
+absorbing money until kick-off; where did the line end up? If prices move toward
+your bets more often than not, you were systematically earlier than the market.
+That converges in a few hundred bets rather than a few thousand, because it is a
+**direct measurement that never looks at the result** rather than a difference
+of two noisy scores.
+
+### Where both ends of the line come from
+
+From 2019/20 a football-data season file carries the opening columns (`AvgH`,
+`PSH`, `B365H`) **and** the closing ones (`AvgCH`, `PSCH`, `B365CH`) side by
+side. `processor.py` resolves exactly one source per frame, on purpose — that
+refusal is what stops the two mixing inside a model comparison — so
+`paired_prices` does not reach around it. It calls the processor **twice**: once
+on the file as published, which resolves the closing source, and once on a copy
+with the closing columns removed, which can then only resolve an opening one.
+Neither frame can contain both, and the guard that makes that true is still
+`processor.py`'s.
+
+A pre-2019 season is refused by name: the best available there is an opening
+line, and an opening price measured against itself is not CLV.
+
+### Three things that are load-bearing
+
+**De-margined on both ends.** A bookmaker who widens their margin between open
+and close moves every raw price against every bettor, and a raw-price CLV reads
+that as everyone losing value. It is a fact about the book, not about the bet.
+`market.py` owns the de-margining and this module does not reimplement it.
+
+**The join refuses rather than guessing.** CLV needs the same fixture priced
+twice. `join_prices` reports `n_dropped` and raises when nothing overlaps,
+because an empty CLV table and a CLV of zero look identical downstream and mean
+opposite things.
+
+**The endpoint.** CLV against the very price you bet is exactly zero — the same
+load-bearing zero as `ensemble.py`'s weight-0 blend. Every other number here is
+read as a departure from it, so a test pins it.
+
+### What it does not say
+
+**Positive CLV is not profit, and no amount of it is.** It says you were ahead
+of the market's own revision, which is evidence your information was real. It
+says nothing about whether the edge survived the margin you paid to enter, which
+is `value.py`'s question and still has two different bars. The dashboard panel
+carries that sentence, and it sits inside **Valor** after the staking block
+rather than beside the model's verdict.
+
+The dashboard's table is three fixed strategies — back every home side, every
+draw, every away side — and those are the point rather than filler. Backing
+every home side involves no selection at all, so its CLV is a fact about how
+that book's line drifts and nothing about anyone's skill. They are the control a
+model's row would be read against, and the real version of that row arrives with
+the bet log, which does not exist yet.
+
+`football/sample_data.py` gained `opening_noise` for this: set it above
+`market_noise` and the generated file carries two prices per match with the line
+sharpening toward kick-off, which is the only way any of the above is testable.
+The two blurs are independent draws from one truth — reusing a single blur would
+make every CLV exactly zero and every test in that section pass while measuring
+nothing, so a test pins that too.

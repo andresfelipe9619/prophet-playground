@@ -444,6 +444,12 @@ HELP = {
         "1 − score(modelo)/score(mercado). Positivo = el modelo puntuó mejor. En una sola "
         "temporada un valor positivo pequeño está dentro del ruido."
     ),
+    "fb_clv": (
+        "Valor de línea de cierre: tomaste un precio, el mercado siguió moviéndose hasta el "
+        "pitazo inicial, ¿terminó a tu favor? Converge en cientos de apuestas en vez de miles, "
+        "porque es una medición directa y no la diferencia de dos puntajes ruidosos. Valor "
+        "positivo **no** es ganancia: dice que ibas por delante de la revisión del mercado."
+    ),
     "fb_oos_calibration": (
         "Un modelo bien calibrado es uno cuyo 30% pasa 30 veces de cada 100. Es una pregunta "
         "distinta de «¿le gana al mercado?»: un pronóstico perfectamente calibrado puede no "
@@ -829,6 +835,16 @@ PLAIN = {
         "ojo": "Un partido no prueba nada, gane quien gane. El único número de esta página que "
                "dice si el modelo vale algo está en **Resultados**, medido sobre muchos partidos "
                "y con corrección.",
+    },
+    "fb_clv": {
+        "veo": "Cuánto se movió el precio entre la apertura y el cierre, hacia la apuesta o en "
+               "contra, con el margen quitado de los dos lados.",
+        "concluyo": "Si la línea se mueve hacia tus apuestas más de lo que se aleja, ibas por "
+                    "delante del mercado. Es la pregunta medible de esta pestaña: «¿le gana al "
+                    "cierre?» necesita miles de partidos, ésta cientos.",
+        "ojo": "**Valor positivo no es ganancia.** Dice que tu información era real, no que la "
+               "ventaja sobrevive al margen que pagas por entrar. Esa sigue siendo la sección "
+               "de arriba.",
     },
     "fb_oos_calibration": {
         "veo": "Si los porcentajes del modelo significan lo que dicen: cuando anuncia 30%, con "
