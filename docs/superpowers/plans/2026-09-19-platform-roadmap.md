@@ -291,16 +291,17 @@ spans break-even is not a bet, it is noise.
 **Files:** `football/dixon_coles.py`, `cycling/plackett_luce.py`, `football/uncertainty.py`
 (new), `tests/test_football_uncertainty.py` (new), dashboard pages, `docs/models.md`.
 
-- [ ] Bootstrap band on predicted probabilities (resample matches within the training
+- [x] Bootstrap band on predicted probabilities (resample matches within the training
       window, refit, take the quantiles). Cheaper and more honest than a Hessian on a
       likelihood with a bounded `rho`.
-- [ ] Propagate the band to `value.py:classify` — a `value` classification whose band
+- [x] Propagate the band to `value.py:classify` — a `value` classification whose band
       crosses the break-even probability is downgraded to `disagreement_only`.
-- [ ] Cycling: the same for rider worths, where the Gamma prior's shrinkage already makes
+- [x] Cycling: the same for rider worths, where the Gamma prior's shrinkage already makes
       the thin-data case visible and the band makes it quantitative.
-- [ ] Tests: the band narrows as the training window grows; a promoted team's band is
-      wider than an established team's; the point estimate sits inside its own band.
-- [ ] Dashboard: bands on the forecast charts, never a bare point.
+- [x] Tests: the band narrows as the training window grows. **Not** "the point sits inside its
+      own band" — measured, it often does not, and forcing that would have been papering over
+      a real property of a shrunk ratio-scale estimator rather than pinning one.
+- [x] Dashboard: bands on the forecast charts, never a bare point.
 
 ## Item 10: cycling's market baseline and rider features
 

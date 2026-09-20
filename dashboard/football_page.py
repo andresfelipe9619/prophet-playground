@@ -78,6 +78,12 @@ VERDICT_ES = {
 # for its observed rate to mean something on one season of data.
 CALIBRATION_BINS = (0.0, 0.2, 0.35, 0.5, 0.65, 0.8, 1.0)
 
+# The half-life the Valor tab fits with. Named rather than repeated, because the
+# uncertainty band has to be measured on the *same* fit it describes -- a band
+# from a differently-weighted model is an interval around a number that is not
+# on screen.
+VALUE_TAB_HALF_LIFE = 180
+
 
 def season_files(directory):
     """The season CSVs sitting in `directory`, newest name last."""
@@ -723,6 +729,50 @@ def render():
         _render_clv(raw_frame, method, is_demo)
 
 
+@st.cache_data(show_spinner="Midiendo la incertidumbre del modelo…")
+def _bootstrap_bands(cache_key, _matches, home_team, away_team, half_life, n_resamples):
+    """Bootstrap band for one fixture, cached on the frame's fingerprint.
+
+    Underscore-prefixed frame for the reason every cached helper here uses one:
+    Streamlit cannot hash a frame carrying `.attrs`.
+    """
+    from football.dixon_coles import DixonColes
+    from football.uncertainty import bootstrap_predictions
+
+    return bootstrap_predictions(
+        _matches, [(home_team, away_team)],
+        lambda data, hl: DixonColes.fit(data, half_life=hl),
+        n_resamples=n_resamples, half_life=half_life)
+
+
+def _with_uncertainty(table, matches, home_team, away_team, half_life, n_resamples=120):
+    """Attach the band to a value table and demote what it does not support.
+
+    Never upgrades. A band whose top end clears the price while the point does
+    not is still a model without an edge on its own estimate, and promoting it
+    would turn an interval into a second opinion.
+    """
+    from football.uncertainty import with_bands
+
+    try:
+        bands = _bootstrap_bands((*_fingerprint(matches), half_life), matches,
+                                 home_team, away_team, half_life, n_resamples)
+    except Exception as exc:  # noqa: BLE001 — a band is an extra, never the blocker
+        st.caption(f"No se pudo medir la incertidumbre del modelo: {exc}")
+        return table
+
+    banded = with_bands(table, bands)
+    demoted = int((banded["verdict"] != banded["verdict_point"]).sum())
+    if demoted:
+        st.warning(
+            f"**{demoted} resultado(s) dejaron de contar como apuesta al mirar el intervalo.** "
+            "El modelo supera el precio con su estimación puntual, pero el intervalo de esa "
+            "estimación no lo supera — es decir, la ventaja podría ser ruido con el signo "
+            "favorable. Se degradan a «solo discrepancia», nunca al revés."
+        )
+    return banded
+
+
 def _render_bankroll(matches, method):
     """What running these bets would have felt like, with the null drawn beside it.
 
@@ -923,7 +973,7 @@ def render_value_tab(matches, method):
     )
 
     try:
-        model = _fit_dixon_coles(matches, (*_fingerprint(matches), 180))
+        model = _fit_dixon_coles(matches, (*_fingerprint(matches), VALUE_TAB_HALF_LIFE))
         model_probabilities = model.predict_outcome(home_team, away_team)
     except UnknownTeamError as exc:
         st.error(f"El modelo no conoce a ese equipo en las temporadas cargadas. Detalle: {exc}")
@@ -950,6 +1000,11 @@ def render_value_tab(matches, method):
         f"suficiente para pagar el margen, que aquí vale {margin_cost(np.array(odds), method=method).mean():.1%} "
         "de probabilidad por resultado."
     )
+
+    # The band, and the downgrade it forces. A point clearing the price by a
+    # hair while its interval straddles it is noise with a favourable sign, and
+    # showing a stake on it is the one thing this tab must not do.
+    table = _with_uncertainty(table, matches, home_team, away_team, VALUE_TAB_HALF_LIFE)
 
     display = table.copy()
     display["Resultado"] = [OUTCOME_ES[o] for o in display["outcome"]]

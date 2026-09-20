@@ -402,3 +402,78 @@ An unknown team raises `UnknownTeamError`.
 ---
 
 **Next:** [Evaluation](evaluation.md) · [Dashboard](dashboard.md)
+
+
+## Parameter uncertainty: how much of a forecast is the sample
+
+`DixonColes`, `Elo` and `PlackettLuce` return point estimates. Six matches into
+a season those points are confidently wrong, and nothing in a probability
+vector says so — a 0.62 fitted from eighty matches and a 0.62 fitted from six
+look identical on screen and mean completely different things.
+
+[`football/uncertainty.py`](../football/uncertainty.py) and
+[`cycling/uncertainty.py`](../cycling/uncertainty.py) attach the missing half:
+a **bootstrap band**. Resample the training data, refit, predict, take the
+quantiles.
+
+### Why bootstrap rather than a Hessian, measured
+
+The cheap alternative is the inverse observed information at the optimum, and
+it is wrong here in a way that is hard to notice: Dixon-Coles' `rho` is
+**bounded** at ±0.4, and a quadratic approximation around a constrained optimum
+understates the uncertainty exactly where it matters. `attrs["n_at_bound"]`
+counts how often that happens:
+
+| training matches | band width | refits with a parameter at its bound |
+| --- | --- | --- |
+| 20 | 0.726 | 76 of 80 |
+| 45 | 0.461 | 48 of 80 |
+| 90 | 0.353 | 21 of 80 |
+
+At twenty matches nineteen refits in twenty end against the bound, so a Hessian
+there would be describing the curvature of a wall. The band narrows with data
+and the bound-hit rate falls with it: the same fact seen twice.
+
+### The downgrade, which is where the band earns its keep
+
+A bet is a bet only if the model's probability clears the raw price. A *point*
+clearing it by a hair while its band straddles it is noise that landed with a
+favourable sign, so `downgrade_uncertain_value` demotes it to
+`disagreement_only` — the state [`value.py`](football.md#11-value-and-staking)
+already keeps for "the model disagrees and cannot pay for the spread", now
+extended to "the model may not disagree at all".
+
+**Nothing is ever upgraded.** A band whose top end clears the price while the
+point does not is still a model without an edge on its own estimate, and
+promoting it would turn an interval into a second opinion. The dashboard says
+how many rows changed, because a row that changed is the most interesting row
+in the table.
+
+### Cycling: two results that contradict the obvious expectation
+
+The resampling unit is the **race**, not the rider: a finishing order is one
+observation, and resampling riders within a race would invent orderings that
+never happened.
+
+**The absolute band width narrows with races; the width relative to the worth
+does not track evidence at all.** Measured over three seeds, 4 races against 16:
+
+| seed | absolute width | width / worth |
+| --- | --- | --- |
+| 3 | 0.624 → 0.409 | 0.754 → 0.747 |
+| 7 | 0.553 → 0.491 | 0.757 → 1.027 |
+| 11 | 0.900 → 0.386 | 1.108 → 0.923 |
+
+The absolute width falls every time. The ratio rises, falls or stays flat
+depending on how the field happened to separate, because differentiating riders
+grow the denominator alongside the numerator. `relative_band_width` is for
+ranking riders **within one fit**, where the ratio scale makes an absolute width
+meaningless across strengths — using it as a measure of evidence reads noise as
+a trend.
+
+**A percentile band need not contain the point, and does so less often as data
+accumulates** (100% at 4 races, 50% at 16). That is not a defect to correct:
+the bootstrap distribution of a shrunk, mean-normalised, ratio-scale estimator
+is not centred on the full-sample fit. `contains_point` flags those rows, and it
+is the most useful column in the table — the fit naming which of its own
+numbers it would not reproduce on a redrawn calendar.
