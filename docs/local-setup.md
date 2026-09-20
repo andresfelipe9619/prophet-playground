@@ -170,10 +170,41 @@ Two things worth knowing before you do:
 
 ## 4. What the models do with a local machine
 
-**Every model is installed and on by default.** The only one with a switch left
-is TimesFM in the backtest, and it is now ticked when the package is present —
-a comparison table quietly missing a model is a bug this project already fixed
-once, for Prophet.
+**Every model is installed. TimesFM is the one that is not on by default**, and
+the reason is worth reading before you change it back.
+
+The rule this project fixed once for Prophet is that a comparison table must not
+*quietly* leave out an installed model. An unticked box with a sentence under it
+saying why is not quiet — it is the reader's choice, made before the cost — and
+the Bonferroni correction counts only the models that actually ran, so the table
+stays honest either way.
+
+What TimesFM ticking itself produced was an ambush. A reader clicking **Ejecutar
+backtest** to compare the other five models paid a forward pass per window and,
+on a first run, a checkpoint download of hundreds of megabytes. On a machine
+without a GPU that is several minutes with nothing on screen, which is
+indistinguishable from a hung app — and it is what the report "running the
+Google model is slow and then the dashboard says it disconnected" sits on top
+of.
+
+Two related fixes went in with it. The Pronóstico tab now warns **before** the
+wait rather than captioning it under the model picker, its spinner no longer
+says "Entrenando…" for the one model here that fits nothing, and the result is
+held in session state — so a forecast that took minutes survives the next widget
+click, and a dropped connection costs you the wait once rather than twice.
+
+**On the disconnection itself: it could not be reproduced on a direct localhost
+connection, and that is worth recording.** A Streamlit script that blocks its
+thread for three minutes — pure Python holding the GIL, and separately torch
+saturating every core — kept its websocket open throughout, measured. Streamlit
+already pings every 30 seconds by default (`server.websocketPingInterval`, whose
+default is 30 with a matching timeout), so the "silent socket times out" theory
+does not survive contact with the code. What remains, and what the fixes above
+are aimed at, is that the run is long enough for *something* between the browser
+and the server to give up, or for the process itself to be killed. Setting
+`websocketPingInterval` lower is **not** a fix to reach for blind: it sets the
+ping *timeout* to the same value, so a shorter interval tightens the deadline
+the server itself enforces.
 
 **TimesFM runs at full strength**, which is what changed when hosting stopped
 being a consideration:

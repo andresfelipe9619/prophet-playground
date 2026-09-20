@@ -224,6 +224,10 @@ HELP = {
                        "normal haberlo saltado. Para instalarlo: `pip install -r requirements.txt` "
                        "— y si no tienes GPU, añade "
                        "`--extra-index-url https://download.pytorch.org/whl/cpu`.",
+    "timesfm_opt_in": "TimesFM va desmarcado a propósito: es el modelo más caro de la lista (una "
+                      "pasada por ventana, y la primera vez descarga cientos de MB). Márcalo cuando "
+                      "quieras incluirlo — la corrección de Bonferroni cuenta solo los modelos que "
+                      "realmente corrieron, así que la tabla sigue siendo honesta con o sin él.",
     "timesfm_first_run": "La primera predicción descarga el modelo preentrenado (cientos de MB) y "
                          "puede tardar varios minutos. Las siguientes son inmediatas.",
     "timesfm_download_failed": "No se pudo descargar el modelo preentrenado de TimesFM. Se baja de "

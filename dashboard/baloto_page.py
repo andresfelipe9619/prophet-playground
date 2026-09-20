@@ -657,10 +657,18 @@ def render():
         if not TIMESFM_AVAILABLE:
             st.caption(HELP["timesfm_missing"])
         elif model_choice == "TimesFM":
-            st.caption(HELP["timesfm_first_run"])
+            # A warning, not a caption. The first run can take minutes with
+            # nothing on screen, and a reader who was not told that is looking
+            # at what a hung app looks like.
+            st.warning(HELP["timesfm_first_run"])
 
         if st.button("Generar predicción del próximo sorteo"):
-            with st.spinner("Entrenando..."):
+            # TimesFM fits nothing -- it is the one model here that only reads.
+            # "Entrenando..." was wrong for it, and wrong in the direction that
+            # makes a long wait more confusing rather than less.
+            waiting = ("Descargando el modelo si hace falta, y leyendo tu historial…"
+                       if model_choice == "TimesFM" else "Entrenando…")
+            with st.spinner(waiting):
                 history = position_series[0]["ds"]
                 next_date = next_draw_dates(history.max(), 1, weekdays=infer_draw_weekdays(history))[0]
 
@@ -698,6 +706,20 @@ def render():
                         st.caption(str(exc))
                         preds = None
 
+                # Held across reruns. Without this a forecast that took minutes
+                # is discarded by the next widget click, and after a dropped
+                # connection the reader has to pay for it a second time -- which
+                # is what turns a slow run into a wasted one.
+                st.session_state["forecast"] = {"model": model_choice, "preds": preds}
+
+        stored = st.session_state.get("forecast")
+        if stored is not None:
+            # `shown_model` rather than reusing `model_choice`: the held result
+            # outlives the selector, so after changing the dropdown the numbers
+            # on screen are still the previous model's until the button is
+            # pressed again. Naming it in the message is what stops that being
+            # a quiet mislabelling.
+            shown_model, preds = stored["model"], stored["preds"]
             # preds is None only when the block above already put an explanation
             # on screen; anything else here would print a second, vaguer one.
             if preds is None:
@@ -707,8 +729,14 @@ def render():
             else:
                 main_numbers = sorted({preds[p] for p in main_positions(n_columns)})
                 super_number = preds[n_columns - 1]
-                st.success(f"Balotas principales sugeridas: **{' - '.join(str(n) for n in main_numbers)}**  |  "
+                st.success(f"**{shown_model}** — balotas principales sugeridas: "
+                           f"**{' - '.join(str(n) for n in main_numbers)}**  |  "
                            f"Superbalota: **{super_number}**")
+                if shown_model != model_choice:
+                    st.caption(
+                        f"Estos números son de **{shown_model}**, el modelo con el que corriste la "
+                        f"última predicción. Pulsa el botón para correr **{model_choice}**."
+                    )
                 if len(main_numbers) < MAIN_BALLS_DRAWN:
                     st.caption(f"Nota: hubo {MAIN_BALLS_DRAWN - len(main_numbers)} coincidencia(s) entre posiciones, "
                                "por eso hay menos de 5 números distintos — típico cuando el modelo no tiene señal real "
@@ -1048,15 +1076,24 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
-            # On when installed: the checkpoint is cached after the first run, so
-            # the only cost that ever surprised anyone is paid once. A comparison
-            # table that quietly leaves out an installed model is the bug this
-            # project already fixed once, for Prophet.
-            include_timesfm = c3.checkbox("Incluir TimesFM", value=TIMESFM_AVAILABLE,
+            # Off by default, unlike Prophet, and the caption below says so.
+            #
+            # The rule this project already fixed once for Prophet is that a
+            # comparison table must not *quietly* leave out an installed model.
+            # An unticked box with a sentence under it is not quiet -- it is the
+            # reader's choice, made before the cost. What it was before was an
+            # ambush: TimesFM ticked itself, and a reader who clicked "Ejecutar
+            # backtest" to see the other five models paid a forward pass per
+            # window plus, on a first run, a checkpoint download of hundreds of
+            # MB. On a machine without a GPU that is minutes of apparently
+            # nothing happening, which is what a hung app looks like.
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=False,
                                           key="wf_timesfm",
                                           disabled=not TIMESFM_AVAILABLE,
                                           help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
                                           else HELP["timesfm_missing"])
+            if TIMESFM_AVAILABLE and not include_timesfm:
+                st.caption(HELP["timesfm_opt_in"])
 
             start_idx, total = bt.window_bounds(n_draws, n_windows, min_train)
             if start_idx >= total:
@@ -1097,11 +1134,16 @@ def render():
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
                                            else HELP["prophet_missing"])
-            include_timesfm = c3.checkbox("Incluir TimesFM", value=TIMESFM_AVAILABLE,
+            # Off by default for the reason spelled out on the walk-forward
+            # checkbox above: visible opt-in rather than a silent omission, and
+            # rather than an ambush.
+            include_timesfm = c3.checkbox("Incluir TimesFM", value=False,
                                           key="holdout_timesfm",
                                           disabled=not TIMESFM_AVAILABLE,
                                           help=HELP["include_timesfm"] if TIMESFM_AVAILABLE
                                           else HELP["timesfm_missing"])
+            if TIMESFM_AVAILABLE and not include_timesfm:
+                st.caption(HELP["timesfm_opt_in"])
 
             n_train_preview, n_holdout_preview = bt.cutoff_bounds(df["ds"], pd.Timestamp(cutoff))
             st.caption(
