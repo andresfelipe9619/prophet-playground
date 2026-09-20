@@ -448,6 +448,12 @@ HELP = {
         "1 − score(modelo)/score(mercado). Positivo = el modelo puntuó mejor. En una sola "
         "temporada un valor positivo pequeño está dentro del ruido."
     ),
+    "fb_resolution": (
+        "La resolución del resultado: la ventaja más pequeña que esta cantidad de partidos "
+        "podía haber encontrado. Sin ella, «ningún modelo le ganó al mercado» y «no había "
+        "suficientes partidos para verlo» son la misma frase. Se calcula con la dispersión "
+        "medida en esta corrida, no con una constante."
+    ),
     "fb_clv": (
         "Valor de línea de cierre: tomaste un precio, el mercado siguió moviéndose hasta el "
         "pitazo inicial, ¿terminó a tu favor? Converge en cientos de apuestas en vez de miles, "

@@ -243,20 +243,20 @@ now reproduced in the domain where it matters more.
 `tests/test_football_power.py` (new), `tests/test_football_sensitivity.py` (new),
 `dashboard/football_page.py`, `docs/power-and-sensitivity.md`, `docs/football.md`.
 
-- [ ] `minimum_detectable_edge(n_matches, metric="rps", alpha=0.05, power=0.8)` — mirrors
+- [x] `minimum_detectable_edge(n_matches, metric="rps", alpha=0.05, power=0.8)` — mirrors
       `beats_market_test` exactly, the way `lottery/analysis/power.py` mirrors
       `beats_chance_test`. The per-match RPS difference's variance is estimated from data
       rather than assumed, because unlike the hypergeometric case there is no exact form.
-- [ ] `required_matches(edge)` and a power curve.
-- [ ] `football/sensitivity.py`: plant a known edge by blending the generative truth from
+- [x] `required_matches(edge)` and a power curve.
+- [x] `football/sensitivity.py`: plant a known edge by blending the generative truth from
       `football/sample_data.py` into the model's forecast at a known weight, then measure
       how often `beats_market_corrected` fires. **`strength = 0` is the control** and must
       sit near alpha.
-- [ ] **Independent seeds.** The match generator and any sampling in the detector take
+- [x] **Independent seeds.** The match generator and any sampling in the detector take
       their seeds from separate streams, for the reason documented in
       `lottery/analysis/sensitivity.py` — one shared `default_rng` manufactured a 17.5%
       false-positive rate there and cost a full investigation.
-- [ ] Every football "did not beat the market" surface gains the resolution line.
+- [x] Every football "did not beat the market" surface gains the resolution line.
 
 ## Item 8: `football/bankroll.py`
 

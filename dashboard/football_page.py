@@ -190,6 +190,57 @@ def _fingerprint(matches):
     )
 
 
+def _render_resolution(table):
+    """What this backtest could have detected, beside what it did.
+
+    The rule the lottery page has followed for a long time, arriving in
+    football: a null result is unreadable without its resolution. "No model
+    beat the closing line" over 40 matches and over 4,000 are the same sentence
+    and completely different findings, and nothing in the table's shape says
+    which one is on screen.
+
+    The spread is taken from **this run's own forecasts**, never from a
+    reference constant. Unlike the lottery's hypergeometric null there is no
+    closed form for it: it depends on the league, the book and how far the
+    model strays from the price, and a minimum detectable edge quoted from an
+    assumed spread is a guess with a decimal point on it.
+    """
+    from football.power import minimum_detectable_edge, observed_score_sd
+
+    forecasts = table.attrs.get("forecasts")
+    if not forecasts or not forecasts["models"]:
+        return
+
+    rows = []
+    for name, probs in forecasts["models"].items():
+        spread = observed_score_sd(probs, forecasts["market"], forecasts["outcomes"])
+        if not np.isfinite(spread) or spread <= 0:
+            continue
+        n = len(forecasts["outcomes"])
+        rows.append({
+            "Modelo": MODEL_ES.get(name, name),
+            "Partidos": n,
+            "Ventaja medida": float(table.loc[table["model"] == name, "effect"].iloc[0]),
+            "Ventaja mínima detectable": minimum_detectable_edge(n, score_sd=spread)["absolute"],
+        })
+    if not rows:
+        return
+
+    st.markdown("**¿Qué habría podido ver este backtest?**", help=HELP["fb_resolution"])
+    st.dataframe(pd.DataFrame(rows).style.format(
+        {"Ventaja medida": "{:+.4f}", "Ventaja mínima detectable": "{:.4f}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "La última columna es la mejora de RPS más pequeña que esta cantidad de partidos "
+        "habría detectado 8 veces de cada 10. Si la ventaja medida es menor que ella, «no le "
+        "gana al mercado» habla del tamaño de la muestra y no del modelo. Un modelo bueno le "
+        "saca a la cuota de cierre unas milésimas, y una temporada de una liga no las resuelve "
+        "— por eso existe **¿Se movió el precio hacia ti?** en la pestaña de Valor, que sí "
+        "converge en cientos de apuestas.",
+        help=HELP["fb_resolution"],
+    )
+
+
 def _render_out_of_sample_calibration(table):
     """Calibration of the backtest's own forecasts — the out-of-sample version.
 
@@ -619,6 +670,7 @@ def render():
                        "Es el resultado esperado: la cuota de cierre es el precio después de que "
                        "se movió todo el dinero, y casi nada le gana."),
                 )
+                _render_resolution(table)
 
                 display = table.copy()
                 display["Modelo"] = display["model"].map(MODEL_ES)
