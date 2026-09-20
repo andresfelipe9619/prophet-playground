@@ -125,17 +125,20 @@ the detector fires.
 
 **Files:** `tests/test_leakage.py` (new), `docs/evaluation.md`.
 
-- [ ] **Shuffled-target canary (football).** Permute outcomes in time, refit Dixon-Coles
+- [x] **Shuffled-target canary (football).** Permute outcomes in time, refit Dixon-Coles
       walk-forward, assert `beats_market_corrected` is False and the effect's interval
       straddles zero. A pipeline that leaks still "beats" the market on shuffled targets.
-- [ ] **Shuffled-target canary (cycling).** The same against `beats_baseline_test`.
-- [ ] **`as_of` canary.** Assert `form_worths(results, riders, as_of=d)` and
+- [x] **Shuffled-target canary (cycling).** The same against `beats_baseline_test`.
+- [x] **`as_of` canary.** Assert `form_worths(results, riders, as_of=d)` and
       `team_form(..., as_of=d)` are bit-identical when every row on or after `d` is
       deleted. This is the strongest available statement that the cutoff is real.
-- [ ] **Future-row canary.** Append an absurd future result to the frame and assert every
+- [x] **Future-row canary.** Append an absurd future result to the frame and assert every
       `as_of`-taking function's output is unchanged.
-- [ ] Mark the refitting ones `slow`; document them in `docs/evaluation.md` beside the
+- [x] Mark the refitting ones `slow`; document them in `docs/evaluation.md` beside the
       known-past-bugs section.
+- [x] **Positive controls**, added while building it: a canary that cannot fire is decoration,
+      so a forecaster that reads the race it forecasts must beat the ranking and a forecast
+      that has seen the result must beat the market.
 
 ## Item 4: `football/calibration.py`
 
