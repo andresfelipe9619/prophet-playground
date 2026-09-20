@@ -10,9 +10,10 @@ layer that lets a forecast mean something: a **ranking baseline**
 ordering ([§7](#7-scoring-an-ordering-cyclingscoringpy)), a fitted
 **Plackett-Luce** rider-strength model ([§8](#8-the-model-cyclingplackett_lucepy))
 and the paired evaluation against that baseline
-([§9](#9-evaluation-cyclingevaluationpy)). What is still missing is in
-[§11](#11-what-is-not-built-yet) — most of all the market, which is the bar
-wherever a price exists.
+([§9](#9-evaluation-cyclingevaluationpy)), and the **market baseline** that is
+the bar wherever a price exists ([§10](#10-the-market-cyclingmarketpy-and-cyclingpricespy)).
+What is still missing is in [§12](#12-what-is-not-built-yet) — most of all a
+source for those prices, since nothing here fetches them.
 
 ## 1. Where it sits between the other two
 
@@ -336,7 +337,138 @@ On the default synthetic Grand Tour — two stages in three a sprint — the fit
 model edges the ranking and does **not** clear the corrected threshold on 17
 races. That is the honest result and the sample-size story above, in one number.
 
-## 10. The dashboard page
+## 10. The market: `cycling/market.py` and `cycling/prices.py`
+
+The bar the ranking was standing in for. Every verdict in §9 is against the
+pre-race ranking, which is the soft bar — the one a model beats by being a
+slightly better reader of recent form. Where an outright price exists it, not
+the ranking, is what a forecast has to clear, and these two modules make that
+comparison expressible. `market.py` does the arithmetic, `prices.py` owns the
+file, and the split is football's: the arithmetic is testable on a vector of
+numbers, and the mistakes that actually happen are about which numbers ended up
+in the vector.
+
+### An outright book is not a football book with more rows
+
+Football's overround is 1.02-1.08. An outright cycling market runs to 1.4 and
+beyond, because a bookmaker pricing 180 mutually exclusive runners takes a
+margin on each. Two consequences follow, and both are larger than their football
+counterparts.
+
+The three normalisations that "disagree on longshots" in football disagree
+*enormously* here, because almost every runner is a longshot. Measured on a
+180-runner book at an overround of 1.76:
+
+| method | favourite | top-10 share | tail share | riders zeroed |
+| --- | --- | --- | --- | --- |
+| multiplicative | 0.142 | 0.485 | 0.133 | 0 |
+| additive | 0.214 | 0.705 | 0.000 | 106 |
+| power | 0.199 | 0.596 | 0.087 | 0 |
+
+`compare_methods` is not optional reading here the way it nearly is in football.
+**`additive` is kept as a named mistake**, the same role `uniform_worths` plays
+in §6: subtracting the same absolute excess from every runner drives 106 of 180
+negative, and clipping them at zero says 106 riders cannot finish first. The
+clip breaks the sum, so the result is renormalised and then *looks* like a
+distribution — which is exactly why `n_zeroed` is reported. A method that only
+reveals itself in a column nobody printed is one that gets used.
+
+And the favourite-longshot bias is the whole shape of the book. A 200/1 rider is
+not priced there because anyone believes 0.5%; that is the shortest price the
+book can offer on a runner who will not win. Multiplicative de-margining scales
+every price by one factor and leaves that bias fully intact, which on this market
+means the baseline is badly wrong about 170 of the 180 riders. `power` is the
+default for that reason.
+
+### The quoted field is not the field
+
+A book prices the 40 runners anyone will bet on and leaves 140 unquoted. Those
+140 still start, and one of them wins stages. De-margining normalises over the
+runners with prices, which implicitly gives the rest probability zero — and a
+zero takes the Plackett-Luce log score to minus infinity the first time an
+unquoted rider wins.
+
+`field_worths(riders, priced_riders, odds, unpriced="longest")` gives each
+unquoted rider the implied probability of the **longest price the book actually
+put up** and renormalises the whole field, returning `(worths, n_unpriced)` so
+the extrapolation is never silent. That is the book's own statement of its
+floor, and it is deliberately unflattering to the market: handing 140 riders a
+real probability each takes probability away from the favourites, so the
+baseline it builds is *weaker* than the book. **A model that beats it has not
+yet beaten the market.** `unpriced="refuse"` raises instead, for a caller who
+would rather drop the race than score against an extrapolation.
+
+### Probabilities are not worths
+
+Everything downstream of `cycling/baseline.py` consumes Plackett-Luce worths, and
+a win probability is not one. Under Luce's rule a rider's win probability is
+`w_i / sum(w)`, so `worths_from_market` inverts that exactly — up to the scale
+the model does not identify, fixed at mean 1 the same way `plackett_luce.py`
+fixes it. What the inversion does **not** recover is how the market would order
+the rest of the field: a book prices who wins, and the parts of a finishing order
+below first place are not in the prices at all. A market baseline built this way
+is a strong claim about the front of the race and an extrapolation about the back.
+
+### One book per frame, one market per frame
+
+`prices.py` is the contract, and its guards are about *identity* rather than
+values — every number in a mixed price frame is a valid decimal price. This is
+football's opening/closing trap in a third costume, and it is worse here:
+
+- **Two books in one frame** do not merely differ in margin, they quote
+  different fields. Stacked, a race with 176 starters has 240 priced runners and
+  an overround that means nothing. `preprocess_prices` refuses a second `book`
+  value; `load_books` refuses to concatenate files that resolve to different ones.
+- **Two markets in one frame** — a price on the Tour's GC beside a price on its
+  seventh stage — normalise against each other and describe a race nobody ran.
+  This is §3's one-kind-per-frame rule one layer up.
+- A rider priced twice, a field whose prices sum to **under** 1 (which means
+  runners are missing, and normalising hands their probability to whoever is
+  left), and a column of fractional odds that was never converted are all
+  refusals rather than warnings.
+
+`market_slice` cuts one market out of a season's worth of prices with the same
+`attrs` a single-market file would carry, because everything downstream
+normalises over a field and must be handed exactly one.
+
+### Using it as the baseline
+
+`market_forecaster(prices)` returns the `f(history, riders, as_of) -> worths`
+shape `walk_forward` already takes, so the market drops into
+`compare_forecasters` as the **baseline** wherever prices exist:
+
+```python
+from cycling.evaluation import compare_forecasters
+from cycling.prices import load_books, market_forecaster
+
+prices = load_books(["exported_data/cycling/prices/tour-2024-bookA.csv"])
+table, scores = compare_forecasters(
+    results,
+    {"market": market_forecaster(prices),
+     "ranking": ranking_forecaster,
+     "plackett-luce": model_forecaster,
+     "uniform draw": uniform_forecaster},
+    baseline="market",
+)
+```
+
+It looks at nothing in `history`, which is the point: a price quoted before the
+race is already a forecast made without the result. Two races priced on the same
+day are **not scored** rather than guessed between — returning None drops that
+race from both sides of the paired test, which is what `walk_forward` already
+does for a forecaster that cannot answer.
+
+The endpoint is pinned by a test, as every endpoint in this project is: a
+forecast that *is* the market scores an effect of exactly zero against it. That
+zero is what any gain is measured from.
+
+**Nothing in this repository fetches prices.** There is no scraper and no
+source, and this page says so rather than implying a pipeline. What exists is
+the shape a price file must have for the verdict to be against the market
+instead of against the ranking, so that the day prices are to hand the baseline
+is already there.
+
+## 11. The dashboard page
 
 `streamlit run dashboard/app.py`, then pick **🚴 Ciclismo** in the sidebar. Five
 tabs: **Datos**, **Abandonos** and **Tiempos** put the three invariants of §3 on
@@ -347,11 +479,12 @@ Loading a stage result together with a general classification renders the
 refusal. Details in
 [Dashboard §4](dashboard.md#4-ciclismo-the-result-contract-the-ranking-and-the-model).
 
-## 11. What is not built yet
+## 12. What is not built yet
 
-1. **The market baseline.** Where a price exists it, not the ranking, is the bar.
-   Nothing here reads odds yet, so every verdict is against the ranking and says
-   so.
+1. **A price source.** The market baseline exists ([§10](#10-the-market-cyclingmarketpy-and-cyclingpricespy))
+   and nothing fetches prices for it, so in practice every verdict is still
+   against the ranking and says so. This is now a data problem rather than a
+   modelling one, which is the smaller of the two.
 2. **Course and terrain.** A climber and a sprinter are not one strength number,
    and a model that cannot tell a mountain stage from a bunch sprint is leaving
    most of the available signal on the table.
