@@ -2,12 +2,8 @@
 
 Run through `dashboard/app.py`, which owns the sidebar's domain selector.
 
-**What this page deliberately does not do.** There is no cycling model here yet,
-no scoring rule for a finishing order, and not even the ranking baseline a model
-would have to beat. So nothing on this page predicts or scores anything; it
-describes the data.
-
-What it *is* for is the part that costs most when it goes unnoticed. The three
+**What this page is for**, before anything it forecasts, is the part that costs
+most when it goes unnoticed. The three
 things the contract protects — one kind of result per frame, non-finishers kept,
 times stored as totals rather than gaps — are all invisible in the shape of a
 frame, so this page puts them on screen: which kind of result is loaded, how many
@@ -34,7 +30,8 @@ from cycling.baseline import (
 )
 from cycling.common import DEFAULT_DATA_DIR, FINISHED, STAGE, format_seconds
 from cycling.evaluation import compare_forecasters, race_groups
-from cycling.plackett_luce import PlackettLuce
+from cycling.features import CLIMB, SPRINT, feature_frame, infer_terrain
+from cycling.plackett_luce import PlackettLuce, TerrainPlackettLuce
 from cycling.processor import (
     ResultFormatError,
     check_result_format,
@@ -44,11 +41,14 @@ from cycling.processor import (
 )
 from cycling.sample_data import generate_stage_race
 from cycling.scoring import METRICS, spearman, top_n_accuracy
+from dashboard import betlog_page
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 
 # Spanish labels for the code-facing constants in cycling/common.py.
 # Short enough to fit a metric tile; the full sentence lives in the caption
 # under it, where there is room to say what each kind's `rank` actually means.
+CYCLING_LEDGER_PATH = "cycling_bets.csv"
+
 KIND_ES = {"stage": "Etapa", "one_day": "Un día", "gc": "General"}
 KIND_ES_LONG = {"stage": "resultado de etapa", "one_day": "clásica de un día",
                 "gc": "clasificación general"}
@@ -63,7 +63,20 @@ METRIC_ES = {"plackett_luce": "Orden completo (Plackett-Luce) — el veredicto",
 
 
 @st.cache_data(show_spinner=False)
-def _fit_and_forecast(_results, cache_key, riders, as_of):
+def _terrain_labels(_results, cache_key):
+    """Terrain of every race in the frame, read off how each one finished."""
+    return infer_terrain(_results)
+
+
+@st.cache_data(show_spinner=False)
+def _features(_results, cache_key, riders, as_of, terrain, teams):
+    """Per-rider covariates for one start list, from results strictly before the race."""
+    return feature_frame(_results, list(riders), as_of=as_of, terrain=terrain,
+                         teams=dict(teams) if teams else None)
+
+
+@st.cache_data(show_spinner=False)
+def _fit_and_forecast(_results, cache_key, riders, as_of, terrain=None):
     """The ranking baseline and the fitted model for one race, from prior results only.
 
     `_results` is underscore-prefixed because the frame carries `.attrs` that
@@ -73,8 +86,18 @@ def _fit_and_forecast(_results, cache_key, riders, as_of):
     """
     history = _results[_results["ds"] < as_of]
     ranking = form_worths(history, riders, as_of=as_of)
-    model = PlackettLuce.fit(history).worths_for(riders) if len(history) else None
-    return ranking, model
+    if not len(history):
+        return ranking, None, None
+    if terrain is None:
+        return ranking, PlackettLuce.fit(history).worths_for(riders), None
+
+    # The terrain of the race being forecast comes from the reader's roadbook,
+    # never from its result — the fit only ever labels races that already
+    # happened. `n_races` says whether this terrain got its own fit or fell back
+    # to the unconditional one, which is a thing the numbers cannot show.
+    fitted = TerrainPlackettLuce.fit(history)
+    available = terrain in fitted.available
+    return ranking, fitted.worths_for(riders, terrain), (available, fitted.n_races.get(terrain, 0))
 
 
 @st.cache_data(show_spinner=False)
@@ -190,7 +213,7 @@ def render():
     shown = results[results["status"] == FINISHED] if show_finishers_only else results
 
     tabs = st.tabs(["1 · Datos", "2 · Abandonos", "3 · Tiempos", "4 · Pronóstico",
-                    "5 · ¿Le gana al ranking?"])
+                    "5 · Terreno y forma", "6 · ¿Le gana al ranking?", "7 · Registro"])
 
     # ------------------------------------------------------------------ Datos
     with tabs[0]:
@@ -307,9 +330,17 @@ def render():
     with tabs[3]:
         render_forecast_tab(results)
 
-    # ------------------------------------------------------------- Evaluación
+    # ---------------------------------------------------------------- Terreno
     with tabs[4]:
+        render_terrain_tab(results)
+
+    # ------------------------------------------------------------- Evaluación
+    with tabs[5]:
         render_evaluation_tab(results)
+
+    # --------------------------------------------------------------- Registro
+    with tabs[6]:
+        render_registry_tab(results)
 
 
 def render_forecast_tab(results):
@@ -348,11 +379,31 @@ def render_forecast_tab(results):
         help=HELP["cy_baseline_pick"],
     )
 
-    ranking, model = _fit_and_forecast(results, (len(results), str(as_of), len(riders)),
-                                       riders, as_of)
+    terrain_label = st.radio(
+        "Terreno de esta carrera (del libro de ruta)",
+        ["Sin especificar", "Montaña", "Llano"], horizontal=True, help=HELP["cy_terrain_pick"])
+    terrain = {"Montaña": CLIMB, "Llano": SPRINT}.get(terrain_label)
+
+    ranking, model, terrain_fit = _fit_and_forecast(
+        results, (len(results), str(as_of), len(riders), terrain), riders, as_of, terrain)
     if model is None:
         st.info("No hay historia previa suficiente para ajustar el modelo.")
         return
+
+    if terrain_fit is not None:
+        fitted, n_terrain = terrain_fit
+        if fitted:
+            st.caption(
+                f"El modelo se ajustó **por terreno**: {n_terrain} carrera(s) anteriores de este "
+                "tipo, con cada ciclista encogido hacia su propia fuerza general y no hacia la "
+                "media del pelotón. El terreno de esta carrera lo pusiste tú; de su resultado no "
+                "se lee nada.", help=HELP["cy_terrain_pick"])
+        else:
+            st.caption(
+                f"Solo hay {n_terrain} carrera(s) anteriores de este terreno — muy pocas para "
+                "ajustar por separado, así que esto es el modelo sin condicionar. Se dice en vez "
+                "de callarlo: un modelo que parece condicionado y no lo está es peor que uno que "
+                "no lo pretende.", help=HELP["cy_terrain_pick"])
 
     top_n = st.slider("Tamaño del «top N»", 3, 30, 10)
     table = baseline_frame(riders, model, n=top_n, n_samples=2000, seed=0)
@@ -416,6 +467,182 @@ def render_forecast_tab(results):
             "acertar el centro del pelotón, que es la parte fácil. El veredicto está en la "
             "pestaña siguiente."
         )
+
+
+def render_registry_tab(results):
+    """A forward record for cycling: the forecast first, then what was staked on it.
+
+    The same split football's page makes, for the same reason. The **registry**
+    stores a whole start list and its worths as **one** prediction — splitting
+    them across 180 rows would let half be scored and half not — and is scored
+    against the ranking built strictly from earlier results. The **ledger**
+    stores money, in its own file.
+
+    Recording goes through `cycling/registry.py`, which refuses a race that has
+    already been run, a duplicate label, and worths that do not line up with the
+    start list. Nothing here works around those.
+    """
+    from cycling.registry import load as load_registry
+    from cycling.registry import record as record_forecast
+    from cycling.registry import summary as registry_summary
+
+    section("Pronósticos registrados antes de la carrera", "cy_tab_registro")
+
+    groups = race_groups(results)
+    if len(groups) < 2:
+        st.info("Hace falta más de una carrera: el pronóstico se construye con las anteriores.")
+        return
+
+    labels = [f"{key[0]} · {KIND_ES.get(key[1], key[1])}"
+              + (f" · etapa {int(key[2])}" if key[2] == key[2] else "")
+              for key, _ in groups]
+    picked = st.selectbox("Carrera base (de dónde sale la lista de salida)", range(len(groups)),
+                          format_func=lambda i: labels[i], index=len(groups) - 1,
+                          help=HELP["cy_registry_field"])
+    key, group = groups[picked]
+    riders = list(group["rider"])
+
+    c1, c2, c3 = st.columns(3)
+    race_date = c1.date_input("Fecha de la carrera", key="cy_reg_date")
+    label = c2.text_input("Etiqueta", "plackett-luce", key="cy_reg_label")
+    note = c3.text_input("Nota (opcional)", "", key="cy_reg_note")
+
+    history = results[results["ds"] < group["ds"].min()]
+    if history.empty:
+        st.info("No hay historia previa con la que construir un pronóstico.")
+        return
+    # Through the cached fit, like every other fit on this page: Streamlit
+    # re-runs the whole script on each interaction, and refitting Plackett-Luce
+    # on every keystroke in the label box is a wait with nothing behind it.
+    _, worths, _ = _fit_and_forecast(
+        results, (len(results), str(group["ds"].min()), len(riders), None),
+        riders, group["ds"].min())
+    if worths is None:
+        st.info("No hay historia previa con la que construir un pronóstico.")
+        return
+
+    st.caption(
+        f"Se registrarían **{len(riders)} ciclistas** con sus fuerzas ajustadas sobre lo anterior "
+        "a esa carrera. La lista y las fuerzas van como **una sola** predicción: partirlas en 180 "
+        "filas dejaría puntuar la mitad y la otra no.", help=HELP["cy_registry_field"])
+
+    if st.button("Registrar pronóstico"):
+        try:
+            row = record_forecast(riders, worths, race_date, key[0],
+                                  label.strip() or "sin etiqueta",
+                                  kind=key[1], stage=None if key[2] != key[2] else int(key[2]),
+                                  note=note)
+        except Exception as exc:  # noqa: BLE001 — the guard's message is the content
+            st.error(
+                "**No se registró.** El registro rechaza una carrera que ya se corrió y un "
+                "segundo pronóstico con la misma etiqueta."
+            )
+            st.caption(f"Detalle: {exc}")
+        else:
+            st.success(f"Registrado {row['race']} ({row['kind']}) como `{row['label']}`.")
+            st.rerun()
+
+    st.divider()
+    registry = load_registry()
+    m1, m2 = st.columns(2)
+    m1.metric("Pronósticos registrados", len(registry))
+    m2.metric("Puntuados", int(registry["model_score"].notna().sum()) if len(registry) else 0)
+
+    table = registry_summary()
+    if not table.empty:
+        row = table.iloc[0]
+        plain_verdict(
+            bool(row["beats_baseline_corrected"]),
+            ("Le gana al ranking previo en el registro, con la corrección aplicada."
+             if row["beats_baseline_corrected"]
+             else "No hay evidencia de que el registro le gane al ranking previo."),
+            (f"n = {int(row['n_scored'])} · p (una cola) = {row['p_value_greater']:.3f} · "
+             f"diferencia media = {row['effect']:+.4f}"),
+        )
+        st.caption(
+            "La vara aquí es el **ranking previo**, no el mercado: nada en este proyecto descarga "
+            "precios de ciclismo todavía. Un pronóstico que **es** el ranking puntúa exactamente "
+            "cero contra él.", help=HELP["cy_registry_verdict"])
+    elif len(registry):
+        st.info("Nada puntuado todavía: ninguna carrera registrada se ha corrido.")
+
+    st.divider()
+    betlog_page.render(
+        CYCLING_LEDGER_PATH,
+        "Lo que apostaste",
+        HELP["cy_registry_selection"],
+        default_label="plackett-luce",
+        selection_options=riders[:50],
+    )
+
+
+def render_terrain_tab(results):
+    """What a single strength number leaves out: terrain, specialisation, team, fatigue.
+
+    Descriptive, and it says so. Nothing here forecasts: these are the covariates
+    a terrain-conditional model is built from, put on screen so the reader can
+    see whether the data even distinguishes a mountain stage from a sprint
+    before any model claims to.
+    """
+    section("Terreno, especialistas y desgaste", "cy_tab_terreno")
+
+    labels = _terrain_labels(results, (len(results), str(results["ds"].max())))
+    readable = labels[labels["bunch_share"].notna()]
+    if readable.empty:
+        st.info(
+            "Ningún resultado cargado trae tiempos, y el terreno se lee de cuánta gente comparte "
+            "el tiempo del ganador. Sin tiempos no hay etiqueta — y una inventada sería peor que "
+            "ninguna."
+        )
+        return
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Carreras de montaña", int((readable["terrain"] == CLIMB).sum()))
+    c2.metric("Carreras de llano", int((readable["terrain"] == SPRINT).sum()))
+    c3.metric("Sin etiqueta", int(len(labels) - len(readable)))
+
+    figure = go.Figure()
+    for terrain, name in ((SPRINT, "Llano (llegada en grupo)"), (CLIMB, "Montaña")):
+        rows = readable[readable["terrain"] == terrain]
+        figure.add_scatter(x=rows["ds"], y=rows["bunch_share"], mode="markers", name=name)
+    figure.add_hline(y=0.5, line_dash="dot", line_color="gray", annotation_text="Corte")
+    figure.update_layout(yaxis_title="Comparten el tiempo del ganador",
+                         yaxis_tickformat=".0%", height=340)
+    chart(figure, "Cómo terminó cada carrera", "cy_terrain_labels")
+
+    groups = race_groups(results)
+    if len(groups) < 2:
+        return
+
+    key, group = groups[-1]
+    as_of = group["ds"].min()
+    riders = tuple(group["rider"])
+    teams = tuple(zip(group["rider"], group["team"], strict=True))
+    frame = _features(results, (len(results), str(as_of), len(riders)), riders, as_of, None, teams)
+
+    st.markdown(
+        f"**Ciclistas de la última carrera ({key[0]}, {as_of:%Y-%m-%d}), con lo que se sabía "
+        "antes de ella**")
+    table = (frame[["rider", "climb_form", "sprint_form", "specialisation",
+                    "team_strength", "race_days"]]
+             .sort_values("specialisation", ascending=False).head(20))
+    st.dataframe(
+        table.rename(columns={"rider": "Ciclista", "climb_form": "Montaña",
+                              "sprint_form": "Llano", "specialisation": "Escalador ↔ esprínter",
+                              "team_strength": "Equipo (sin él)", "race_days": "Días compitiendo"})
+        .style.format({"Montaña": "{:.2f}", "Llano": "{:.2f}", "Escalador ↔ esprínter": "{:+.2f}",
+                       "Equipo (sin él)": "{:.2f}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        "«Montaña» y «Llano» son el promedio de puesto relativo (1 = ganó, 0 = último o no "
+        "clasificó) en cada tipo de día. La diferencia es la especialización. El equipo se calcula "
+        "**sin** el ciclista, y los días son días realmente competidos.",
+        help=HELP["cy_specialisation"])
+    st.caption(
+        "Cuidado con una lectura fácil: si en los esprints el orden es casi ruido, **todos** los "
+        "buenos parecen escaladores, porque es el único día donde su fuerza se ve. La columna "
+        "mide dónde se nota un ciclista, no necesariamente qué tipo de ciclista es.",
+        help=HELP["cy_team_strength"])
 
 
 def render_evaluation_tab(results):

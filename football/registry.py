@@ -36,6 +36,7 @@ import pandas as pd
 from core import registry as core_registry
 from core.registry import RegistryError, RegistrySchema
 from football.common import OUTCOMES, PROBABILITY_COLUMNS
+from football.power import minimum_detectable_edge
 from football.scoring import METRICS, per_match_scores
 
 DEFAULT_REGISTRY_PATH = "football_predictions.csv"
@@ -151,13 +152,21 @@ def summary(path=DEFAULT_REGISTRY_PATH, registry=None, by_label=False, alpha=0.0
     that were written down before anyone knew. `n_comparisons` is the number of
     labels scored together, because scoring three models against one set of
     fixtures gives three chances at an uncorrected 5%.
+
+    Every row carries `min_detectable_edge`, computed from the **spread this
+    registry's own rows actually show** rather than from a reference. A null
+    result here without it is unreadable: a season of registered forecasts is a
+    few hundred matches, and at that size the smallest RPS improvement the test
+    can find is several times what a good model takes out of a closing line. So
+    "did not beat the market" is usually a statement about how much football has
+    happened, and the column is what says which.
     """
     registry = load(path) if registry is None else registry
     scored = registry[registry["score_difference"].notna()]
 
     columns = ["label", "n_scored", "model_score", "market_score", "effect",
                "ci_low", "ci_high", "p_value_greater", "bonferroni_threshold",
-               "beats_market", "beats_market_corrected"]
+               "beats_market", "beats_market_corrected", "min_detectable_edge"]
     if scored.empty:
         return pd.DataFrame(columns=columns)
 
@@ -173,6 +182,12 @@ def summary(path=DEFAULT_REGISTRY_PATH, registry=None, by_label=False, alpha=0.0
 
         result = _paired(model_scores, market_scores, alpha=alpha,
                          n_comparisons=max(len(groups), 1))
+        # The spread these rows actually show, not a reference: the resolution
+        # of a verdict is a property of the run that produced it.
+        spread = float(np.std(market_scores - model_scores, ddof=1)) if len(group) > 1 else 0.0
+        result["min_detectable_edge"] = (
+            minimum_detectable_edge(len(group), score_sd=spread)["absolute"]
+            if spread > 0 else float("nan"))
         rows.append({"label": label, "n_scored": len(group),
                      "model_score": float(model_scores.mean()),
                      "market_score": float(market_scores.mean()),

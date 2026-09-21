@@ -603,3 +603,64 @@ sharpening toward kick-off, which is the only way any of the above is testable.
 The two blurs are independent draws from one truth — reusing a single blur would
 make every CLV exactly zero and every test in that section pass while measuring
 nothing, so a test pins that too.
+
+
+## 14. The bankroll: an edge is a number, a path is what you run
+
+`value.py` answers "should I take this bet and how much" and stops there. What
+it leaves out decides whether a system is runnable by a person: the **path**. A
+3% edge with a 40% chance of a 50% drawdown is not a system, it is a way to
+lose your nerve at the worst possible moment, and an expected value has no room
+to say so.
+
+`football/bankroll.py` simulates the sequence instead of summarising it.
+
+### The null path is not optional
+
+A bankroll curve is the most persuasive object this project can produce and the
+easiest to mislead with: an upward line reads as a promise no matter what text
+sits under it. So `simulate_bankroll` always returns a companion showing what
+the **same selections at the same stakes** do when the model's edge is not
+real — the outcomes redrawn from the de-margined market. The gap between the
+two curves is the information; the model's curve alone says nothing.
+
+The obvious construction of that null does not work, and finding out why is
+worth recording. Replacing the *model's probability* with the market's and
+re-staking produces a bettor who **never bets at all**: `value.py`'s Kelly
+filter compares a de-margined probability against the raw price it has to beat,
+and a bettor holding only the market's own numbers never clears the margin.
+That is the two bars doing exactly their job, and it is a true and completely
+uninformative flat line. Keeping the bets and redrawing the world is the
+comparison that answers the question the chart actually raises — and under it
+the median bankroll *falls*, at roughly the rate of the margin, because the
+bets still get placed and still pay the overround.
+
+### Kelly is a ceiling, and the measurement is violent
+
+Over 237 synthetic matches against a soft book, handing the model the **literal
+generative truth** — the best any forecast could possibly be:
+
+| stake | median ROI | median drawdown | risk of ruin |
+| --- | --- | --- | --- |
+| 0.10 | +302% | 46% | 0% |
+| **0.25** (default) | +580% | 82% | 9% |
+| 0.50 | −44% | 99% | 62% |
+| 1.00 (full Kelly) | −100% | 100% | 99% |
+
+Full Kelly stakes up to **88% of the bankroll on a single match** here, against
+22% at a quarter. A model that is exactly right is ruined by betting its own
+advice at full size, because being right about a probability is not the same as
+surviving its variance. That is what the quarter-Kelly default buys, and on an
+edge that is *not* real the full stake sizes up precisely when the model is
+most confidently wrong.
+
+Read the first column with care. Those returns come from a forecast that knows
+the truth exactly against a book blurred on purpose; no real model is in that
+position. The table is here for the **shape** of the trade-off between stake and
+survival, not as anything anyone should expect.
+
+### On the dashboard
+
+Inside **Valor**, after the staking table and gated behind the measured verdict
+exactly as that table is. It does not appear until the model has been measured,
+and it never appears without the companion curve.

@@ -88,19 +88,51 @@ class PlackettLuce:
 
     @classmethod
     def fit(cls, results, iterations=DEFAULT_ITERATIONS, half_life=None,
-            prior_strength=DEFAULT_PRIOR_STRENGTH):
+            prior_strength=DEFAULT_PRIOR_STRENGTH, prior_worths=None):
         """Strengths from every finishing order in `results`, shrunk toward the field.
 
         `prior_strength` is in placings: a rider with that much evidence sits
         halfway between the field average and what their own results say. Pass
         0 for the pure maximum-likelihood fit, which is unbounded for a rider
         nobody finished behind and should not be used for scoring.
+
+        `prior_worths` maps a rider to what to shrink them *toward*, replacing
+        the field average. On a full calendar there is no reason to use it; on a
+        subset — the seven mountain stages of one Grand Tour — it is what keeps
+        the fit from being seven races of noise, because the rider is pulled
+        toward what the whole calendar says about them rather than toward 1.
         """
         orders, fields, weights, riders = _races_from_results(results, half_life=half_life)
+        target = (None if prior_worths is None
+                  else np.array([float(prior_worths.get(r, PRIOR_WORTH)) for r in riders]))
         if not orders:
-            return cls({rider: PRIOR_WORTH for rider in riders})
-        worths = _fit_mm(orders, fields, weights, len(riders), iterations, prior_strength)
-        return cls(dict(zip(riders, worths, strict=True)))
+            return cls({rider: (PRIOR_WORTH if target is None else target[i])
+                        for i, rider in enumerate(riders)})
+        worths = _fit_mm(orders, fields, weights, len(riders), iterations, prior_strength,
+                         prior_worths=target)
+        return cls(_with_prior(dict(zip(riders, worths, strict=True)), prior_worths))
+
+
+def _with_prior(fitted, prior_worths):
+    """Keep a rider the fit never saw at whatever the prior said about them.
+
+    Without this a terrain-conditional fit silently resets a rider who has not
+    yet ridden a mountain stage to the field average — discarding exactly the
+    information the prior was carrying, and doing it invisibly, since the
+    resulting worth is a perfectly ordinary number. A rider with no climbing
+    results is not an average climber; they are whoever the rest of the
+    calendar said they were.
+
+    The fitted worths are normalised to mean 1 over the riders in *this* frame
+    and the prior over the riders in its own, so the two scales agree only
+    approximately. That is the ordinary Plackett-Luce scale indeterminacy and
+    it is the price of keeping the rider at all — the alternative is a number
+    that is confidently wrong rather than approximately right.
+    """
+    if not prior_worths:
+        return fitted
+    return {**{rider: float(worth) for rider, worth in prior_worths.items()
+               if rider not in fitted}, **fitted}
 
 
 def _races_from_results(results, half_life=None):
@@ -131,7 +163,7 @@ def _races_from_results(results, half_life=None):
     return orders, fields, weights, riders
 
 
-def _fit_mm(orders, fields, weights, n_riders, iterations, prior_strength):
+def _fit_mm(orders, fields, weights, n_riders, iterations, prior_strength, prior_worths=None):
     """Hunter's minorise-maximise iteration for Plackett-Luce worths.
 
     Each sweep accumulates, per rider, how many placings they took (the
@@ -141,14 +173,25 @@ def _fit_mm(orders, fields, weights, n_riders, iterations, prior_strength):
 
     The prior enters as the same quantity on both sides: `prior_strength`
     pseudo-placings and the matching pseudo-exposure. A rider with no results
-    therefore lands exactly on 1, the field average, and one with plenty is
-    barely moved — which is what shrinkage should do.
+    therefore lands exactly on the prior mean, and one with plenty is barely
+    moved — which is what shrinkage should do.
+
+    `prior_worths` moves that mean off the field average. It is what makes a
+    terrain-conditional fit possible at all: the mountain stages of one Grand
+    Tour are seven races, and a rider is shrunk toward what the **whole**
+    calendar says about them rather than toward 1. Left out, every rider is
+    shrunk toward the field, which is the unconditional behaviour.
     """
-    worths = np.ones(n_riders, dtype=float)
+    target = (np.ones(n_riders, dtype=float) if prior_worths is None
+              else np.asarray(prior_worths, dtype=float))
+    worths = target.copy()
     prior = float(prior_strength)
 
     for _ in range(int(iterations)):
-        wins = np.full(n_riders, prior)
+        # Pseudo-placings in proportion to the prior mean, and the matching
+        # exposure at 1: their ratio is the prior worth, so a rider with no
+        # results lands exactly on it.
+        wins = prior * target
         exposure = np.full(n_riders, prior)
 
         for order, field, weight in zip(orders, fields, weights, strict=True):
@@ -179,3 +222,82 @@ def _fit_mm(orders, fields, weights, n_riders, iterations, prior_strength):
             break
 
     return worths / worths.mean()
+
+
+# Below this many races of a given terrain, a conditional fit is not a fit — it
+# is the prior with a handful of placings on top, and the unconditional model is
+# the honest answer. Seven mountain stages of one Grand Tour is already thin.
+MIN_TERRAIN_RACES = 4
+
+
+class TerrainPlackettLuce:
+    """One strength per rider **per kind of day**, shrunk toward their overall one.
+
+    The model the sport obviously wants and the one whose value has to be
+    measured rather than assumed. A sprinter and a climber are not two points on
+    one scale, so fitting the mountain stages separately from the flat ones
+    should help — and on a calendar of 21 races it may simply split thin data in
+    two. `cycling/evaluation.py` is where that question is settled; this class
+    only makes the comparison possible.
+
+    **The terrain of the race being predicted is an argument, never an
+    inference.** `features.infer_terrain` reads a result, so labelling the
+    target race would be leakage of the invisible kind — the label looks
+    identical either way. Training labels come from history; the target's comes
+    from the caller, who has the roadbook.
+
+    **A terrain without enough races falls back to the unconditional fit**
+    rather than to a fit of four stages, and `available` says which terrains got
+    their own. Falling back silently would make the model *look* conditional
+    everywhere while being unconditional half the time, which is exactly the
+    kind of thing a results table cannot show.
+    """
+
+    def __init__(self, overall, by_terrain, n_races=None):
+        self.overall = overall
+        self.by_terrain = dict(by_terrain)
+        self.n_races = dict(n_races or {})
+
+    @property
+    def available(self):
+        """The terrains that got their own fit, rather than the fallback."""
+        return tuple(sorted(self.by_terrain))
+
+    def model_for(self, terrain):
+        return self.by_terrain.get(terrain, self.overall)
+
+    def worth(self, rider, terrain=None):
+        return self.model_for(terrain).worth(rider)
+
+    def worths_for(self, riders, terrain=None):
+        return self.model_for(terrain).worths_for(riders)
+
+    @classmethod
+    def fit(cls, results, iterations=DEFAULT_ITERATIONS, half_life=None,
+            prior_strength=DEFAULT_PRIOR_STRENGTH, min_races=MIN_TERRAIN_RACES,
+            terrains=None):
+        """Fit the whole calendar, then each terrain's races on top of it.
+
+        The conditional fits use the unconditional worths as their prior mean,
+        so a rider with two mountain stages is shrunk toward their own overall
+        strength rather than toward the field — which is the difference between
+        a conditional model and a noisier copy of one.
+        """
+        from cycling.features import TERRAINS, UNKNOWN, infer_terrain
+
+        overall = PlackettLuce.fit(results, iterations=iterations, half_life=half_life,
+                                   prior_strength=prior_strength)
+        labels = infer_terrain(results)
+        wanted = [t for t in (terrains or TERRAINS) if t != UNKNOWN]
+
+        by_terrain, counts = {}, {}
+        for terrain in wanted:
+            keys = labels[labels["terrain"] == terrain][GROUP_KEYS]
+            counts[terrain] = len(keys)
+            if len(keys) < min_races:
+                continue
+            subset = results.merge(keys, on=GROUP_KEYS, how="inner")
+            by_terrain[terrain] = PlackettLuce.fit(
+                subset, iterations=iterations, half_life=half_life,
+                prior_strength=prior_strength, prior_worths=overall.worths)
+        return cls(overall, by_terrain, counts)

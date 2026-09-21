@@ -63,25 +63,44 @@ SPRINT_BUNCH_SHARE = 0.8            # on a flat day, this share of the field sha
 
 
 def rider_abilities(n_riders=DEFAULT_RIDERS, seed=0, spread=ABILITY_SPREAD,
-                    team_size=DEFAULT_TEAM_SIZE):
+                    team_size=DEFAULT_TEAM_SIZE, specialisation=0.0):
     """The start list, with the latent strength that generates the results.
 
     Ability is centred so the field average is exactly neutral, which keeps a
     stage's winning time at `BASE_STAGE_SECONDS` whatever the spread is set to.
+
+    `specialisation` tilts each rider between the two kinds of day: a positive
+    tilt is worth that much ability in the mountains and costs the same in a
+    sprint. At 0 — the default, and what every existing caller gets — the two
+    are the same number and the generator behaves exactly as it always has,
+    including drawing no extra randomness, so seeded fixtures are unchanged.
+
+    It exists so that "does a terrain-conditional model help?" has a world with
+    a known answer on both sides. A model that cannot find specialists when
+    they were planted has not earned the null result it reports on a race where
+    there are none.
     """
     rng = np.random.default_rng(seed)
     ability = rng.normal(0.0, spread, n_riders)
+    ability = ability - ability.mean()
+    if specialisation:
+        tilt = rng.normal(0.0, float(specialisation), n_riders)
+        tilt = tilt - tilt.mean()
+    else:
+        tilt = np.zeros(n_riders)
     return pd.DataFrame({
         "rider": [f"Rider {i + 1:03d}" for i in range(n_riders)],
         "team": [f"Team {i // team_size + 1:02d}" for i in range(n_riders)],
-        "ability_true": ability - ability.mean(),
+        "ability_true": ability,
+        "climb_true": ability + tilt,
+        "sprint_true": ability - tilt,
     })
 
 
 def generate_stage_race(n_stages=DEFAULT_STAGES, n_riders=DEFAULT_RIDERS, seed=0,
                         race="synthetic-grand-tour", start_date="2024-06-29",
                         climbing_stages=None, abandon_hazard=ABANDON_HAZARD,
-                        bunch_finishes=True):
+                        bunch_finishes=True, specialisation=0.0):
     """A stage race's results in the on-disk contract's own column shape.
 
     Output goes through the real parser in `cycling/processor.py`, so every test
@@ -91,9 +110,13 @@ def generate_stage_race(n_stages=DEFAULT_STAGES, n_riders=DEFAULT_RIDERS, seed=0
     `climbing_stages` is a set of 1-based stage numbers where ability is worth
     minutes; the rest are sprints where it is worth seconds. It defaults to
     every third stage, which puts a realistic third of the race in the mountains.
+
+    `specialisation` plants climbers and sprinters: above 0 a rider's strength
+    on a mountain stage and on a flat one are different numbers. At 0 they are
+    one number and the race is exactly the one this generator has always made.
     """
     rng = np.random.default_rng(seed)
-    riders = rider_abilities(n_riders, seed=seed)
+    riders = rider_abilities(n_riders, seed=seed, specialisation=specialisation)
     if climbing_stages is None:
         climbing_stages = set(range(3, n_stages + 1, 3))
 
@@ -103,8 +126,12 @@ def generate_stage_race(n_stages=DEFAULT_STAGES, n_riders=DEFAULT_RIDERS, seed=0
 
     for stage in range(1, n_stages + 1):
         date = (start + pd.Timedelta(days=stage - 1)).strftime("%d/%m/%Y")
-        seconds_per_ability = (CLIMBING_SECONDS_PER_ABILITY if stage in climbing_stages
+        climbing = stage in climbing_stages
+        seconds_per_ability = (CLIMBING_SECONDS_PER_ABILITY if climbing
                                else SPRINT_SECONDS_PER_ABILITY)
+        # Which of the two latent strengths decides today. They are equal unless
+        # specialists were planted, so this is a no-op on the default race.
+        column = "climb_true" if climbing else "sprint_true"
 
         # Who leaves the race today. They get a DNF row on this stage and do not
         # appear on any later one, which is exactly how a scraped file reads.
@@ -113,7 +140,7 @@ def generate_stage_race(n_stages=DEFAULT_STAGES, n_riders=DEFAULT_RIDERS, seed=0
 
         times = {
             i: BASE_STAGE_SECONDS
-            - riders.at[i, "ability_true"] * seconds_per_ability
+            - riders.at[i, column] * seconds_per_ability
             + rng.normal(0.0, NOISE_SECONDS)
             for i in finishing
         }
@@ -207,9 +234,11 @@ def load_sample_and_preprocess(validate=False, **kwargs):
     truth = rider_abilities(
         n_riders=kwargs.get("n_riders", DEFAULT_RIDERS),
         seed=kwargs.get("seed", 0),
-    ).set_index("rider")["ability_true"]
+        specialisation=kwargs.get("specialisation", 0.0),
+    ).set_index("rider")
     kind = results.attrs.get("result_kind")
-    results["ability_true"] = results["rider"].map(truth).astype(float)
+    for column in ("ability_true", "climb_true", "sprint_true"):
+        results[column] = results["rider"].map(truth[column]).astype(float)
     results.attrs["result_kind"] = kind
     return results
 

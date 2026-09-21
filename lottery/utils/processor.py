@@ -1,8 +1,15 @@
 """Owner of the data contract: Date (dd/mm/yyyy) + Ball (dash-separated, superbalota last).
 
 Every entry point parses draws through `preprocess_draws` — the CSV loader
-below, the dashboard's upload path, and the synthetic sample data — so the
-format cannot drift between them.
+below, the dashboard's upload path, the SQLite store and the synthetic sample
+data — so the format cannot drift between them.
+
+**The store replaces the file, not the contract.** `load_and_preprocess` reads a
+`.sqlite`/`.db` path through `core/storage.py` and a `.csv` path with pandas,
+and both hand the *same raw rows* to `preprocess_draws`. What the store adds is
+a schema version, recorded dtypes and a refusal to append a frame whose shape
+has drifted; what it deliberately does not add is a second place that knows what
+a draw looks like.
 """
 
 import os
@@ -10,6 +17,7 @@ import warnings
 
 import pandas as pd
 
+from core.storage import append_frame, read_frame, table_info
 from lottery.models.common import (
     MAIN_BALL_RANGE,
     MAIN_BALLS_DRAWN,
@@ -124,16 +132,65 @@ def preprocess_draws(df, validate=True):
     return df, balls_expanded
 
 
+# What a draw store holds and under which shape. The version is bumped when the
+# *stored* columns change — not when a downstream model does — and `core/storage.py`
+# refuses to read a store written under another one.
+DRAWS_TABLE = "draws"
+DRAWS_SCHEMA_VERSION = "baloto-draws-1"
+STORE_SUFFIXES = (".sqlite", ".db", ".sqlite3")
+
+
+def is_store(path):
+    """Whether this path is a draw store rather than a CSV."""
+    return str(path).lower().endswith(STORE_SUFFIXES)
+
+
+def read_raw(path, validate=True):
+    """The raw contract rows, from a CSV or a store, before `preprocess_draws`.
+
+    One function so that the two paths cannot drift: whatever a store returns is
+    the same `Date`/`Ball` frame the CSV loader produces, and everything that
+    knows what those columns mean stays in this module.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"The file {path} does not exist.")
+    if not is_store(path):
+        return pd.read_csv(path)
+    return read_frame(path, DRAWS_TABLE,
+                      expected_version=DRAWS_SCHEMA_VERSION if validate else None)
+
+
+def import_csv(csv_path, store_path, on_duplicate="skip"):
+    """Put a draw CSV into a store, refusing anything the contract rejects.
+
+    Validation happens **before** the write, so a file whose format has drifted
+    never reaches the store — which is the point of having one. Duplicates
+    default to `skip` because re-importing an overlapping export is the ordinary
+    case and the stored copy is the one already checked.
+    """
+    raw = pd.read_csv(csv_path)
+    preprocess_draws(raw, validate=True)  # raises before anything is written
+    return append_frame(raw, store_path, DRAWS_TABLE, DRAWS_SCHEMA_VERSION,
+                        key=["Date", "Ball"], on_duplicate=on_duplicate)
+
+
+def store_status(store_path):
+    """What the store says about itself: version, rows, fingerprint, when."""
+    return table_info(store_path, DRAWS_TABLE)
+
+
 def load_and_preprocess(path, validate=True, current_format_only=False):
-    """Load the CSV and parse it into (df, balls_expanded).
+    """Load a CSV **or a store** and parse it into (df, balls_expanded).
 
     `current_format_only=True` drops everything before the current era of the
     game (see current_format_mask) — use it when the file spans the 2017 rule
     change and the analysis assumes today's rules, which all of them do.
+
+    A `.sqlite` path goes through `core/storage.py` and a `.csv` path through
+    pandas; both end at `preprocess_draws`, so nothing downstream changes and
+    nothing downstream has to know which it got.
     """
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"The file {path} does not exist.")
-    df, balls_expanded = preprocess_draws(pd.read_csv(path), validate=validate)
+    df, balls_expanded = preprocess_draws(read_raw(path, validate=validate), validate=validate)
     if current_format_only:
         keep = current_format_mask(df, balls_expanded)
         df = df[keep].reset_index(drop=True)

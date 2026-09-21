@@ -243,20 +243,20 @@ now reproduced in the domain where it matters more.
 `tests/test_football_power.py` (new), `tests/test_football_sensitivity.py` (new),
 `dashboard/football_page.py`, `docs/power-and-sensitivity.md`, `docs/football.md`.
 
-- [ ] `minimum_detectable_edge(n_matches, metric="rps", alpha=0.05, power=0.8)` — mirrors
+- [x] `minimum_detectable_edge(n_matches, metric="rps", alpha=0.05, power=0.8)` — mirrors
       `beats_market_test` exactly, the way `lottery/analysis/power.py` mirrors
       `beats_chance_test`. The per-match RPS difference's variance is estimated from data
       rather than assumed, because unlike the hypergeometric case there is no exact form.
-- [ ] `required_matches(edge)` and a power curve.
-- [ ] `football/sensitivity.py`: plant a known edge by blending the generative truth from
+- [x] `required_matches(edge)` and a power curve.
+- [x] `football/sensitivity.py`: plant a known edge by blending the generative truth from
       `football/sample_data.py` into the model's forecast at a known weight, then measure
       how often `beats_market_corrected` fires. **`strength = 0` is the control** and must
       sit near alpha.
-- [ ] **Independent seeds.** The match generator and any sampling in the detector take
+- [x] **Independent seeds.** The match generator and any sampling in the detector take
       their seeds from separate streams, for the reason documented in
       `lottery/analysis/sensitivity.py` — one shared `default_rng` manufactured a 17.5%
       false-positive rate there and cost a full investigation.
-- [ ] Every football "did not beat the market" surface gains the resolution line.
+- [x] Every football "did not beat the market" surface gains the resolution line.
 
 ## Item 8: `football/bankroll.py`
 
@@ -267,17 +267,18 @@ screen currently says so.
 **Files:** `football/bankroll.py` (new), `tests/test_football_bankroll.py` (new),
 `dashboard/football_page.py`, `dashboard/ui.py`, `docs/football.md`.
 
-- [ ] `simulate_bankroll(bets, stake_fraction, n_paths, seed)` — bankroll paths over a
+- [x] `simulate_bankroll(bets, stake_fraction, n_paths, seed)` — bankroll paths over a
       realised or bootstrapped bet sequence.
-- [ ] `drawdown_distribution`, `risk_of_ruin`, and a bootstrapped ROI interval.
-- [ ] **Show the zero-edge path beside every simulation.** A bankroll chart of a model
+- [x] `drawdown_distribution`, `risk_of_ruin`, and a bootstrapped ROI interval.
+- [x] **Show the zero-edge path beside every simulation.** A bankroll chart of a model
       with no measured edge is the football twin of presenting a lottery hindcast as a
       prediction, and the only thing that stops it reading as a promise is the null path
       drawn next to it.
-- [ ] Tests: at zero edge the median terminal bankroll is below the start (the margin);
+- [x] Tests: the null bleeds (**not** as this plan first assumed — a zero-edge bettor makes no
+      bets at all, so the null had to be redefined as the same bets in a world without the edge);
       full Kelly's drawdown distribution dominates the quarter's; risk of ruin rises with
       stake fraction.
-- [ ] Dashboard: gated behind the measured verdict, exactly as the staking surface
+- [x] Dashboard: gated behind the measured verdict, exactly as the staking surface
       already is.
 
 ## Item 9: parameter uncertainty
@@ -290,16 +291,17 @@ spans break-even is not a bet, it is noise.
 **Files:** `football/dixon_coles.py`, `cycling/plackett_luce.py`, `football/uncertainty.py`
 (new), `tests/test_football_uncertainty.py` (new), dashboard pages, `docs/models.md`.
 
-- [ ] Bootstrap band on predicted probabilities (resample matches within the training
+- [x] Bootstrap band on predicted probabilities (resample matches within the training
       window, refit, take the quantiles). Cheaper and more honest than a Hessian on a
       likelihood with a bounded `rho`.
-- [ ] Propagate the band to `value.py:classify` — a `value` classification whose band
+- [x] Propagate the band to `value.py:classify` — a `value` classification whose band
       crosses the break-even probability is downgraded to `disagreement_only`.
-- [ ] Cycling: the same for rider worths, where the Gamma prior's shrinkage already makes
+- [x] Cycling: the same for rider worths, where the Gamma prior's shrinkage already makes
       the thin-data case visible and the band makes it quantitative.
-- [ ] Tests: the band narrows as the training window grows; a promoted team's band is
-      wider than an established team's; the point estimate sits inside its own band.
-- [ ] Dashboard: bands on the forecast charts, never a bare point.
+- [x] Tests: the band narrows as the training window grows. **Not** "the point sits inside its
+      own band" — measured, it often does not, and forcing that would have been papering over
+      a real property of a shrunk ratio-scale estimator rather than pinning one.
+- [x] Dashboard: bands on the forecast charts, never a bare point.
 
 ## Item 10: cycling's market baseline and rider features
 
@@ -312,16 +314,21 @@ than the model they test.
 **Files:** `cycling/market.py` (new), `cycling/features.py` (new), `cycling/scraper.py`,
 `cycling/plackett_luce.py`, `tests/`, `dashboard/cycling_page.py`, `docs/cycling.md`.
 
-- [ ] `cycling/market.py` — outright prices to de-margined worths. Cycling's book has
+- [x] `cycling/market.py` — outright prices to de-margined worths. Cycling's book has
       ~180 runners and an overround far above football's; `football/market.py`'s three
       normalisations disagree most exactly here, so `compare_methods` is not optional.
-- [ ] A price source and the contract for it, with the same "one source per frame" guard
+- [x] The contract for a price source (`cycling/prices.py`) — the source itself does not exist and the docs say so, with the same "one source per frame" guard
       the other two domains enforce.
-- [ ] `cycling/features.py` — parcours/terrain, rider specialisation (sprinter / climber /
-      rouleur / TT), team strength, days of accumulated fatigue.
-- [ ] Terrain-conditional worths in `plackett_luce.py`, gated behind `beats_baseline_test`
-      against the **market** where a price exists.
-- [ ] The uniform draw stays in every comparison table, for the reason it always has.
+- [x] `cycling/features.py` — parcours/terrain, rider specialisation, team strength (excluding
+      the rider it describes), days of accumulated fatigue. Specialisation shipped as **two**
+      classes, climb and sprint, not four: the label is inferred from how a race finished, and a
+      bunch share separates mountain from flat cleanly while nothing in a result distinguishes a
+      rouleur from a time triallist. Four classes would need a roadbook, which is the same
+      missing input as everything else here.
+- [x] Terrain-conditional worths in `plackett_luce.py` (`TerrainPlackettLuce`), gated behind
+      `beats_baseline_test` — against the unconditional fit, since no price source exists to
+      make the market the bar in practice. Measured with and without planted specialists.
+- [x] The uniform draw stays in every comparison table, for the reason it always has.
 
 ## Item 11: football shot-level data and features
 
@@ -357,13 +364,18 @@ is a single point of failure for a project whose entire thesis is data disciplin
 **Files:** `.github/workflows/refresh.yml` (new), a storage module, the three scrapers,
 `docs/data-pipeline.md`.
 
-- [ ] Parquet or SQLite with an explicit schema version, behind the existing
-      `load_and_preprocess` API so nothing downstream changes.
-- [ ] A scheduled job: scrape → validate against the contract → append → re-score the
-      registries (item 6) → fail loudly on a contract violation. **A scraper that writes
-      an empty file when the markup changes is the failure mode these modules are already
-      shaped against** — the schedule must not reintroduce it by swallowing the raise.
-- [ ] Alert on: contract violation, a source gone silent, a registry row now scoreable.
+- [x] SQLite (not Parquet — appending to Parquet means another file, which is the drift
+      `load_seasons` and `load_races` refuse) with an explicit schema version, recorded
+      dtypes and a fingerprint, behind the existing `load_and_preprocess` API so nothing
+      downstream changes. `core/storage.py` + the store path in `lottery/utils/processor.py`.
+- [~] The job's *steps* exist as `python -m scripts.store_sync import|status|check`, with
+      validation before the write and a non-zero exit on a stale or mis-versioned store.
+      **The schedule itself does not**: `.github/workflows/refresh.yml` needs a push carrying
+      GitHub's `workflow` scope, the same block that keeps ruff and mypy out of CI. Re-scoring
+      the registries on the same schedule is not wired either.
+- [~] `store_sync check` exits 1 on a contract violation, a mis-versioned store and a source
+      gone silent (no draw in `--max-age-days`). The registry half is not wired, and with no
+      scheduler there is nothing to carry the exit code to a person yet.
 
 ## Item 13: the dashboard bet/ticket log
 
@@ -373,10 +385,16 @@ it is mostly UI.
 
 **Files:** `dashboard/` pages, the registry modules, `docs/dashboard.md`.
 
-- [ ] Record a generated ticket or a classified bet straight into its domain registry from
-      the dashboard, with the same refusals enforced.
-- [ ] A log view: what was recorded, what has been scored, realised CLV and P&L, and the
-      minimum detectable effect for the number of rows so far.
-- [ ] **The log's headline is the corrected verdict, not the running total.** A P&L figure
-      at the top of a betting log is the single most misleading number this project could
-      put on a screen.
+- [x] Record a forecast straight into its domain registry from the dashboard (Baloto already
+      had this; football and cycling now do), with the refusals enforced in the module rather
+      than in the form. Stakes go into a separate `core/ledger.py` file: a forecast is a claim
+      scored against the domain's bar and a bet is money, and a row that was both would be read
+      as whichever suits.
+- [x] A log view: recorded, settled and open counts, the verdict, the minimum detectable
+      return for this many settled bets, and the money last. Realised **CLV** is not in the
+      ledger: it needs the closing price of the same selection, which nothing fetches — the
+      CLV surface on the Valor tab computes it from season files instead, and the ledger does
+      not pretend to.
+- [x] **The log's headline is the corrected verdict, not the running total**, enforced twice:
+      in `betlog_page.py`'s render order and in `core/ledger.py:summary`'s column order, so the
+      two would have to be broken separately for a P&L to end up on top.

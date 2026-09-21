@@ -192,6 +192,87 @@ The superbalota helper is separate rather than a parameter because using the
 hypergeometric variance for a 1-in-16 Bernoulli trial understates the required
 data by roughly a factor of three, and the two are easy to confuse.
 
+## 3. Football: the same pair, with the variance measured
+
+`football/power.py` and `football/sensitivity.py` are the same two halves
+pointed at the closing line. The structure carries over unchanged — a minimum
+detectable effect from arithmetic, a planted-edge detection rate from running
+the thing, a control that must sit near alpha. Three things do not.
+
+### The variance has to be measured
+
+On the lottery side the null's variance is exact: the hypergeometric
+distribution hands it over, so the minimum detectable effect is a function of
+`n` alone. In football the tested quantity is a **paired difference of two
+proper scores**, and nothing gives its spread in advance — it depends on the
+league, the season, how sharp the book is, and how far the model strays from
+it.
+
+So every function takes the spread as an argument, and `observed_score_sd`
+computes it from a run that has already happened. `REFERENCE_SCORE_SD` exists
+only so `describe()` can say something before any backtest, and it carries the
+measurement it came from:
+
+| `market_noise` | Dixon-Coles | Elo |
+| --- | --- | --- |
+| 0.0 (sharp) | 0.072 | 0.093 |
+| 0.5 | 0.129 | 0.137 |
+| 1.0 | 0.205 | 0.205 |
+| 1.5 (soft) | 0.249 | 0.241 |
+
+The constant is 0.08, the sharp end, because a closing line is sharp by
+definition. **An earlier version of it was 0.05, written from intuition before
+the measurement, and it was wrong by a factor of two at the sharp end and five
+at the soft one.** Required match counts scale with the square of the spread,
+so that is a factor-of-ten error in the answer — which is the whole argument
+for the rule.
+
+The headline it produces is brutal and meant to be. A season of one league is
+~380 matches, which bottoms out around **0.010** of RPS. Detecting a realistic
+0.002 takes roughly 10,000 matches — twenty-six seasons of one league. That is
+not a defect in the test; it is why [`football/clv.py`](football.md#13-closing-line-value)
+exists.
+
+### A perfect market leaves nothing to plant
+
+`sensitivity.py` plants an edge by blending each match's generative truth into
+the forecast at a known weight. At `market_noise = 0` the de-margined price
+**is** the truth, so the blend returns the price and every strength collapses
+onto the control. That is not a broken harness — it is the domain's own
+statement that nothing beats a perfect market — but it does make the dial inert,
+so the default is a book that is good but beatable.
+
+### Detection falls as the planted edge grows
+
+The counter-intuitive one, measured over 240 matches at `market_noise = 0.3`:
+
+| strength | mean effect | sd | z |
+| --- | --- | --- | --- |
+| 0.05 | 0.00081 | 0.00258 | 4.83 |
+| 0.10 | 0.00159 | 0.00515 | 4.77 |
+| 0.25 | 0.00381 | 0.01281 | 4.59 |
+| 0.50 | 0.00704 | 0.02542 | 4.27 |
+| 1.00 | 0.01177 | 0.05012 | 3.62 |
+
+The effect grows fifteenfold; the spread grows nineteenfold; the statistic
+*shrinks*. A forecast that departs further from the price disagrees with it on
+more matches and by more, and the paired difference gets noisier faster than it
+gets bigger. **A model that knows a little and hugs the price is easier to
+prove right than one that knows more and says so loudly** — which is
+[`ensemble.py`](football.md#10-pooling-with-the-market)'s argument for pooling,
+arriving from a completely different direction.
+
+### The bug this module shipped once
+
+The first version joined each match's truth to its market vector **by row
+order**. `preprocess_matches` is entitled to reorder and reindex, so the two
+drifted apart: the first few rows happened to line up and the rest did not.
+The symptom was unmistakable once the control was read — the *omniscient*
+forecast at strength 1 scored **worse** than the market, because it was the
+truth about a different fixture. The join is now on the match keys and raises
+if it comes up short. Suspect the harness before the statistic, for the third
+time in this repository.
+
 ## 3. In the dashboard
 
 The **Potencia y Sensibilidad** tab wraps both, and the backtest tab now prints

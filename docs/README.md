@@ -63,7 +63,7 @@ make sense against it.
 | Why isn't a uniform draw over the start list a baseline? | [Cycling §6](cycling.md#a-uniform-draw-is-not-a-baseline) |
 | How do you score a finishing order? | [Cycling §7](cycling.md#7-scoring-an-ordering-cyclingscoringpy) |
 | Why is the sum of the balls a bell curve if all tickets are equal? | [Evaluation §4.1](evaluation.md#41-the-order-agnostic-summaries) |
-| I don't know what a p-value is — where do I start? | The **Glosario** in the dashboard sidebar · [Dashboard §5](dashboard.md#5-the-four-layers-of-explanation) |
+| I don't know what a p-value is — where do I start? | The **Glosario** in the dashboard sidebar · [Dashboard §6](dashboard.md#6-the-four-layers-of-explanation) |
 | How do I use the Colombian league data? | [Data Pipeline §5.1](data-pipeline.md#51-footballs-extra-files) |
 | How do I read the dashboard on my phone? | [Local Setup §3](local-setup.md#3-reading-it-on-your-phone) |
 | Why does it show synthetic data? | [Local Setup §2](local-setup.md#your-data) |

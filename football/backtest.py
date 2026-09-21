@@ -84,13 +84,21 @@ def _collect(train_for, matches, indices, half_life, method, models=("dixon_cole
              frozen=None):
     """Fit-and-predict over `indices`.
 
-    Returns `(probs_by_model, market_probs, outcomes, skipped)`. A window is
-    skipped when *any* fitted model cannot predict it, so every model in the
+    Returns `(probs_by_model, market_probs, outcomes, odds, skipped)`. A window
+    is skipped when *any* fitted model cannot predict it, so every model in the
     call ends up scored on an identical set of matches.
+
+    The **raw** price triple of each scored window is collected alongside the
+    de-margined one. It is not used for scoring — a model is judged against the
+    de-margined price — but a staking surface needs the price actually paid, and
+    reconstructing "the last N priced matches" downstream does not reproduce
+    this set: windows with no price are scored here (as NaN) and windows an
+    unknown team skipped are not, so the two can be the same length and line up
+    row-for-row with the wrong matches.
     """
     needed = _base_models(models)
     probs = {name: [] for name in needed}
-    market_probs, outcomes = [], []
+    market_probs, outcomes, odds = [], [], []
     skipped = 0
 
     for t in indices:
@@ -107,8 +115,9 @@ def _collect(train_for, matches, indices, half_life, method, models=("dixon_cole
             probs[name].append(vector)
         market_probs.append(_market_row_probs(test, method))
         outcomes.append(test["outcome"])
+        odds.append(test[list(ODDS_COLUMNS)].to_numpy(dtype=float))
 
-    return probs, market_probs, outcomes, skipped
+    return probs, market_probs, outcomes, odds, skipped
 
 
 def _with_blend(probs, market_probs, models, weight, pool):
@@ -125,7 +134,7 @@ def _with_blend(probs, market_probs, models, weight, pool):
 DEFAULT_CALIBRATION_MIN_FIT = 50
 
 
-def _recalibrate(probs, market_probs, outcomes, models, calibrate, min_fit):
+def _recalibrate(probs, market_probs, outcomes, odds, models, calibrate, min_fit):
     """Apply a prequentially-fitted recalibration, then trim every series to match.
 
     The correction for each forecast is fitted on the forecasts that came before
@@ -138,7 +147,10 @@ def _recalibrate(probs, market_probs, outcomes, models, calibrate, min_fit):
     and pulls any difference toward zero. Every model is trimmed by the same
     amount, along with the market and the outcomes, so the comparison stays on
     one identical set of matches -- the rule `compare_models` already follows
-    for a window a model cannot predict.
+    for a window a model cannot predict. The raw prices are trimmed with them:
+    they are not scored, but a staking surface reads them row-for-row against
+    the forecasts, and a trim that missed them would shift every bet onto
+    another match's price.
     """
     calibrated, kept = {}, None
     for name in models:
@@ -152,10 +164,10 @@ def _recalibrate(probs, market_probs, outcomes, models, calibrate, min_fit):
         kept = n if kept is None else min(kept, n)
 
     if not kept:
-        return calibrated, market_probs, outcomes
+        return calibrated, market_probs, outcomes, odds
     return ({name: series[-kept:] if series else series
              for name, series in calibrated.items()},
-            market_probs[-kept:], outcomes[-kept:])
+            market_probs[-kept:], outcomes[-kept:], odds[-kept:])
 
 
 def _summarise(probs, market_probs, outcomes, models, metric, skipped, mode, method,
@@ -201,15 +213,15 @@ def compare_models(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
 
     matches = matches.sort_values("ds").reset_index(drop=True)
     start, total = window_bounds(len(matches), n_windows, min_train)
-    probs, market_probs, outcomes, skipped = _collect(
+    probs, market_probs, outcomes, odds, skipped = _collect(
         lambda t: matches.iloc[:t], matches, range(start, total), half_life, method, models)
     probs = _with_blend(probs, market_probs, models, blend_weight, pool)
     if calibrate:
         # After the blend, not before: the blend pools a model with the price,
         # and recalibrating its inputs separately would change what is being
         # pooled rather than how the pool is stated.
-        probs, market_probs, outcomes = _recalibrate(
-            probs, market_probs, outcomes, models, calibrate, calibrate_min_fit)
+        probs, market_probs, outcomes, odds = _recalibrate(
+            probs, market_probs, outcomes, odds, models, calibrate, calibrate_min_fit)
 
     table = _summarise(probs, market_probs, outcomes, models, metric, skipped,
                        "expanding_last_n", method, half_life, blend_weight, pool,
@@ -220,6 +232,10 @@ def compare_models(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
         "market": np.array(market_probs),
         "outcomes": list(outcomes),
         "models": {name: np.array(probs[name]) for name in models if probs.get(name)},
+        # The raw price of each scored window, carried rather than looked up
+        # again: a caller reconstructing "the last N priced matches" gets a set
+        # of the same length made of different matches.
+        "odds": np.array(odds, dtype=float),
     }
     table.attrs["manifest"] = run_manifest({
         "data": data_fingerprint(matches), "n_matches": int(len(matches)),
@@ -238,7 +254,7 @@ def run_all(matches, n_windows=30, min_train=MIN_TRAIN, half_life=None,
     """Hold out the last `n_windows` matches, refitting `model` before each."""
     matches = matches.sort_values("ds").reset_index(drop=True)
     start, total = window_bounds(len(matches), n_windows, min_train)
-    probs, market_probs, outcomes, skipped = _collect(
+    probs, market_probs, outcomes, _odds, skipped = _collect(
         lambda t: matches.iloc[:t], matches, range(start, total), half_life, method, (model,))
     probs = _with_blend(probs, market_probs, (model,), DEFAULT_BLEND_WEIGHT, "linear")
 
@@ -275,7 +291,7 @@ def run_holdout(matches, cutoff, mode="expanding", half_life=None,
         train = matches.iloc[:n_train]
         frozen = {name: _FITTERS[name](train, half_life) for name in _base_models((model,))}
 
-    probs, market_probs, outcomes, skipped = _collect(
+    probs, market_probs, outcomes, _odds, skipped = _collect(
         lambda t: matches.iloc[:t], matches, range(n_train, n_train + n_holdout),
         half_life, method, (model,), frozen=frozen)
     probs = _with_blend(probs, market_probs, (model,), DEFAULT_BLEND_WEIGHT, "linear")
