@@ -385,10 +385,16 @@ it is mostly UI.
 
 **Files:** `dashboard/` pages, the registry modules, `docs/dashboard.md`.
 
-- [ ] Record a generated ticket or a classified bet straight into its domain registry from
-      the dashboard, with the same refusals enforced.
-- [ ] A log view: what was recorded, what has been scored, realised CLV and P&L, and the
-      minimum detectable effect for the number of rows so far.
-- [ ] **The log's headline is the corrected verdict, not the running total.** A P&L figure
-      at the top of a betting log is the single most misleading number this project could
-      put on a screen.
+- [x] Record a forecast straight into its domain registry from the dashboard (Baloto already
+      had this; football and cycling now do), with the refusals enforced in the module rather
+      than in the form. Stakes go into a separate `core/ledger.py` file: a forecast is a claim
+      scored against the domain's bar and a bet is money, and a row that was both would be read
+      as whichever suits.
+- [x] A log view: recorded, settled and open counts, the verdict, the minimum detectable
+      return for this many settled bets, and the money last. Realised **CLV** is not in the
+      ledger: it needs the closing price of the same selection, which nothing fetches — the
+      CLV surface on the Valor tab computes it from season files instead, and the ledger does
+      not pretend to.
+- [x] **The log's headline is the corrected verdict, not the running total**, enforced twice:
+      in `betlog_page.py`'s render order and in `core/ledger.py:summary`'s column order, so the
+      two would have to be broken separately for a P&L to end up on top.

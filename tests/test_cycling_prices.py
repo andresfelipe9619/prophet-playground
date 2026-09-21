@@ -43,7 +43,7 @@ def test_a_clean_file_carries_its_book_and_its_market():
     prices = preprocess_prices(raw())
     assert prices.attrs["book"] == "bookA"
     assert prices.attrs["market"]["race"] == "tour-de-france"
-    assert prices.attrs["overround"] == pytest.approx(1.35, rel=1e-6)
+    assert prices.attrs["overround"] == pytest.approx(0.35, rel=1e-6)
     assert prices.attrs["n_runners"] == 8
 
 
@@ -70,8 +70,8 @@ def test_one_rider_priced_twice_is_refused():
 
 
 def test_a_partial_field_is_refused():
-    # Under 1.0 means runners are missing, and normalising then hands their
-    # probability to whoever is left.
+    # A margin at or under zero means runners are missing, and normalising then
+    # hands their probability to whoever is left.
     thin = raw(n=3)
     thin["Odds"] = [8.0, 9.0, 10.0]
     with pytest.raises(PriceFormatError, match="partial"):
@@ -120,7 +120,7 @@ def test_load_books_stacks_several_markets_from_one_book(tmp_path):
 
     one = market_slice(merged, "tour-de-france", "stage", stage=7)
     assert one.attrs["market"] == {"race": "tour-de-france", "kind": "stage", "stage": 7}
-    assert one.attrs["overround"] == pytest.approx(1.35, rel=1e-6)
+    assert one.attrs["overround"] == pytest.approx(0.35, rel=1e-6)
 
 
 def test_market_slice_refuses_a_market_that_is_not_there(tmp_path):

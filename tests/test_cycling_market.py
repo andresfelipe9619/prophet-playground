@@ -50,9 +50,12 @@ def book(n_runners=180, margin=1.40, seed=0):
 
 
 def test_an_outright_book_overrounds_far_more_than_a_football_one():
-    # Football's 1.02-1.08 is not the scale here: 180 priced runners carry a
-    # margin each, and a method tuned for the small excess has a big job.
-    assert overround(book(margin=1.40)) == pytest.approx(1.40, rel=1e-6)
+    # Football's 2-8% is not the scale here: 180 priced runners carry a margin
+    # each, and a method tuned for the small excess has a big job. Reported as
+    # the excess, the same convention `football/market.py` uses — two functions
+    # of one name meaning different things is a trap nobody catches by reading
+    # either one.
+    assert overround(book(margin=1.40)) == pytest.approx(0.40, rel=1e-6)
 
 
 @pytest.mark.parametrize("method", METHODS)
@@ -89,7 +92,7 @@ def test_additive_zeroes_most_of_the_field_and_reports_it():
 
 def test_compare_methods_carries_the_book_it_described():
     table = compare_methods(book(n_runners=120, margin=1.3))
-    assert table.attrs["overround"] == pytest.approx(1.3, rel=1e-6)
+    assert table.attrs["overround"] == pytest.approx(0.3, rel=1e-6)
     assert table.attrs["n_runners"] == 120
 
 

@@ -601,6 +601,62 @@ HELP = {
                          "diferencia grande, así que aquí un «no le gana» habla del tamaño de la "
                          "muestra todavía más que en las otras pestañas.",
 
+    # -- Registro de pronósticos de ciclismo
+    "cy_tab_registro": "Pronósticos escritos antes de la carrera y puntuados contra el ranking "
+                       "previo, más el registro de lo que se apostó.",
+    "cy_registry_field": "La lista de salida y las fuerzas van como **una sola** predicción. "
+                         "Partirlas en 180 filas permitiría puntuar la mitad y la otra no, que "
+                         "es justo lo que un registro existe para impedir. Una carrera cuyo "
+                         "resultado traiga otra lista se **rechaza**, no se vuelve a puntuar: "
+                         "achicar el pelotón convierte lo que prometiste en algo más fácil.",
+    "cy_registry_verdict": "La vara es el ranking previo, no el mercado — nada aquí descarga "
+                           "precios de ciclismo. Un pronóstico que **es** el ranking puntúa "
+                           "exactamente cero contra él.",
+    "cy_registry_selection": "A qué ciclista le apostaste.",
+
+    # -- Registro de pronósticos de fútbol
+    "fb_tab_registro": "Pronósticos escritos antes del partido y puntuados contra el precio de "
+                       "cierre sin margen, más el registro de lo que se apostó. Son dos cosas "
+                       "distintas y se guardan en archivos distintos a propósito.",
+    "fb_registry_odds": "Las cuotas que consigues tú. Sirven para dos cosas distintas: quitarles "
+                        "el margen da el **mercado**, que es contra lo que se mide un modelo; la "
+                        "cuota cruda es contra lo que se mide una **apuesta**, porque el margen "
+                        "lo pagas.",
+    "fb_registry_score": "Puntúa todos los partidos registrados que ya se jugaron — todos o "
+                         "ninguno. Elegir cuáles contar es exactamente lo que un registro "
+                         "existe para impedir.",
+    "fb_registry_verdict": "Un pronóstico que **es** el mercado acumula exactamente cero. Por eso "
+                           "cualquier número distinto de cero aquí significa algo, y por eso el "
+                           "cero es el punto de partida y no el fracaso.",
+    "fb_registry_selection": "Qué apostaste: local, empate o visitante.",
+
+    # -- Registro de apuestas (compartido por los tres dominios)
+    "log_tab": "Lo que registraste antes de que pasara, y qué dice el conjunto una vez "
+               "liquidado. El titular es el veredicto corregido, no el acumulado.",
+    "log_event_date": "Tiene que estar en el futuro. Un registro que acepta apuestas sobre algo "
+                      "que ya pasó no prueba nada, y una sola fila así arruina el archivo entero.",
+    "log_label": "El nombre de la estrategia. Sirve para leer el registro por separado — y el "
+                 "umbral se divide entre cuántas estrategias haya, porque quedarse con la mejor "
+                 "de cinco es el mismo error que quedarse con el mejor de cinco modelos.",
+    "log_stake": "Cuánto pones. El registro mide el retorno **por unidad apostada**, así que una "
+                 "apuesta grande y una pequeña son comparables.",
+    "log_price": "Cuota decimal: lo que te devuelven por cada unidad si aciertas, la unidad "
+                 "incluida. Es la cuota **cruda**, la que realmente pagas — el margen va dentro.",
+    "log_note": "Para qué te apoyaste en registrarla. No se usa en ningún cálculo.",
+    "log_settled": "Una apuesta liquidada es una cuyo evento ya pasó y cuyo resultado se "
+                   "anotó. Se liquidan todas a la vez o ninguna: elegir cuáles contar es "
+                   "justamente lo que un registro existe para impedir.",
+    "log_mde": "El retorno más pequeño que este registro podía haber detectado con las apuestas "
+               "que lleva. «No le gana» con pocas apuestas es una frase sobre la muestra, no "
+               "sobre la estrategia.",
+    "log_money": "El dinero va después del veredicto, a propósito.",
+    "log_pnl": "Un acumulado arriba del todo parece evidencia, cambia todos los días y con "
+               "decenas de apuestas no distingue una ventaja real de una racha. Por eso está "
+               "abajo y con el veredicto encima.",
+    "log_by_label": "Cada estrategia contra el punto de equilibrio, corregidas entre sí.",
+    "log_open": "Registradas y todavía sin resolver. Son las que hacen que el registro sea "
+                "evidencia: estaban escritas antes de saber el resultado.",
+
     # -- Ciclismo
     "cy_files": "Archivos de resultados de la carpeta indicada. Un archivo contiene un solo tipo de "
                 "resultado, y no se pueden cargar juntos tipos distintos: un puesto en una etapa y "
@@ -946,6 +1002,35 @@ PLAIN = {
         "ojo": "Que el modelo dé 12% al favorito no es poco ni mucho por sí solo. Con 180 "
                "corredores, un sorteo uniforme daría 0,55% — por eso ese sorteo **no** es la línea "
                "base contra la que hay que medirse, sino el ranking previo.",
+    },
+    "cy_tab_registro": {
+        "veo": "Lo que pronosticaste antes de que se corriera la carrera, cómo quedó contra el "
+               "ranking previo, y aparte lo que apostaste.",
+        "concluyo": "Es la única parte de esta página que no se puede ajustar después: la "
+                    "predicción estaba escrita cuando el resultado todavía no existía.",
+        "ojo": "El ranking previo es la vara **blanda**. La dura es el mercado, y aquí no hay "
+               "precios: mientras no los haya, ganarle a este registro no es ganarle a una casa "
+               "de apuestas.",
+    },
+    "fb_tab_registro": {
+        "veo": "Lo que pronosticaste antes de que se jugara el partido, cómo quedó contra el "
+               "precio de cierre sin margen, y aparte el registro de lo que apostaste.",
+        "concluyo": "Un registro hacia adelante es la única parte de todo este panel que no se "
+                    "puede ajustar después. Lo demás mira datos ya vistos; esto no.",
+        "ojo": "El pronóstico y la apuesta son dos archivos distintos porque son dos preguntas "
+               "distintas: una es si el modelo le gana al precio, la otra es cuánto dinero se "
+               "movió. Una fila que fuera las dos cosas se leería como la que más convenga.",
+    },
+    "log_tab": {
+        "veo": "Las apuestas que registraste antes de que pasara el evento, cuáles ya se "
+               "liquidaron, y qué dice el conjunto.",
+        "concluyo": "Lo único que cuenta es la línea de arriba: si el retorno por unidad "
+                    "apostada le gana al punto de equilibrio con la corrección aplicada, y qué "
+                    "tan pequeño es lo más pequeño que estas apuestas podían haber detectado.",
+        "ojo": "El acumulado de dinero **no** es el titular y está abajo por eso. Es la cifra "
+               "más engañosa de toda la aplicación: parece evidencia, se mueve todos los días y "
+               "con las cantidades que alcanza una persona no distingue una ventaja real de una "
+               "buena racha.",
     },
     "cy_tab_terreno": {
         "veo": "El terreno de cada carrera pasada, deducido de cómo terminó, y cuatro cifras por "

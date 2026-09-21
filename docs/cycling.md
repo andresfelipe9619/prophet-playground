@@ -361,14 +361,16 @@ in the vector.
 
 ### An outright book is not a football book with more rows
 
-Football's overround is 1.02-1.08. An outright cycling market runs to 1.4 and
+Football's overround is 2-8%. An outright cycling market runs to 40% and
 beyond, because a bookmaker pricing 180 mutually exclusive runners takes a
 margin on each. Two consequences follow, and both are larger than their football
 counterparts.
 
 The three normalisations that "disagree on longshots" in football disagree
 *enormously* here, because almost every runner is a longshot. Measured on a
-180-runner book at an overround of 1.76:
+180-runner book whose margin is 76% (`overround` reports the **excess**, the
+same convention `football/market.py` uses — two functions of one name meaning
+different things is a trap nobody catches by reading either one):
 
 | method | favourite | top-10 share | tail share | riders zeroed |
 | --- | --- | --- | --- | --- |
@@ -433,9 +435,9 @@ football's opening/closing trap in a third costume, and it is worse here:
 - **Two markets in one frame** — a price on the Tour's GC beside a price on its
   seventh stage — normalise against each other and describe a race nobody ran.
   This is §3's one-kind-per-frame rule one layer up.
-- A rider priced twice, a field whose prices sum to **under** 1 (which means
-  runners are missing, and normalising hands their probability to whoever is
-  left), and a column of fractional odds that was never converted are all
+- A rider priced twice, a field whose margin is **at or under zero** (which
+  means runners are missing, and normalising hands their probability to whoever
+  is left), and a column of fractional odds that was never converted are all
   refusals rather than warnings.
 
 `market_slice` cuts one market out of a season's worth of prices with the same

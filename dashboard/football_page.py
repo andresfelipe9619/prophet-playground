@@ -27,6 +27,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard import betlog_page
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 from football.backtest import MODEL_NAMES
 from football.calibration import (
@@ -82,6 +83,8 @@ CALIBRATION_BINS = (0.0, 0.2, 0.35, 0.5, 0.65, 0.8, 1.0)
 # uncertainty band has to be measured on the *same* fit it describes -- a band
 # from a differently-weighted model is an interval around a number that is not
 # on screen.
+FOOTBALL_LEDGER_PATH = "football_bets.csv"
+
 VALUE_TAB_HALF_LIFE = 180
 
 
@@ -439,7 +442,7 @@ def render():
     with_probabilities = market_probabilities(priced, method=method) if len(priced) else priced
 
     tabs = st.tabs(["1 · Datos", "2 · Mercado", "3 · Pronóstico", "4 · ¿Le gana al mercado?",
-                    "5 · Valor"])
+                    "5 · Valor", "6 · Registro"])
 
     # ------------------------------------------------------------------ Datos
     with tabs[0]:
@@ -727,6 +730,140 @@ def render():
         render_value_tab(matches, method)
         _render_bankroll(matches, method)
         _render_clv(raw_frame, method, is_demo)
+
+    # --------------------------------------------------------------- Registro
+    with tabs[5]:
+        render_registry_tab(matches, method, is_demo)
+
+
+def render_registry_tab(matches, method, is_demo):
+    """A forward record for football: the forecast first, then what was staked on it.
+
+    Two surfaces that must not merge. The **registry** stores a forecast before
+    kick-off and scores it against the de-margined closing price — that is the
+    domain's bar and the only thing that can say whether the model is worth
+    anything. The **ledger** stores money. A row that was both would be read as
+    whichever of the two suits the reader, so they are separate files, separate
+    modules and separate blocks on this page.
+
+    Recording goes through `football/registry.py`, which refuses a fixture that
+    has already kicked off and a second forecast under the same label. The
+    dashboard is another caller of those refusals, not a way round them.
+    """
+    from football.registry import load as load_registry
+    from football.registry import record as record_forecast
+    from football.registry import score_pending as score_registry
+    from football.registry import summary as registry_summary
+
+    section("Pronósticos registrados antes del partido", "fb_tab_registro")
+    if is_demo:
+        st.warning(
+            "Estás sobre partidos sintéticos. Puedes registrar, pero se puntuará contra "
+            "resultados inventados. Carga temporadas reales antes de empezar un registro que "
+            "quieras tomar en serio."
+        )
+
+    teams = sorted(set(matches["home_team"]) | set(matches["away_team"]))
+    if len(teams) < 2:
+        st.info("Hacen falta al menos dos equipos en los datos cargados.")
+        return
+
+    c1, c2 = st.columns(2)
+    home = c1.selectbox("Local", teams, key="reg_home")
+    away = c2.selectbox("Visitante", [t for t in teams if t != home], key="reg_away")
+
+    st.markdown("**Las cuotas que te dan ahora mismo**", help=HELP["fb_registry_odds"])
+    o1, o2, o3 = st.columns(3)
+    odds = (o1.number_input("Local", min_value=1.01, value=2.10, step=0.05, key="reg_odds_h"),
+            o2.number_input("Empate", min_value=1.01, value=3.40, step=0.05, key="reg_odds_d"),
+            o3.number_input("Visitante", min_value=1.01, value=3.60, step=0.05, key="reg_odds_a"))
+
+    try:
+        model = _fit_dixon_coles(matches, (len(matches), 0)).predict_outcome(home, away)
+    except UnknownTeamError as exc:
+        st.warning(f"El modelo no conoce a uno de los dos equipos: {exc}")
+        return
+
+    market = implied_probabilities(odds, method=method)
+    # The rule this page never breaks: model probabilities are shown only beside
+    # the de-margined price, because a bare model column implies it is good on
+    # its own and that is the one thing no surface here may suggest.
+    st.dataframe(
+        pd.DataFrame({
+            "Resultado": ["Local", "Empate", "Visitante"],
+            "Modelo": model, "Mercado (sin margen)": market,
+            "Cuota cruda": odds,
+        }).style.format({"Modelo": "{:.1%}", "Mercado (sin margen)": "{:.1%}",
+                         "Cuota cruda": "{:.2f}"}),
+        use_container_width=True, hide_index=True)
+    st.caption(
+        f"Margen del libro: **{overround(odds):.1%}**. El modelo se mide contra la columna "
+        "sin margen; una apuesta, contra la cuota cruda. Son dos varas distintas y el margen está "
+        "en medio.", help=HELP["fb_registry_odds"])
+
+    r1, r2, r3 = st.columns(3)
+    match_date = r1.date_input("Fecha del partido", key="reg_match_date")
+    label = r2.text_input("Etiqueta", "dixon-coles", key="reg_fb_label")
+    note = r3.text_input("Nota (opcional)", "", key="reg_fb_note")
+
+    if st.button("Registrar pronóstico"):
+        try:
+            row = record_forecast(model, match_date, home, away,
+                                  label.strip() or "sin etiqueta", note=note)
+        except Exception as exc:  # noqa: BLE001 — the guard's message is the content
+            st.error(
+                "**No se registró.** El registro rechaza un partido que ya se jugó y un segundo "
+                "pronóstico con la misma etiqueta: cada fila tiene que haber sido falsable cuando "
+                "se escribió, y nada se sobreescribe."
+            )
+            st.caption(f"Detalle: {exc}")
+        else:
+            st.success(
+                f"Registrado {row['home_team']} vs {row['away_team']} para el "
+                f"{pd.to_datetime(row['match_date']):%Y-%m-%d} como `{row['label']}`."
+            )
+            st.rerun()
+
+    st.divider()
+    registry = load_registry()
+    m1, m2 = st.columns(2)
+    m1.metric("Pronósticos registrados", len(registry))
+    m2.metric("Puntuados", int(registry["model_score"].notna().sum()) if len(registry) else 0)
+
+    if st.button("Puntuar los que ya se jugaron", help=HELP["fb_registry_score"]):
+        scored = matches.copy()
+        probabilities = market_probabilities(scored, method=method)
+        for column, values in probabilities.items():
+            scored[column] = values
+        score_registry(scored)
+        st.rerun()
+
+    table = registry_summary()
+    if not table.empty:
+        row = table.iloc[0]
+        plain_verdict(
+            bool(row["beats_market_corrected"]),
+            ("Le gana al mercado en el registro, con la corrección aplicada."
+             if row["beats_market_corrected"]
+             else "No hay evidencia de que el registro le gane al mercado."),
+            (f"n = {int(row['n_scored'])} · p (una cola) = {row['p_value_greater']:.3f} · "
+             f"diferencia media de RPS = {row['effect']:+.4f}"),
+        )
+        st.caption(
+            "Esta es la vara de este dominio: el precio de cierre sin margen sobre los mismos "
+            "partidos. Un pronóstico que **es** el mercado acumula exactamente cero, y por eso "
+            "cualquier cifra distinta de cero significa algo.", help=HELP["fb_registry_verdict"])
+    elif len(registry):
+        st.info("Nada puntuado todavía: ningún partido registrado se ha jugado (o falta su precio).")
+
+    st.divider()
+    betlog_page.render(
+        FOOTBALL_LEDGER_PATH,
+        "Lo que apostaste",
+        HELP["fb_registry_selection"],
+        default_label="dixon-coles",
+        selection_options=[f"{home} (local)", "Empate", f"{away} (visitante)"],
+    )
 
 
 @st.cache_data(show_spinner="Midiendo la incertidumbre del modelo…")

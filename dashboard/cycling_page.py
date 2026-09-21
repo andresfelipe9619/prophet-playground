@@ -41,11 +41,14 @@ from cycling.processor import (
 )
 from cycling.sample_data import generate_stage_race
 from cycling.scoring import METRICS, spearman, top_n_accuracy
+from dashboard import betlog_page
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 
 # Spanish labels for the code-facing constants in cycling/common.py.
 # Short enough to fit a metric tile; the full sentence lives in the caption
 # under it, where there is room to say what each kind's `rank` actually means.
+CYCLING_LEDGER_PATH = "cycling_bets.csv"
+
 KIND_ES = {"stage": "Etapa", "one_day": "Un día", "gc": "General"}
 KIND_ES_LONG = {"stage": "resultado de etapa", "one_day": "clásica de un día",
                 "gc": "clasificación general"}
@@ -210,7 +213,7 @@ def render():
     shown = results[results["status"] == FINISHED] if show_finishers_only else results
 
     tabs = st.tabs(["1 · Datos", "2 · Abandonos", "3 · Tiempos", "4 · Pronóstico",
-                    "5 · Terreno y forma", "6 · ¿Le gana al ranking?"])
+                    "5 · Terreno y forma", "6 · ¿Le gana al ranking?", "7 · Registro"])
 
     # ------------------------------------------------------------------ Datos
     with tabs[0]:
@@ -334,6 +337,10 @@ def render():
     # ------------------------------------------------------------- Evaluación
     with tabs[5]:
         render_evaluation_tab(results)
+
+    # --------------------------------------------------------------- Registro
+    with tabs[6]:
+        render_registry_tab(results)
 
 
 def render_forecast_tab(results):
@@ -460,6 +467,105 @@ def render_forecast_tab(results):
             "acertar el centro del pelotón, que es la parte fácil. El veredicto está en la "
             "pestaña siguiente."
         )
+
+
+def render_registry_tab(results):
+    """A forward record for cycling: the forecast first, then what was staked on it.
+
+    The same split football's page makes, for the same reason. The **registry**
+    stores a whole start list and its worths as **one** prediction — splitting
+    them across 180 rows would let half be scored and half not — and is scored
+    against the ranking built strictly from earlier results. The **ledger**
+    stores money, in its own file.
+
+    Recording goes through `cycling/registry.py`, which refuses a race that has
+    already been run, a duplicate label, and worths that do not line up with the
+    start list. Nothing here works around those.
+    """
+    from cycling.registry import load as load_registry
+    from cycling.registry import record as record_forecast
+    from cycling.registry import summary as registry_summary
+
+    section("Pronósticos registrados antes de la carrera", "cy_tab_registro")
+
+    groups = race_groups(results)
+    if len(groups) < 2:
+        st.info("Hace falta más de una carrera: el pronóstico se construye con las anteriores.")
+        return
+
+    labels = [f"{key[0]} · {KIND_ES.get(key[1], key[1])}"
+              + (f" · etapa {int(key[2])}" if key[2] == key[2] else "")
+              for key, _ in groups]
+    picked = st.selectbox("Carrera base (de dónde sale la lista de salida)", range(len(groups)),
+                          format_func=lambda i: labels[i], index=len(groups) - 1,
+                          help=HELP["cy_registry_field"])
+    key, group = groups[picked]
+    riders = list(group["rider"])
+
+    c1, c2, c3 = st.columns(3)
+    race_date = c1.date_input("Fecha de la carrera", key="cy_reg_date")
+    label = c2.text_input("Etiqueta", "plackett-luce", key="cy_reg_label")
+    note = c3.text_input("Nota (opcional)", "", key="cy_reg_note")
+
+    history = results[results["ds"] < group["ds"].min()]
+    if history.empty:
+        st.info("No hay historia previa con la que construir un pronóstico.")
+        return
+    worths = PlackettLuce.fit(history).worths_for(riders)
+
+    st.caption(
+        f"Se registrarían **{len(riders)} ciclistas** con sus fuerzas ajustadas sobre lo anterior "
+        "a esa carrera. La lista y las fuerzas van como **una sola** predicción: partirlas en 180 "
+        "filas dejaría puntuar la mitad y la otra no.", help=HELP["cy_registry_field"])
+
+    if st.button("Registrar pronóstico"):
+        try:
+            row = record_forecast(riders, worths, race_date, key[0],
+                                  label.strip() or "sin etiqueta",
+                                  kind=key[1], stage=None if key[2] != key[2] else int(key[2]),
+                                  note=note)
+        except Exception as exc:  # noqa: BLE001 — the guard's message is the content
+            st.error(
+                "**No se registró.** El registro rechaza una carrera que ya se corrió y un "
+                "segundo pronóstico con la misma etiqueta."
+            )
+            st.caption(f"Detalle: {exc}")
+        else:
+            st.success(f"Registrado {row['race']} ({row['kind']}) como `{row['label']}`.")
+            st.rerun()
+
+    st.divider()
+    registry = load_registry()
+    m1, m2 = st.columns(2)
+    m1.metric("Pronósticos registrados", len(registry))
+    m2.metric("Puntuados", int(registry["model_score"].notna().sum()) if len(registry) else 0)
+
+    table = registry_summary()
+    if not table.empty:
+        row = table.iloc[0]
+        plain_verdict(
+            bool(row["beats_baseline_corrected"]),
+            ("Le gana al ranking previo en el registro, con la corrección aplicada."
+             if row["beats_baseline_corrected"]
+             else "No hay evidencia de que el registro le gane al ranking previo."),
+            (f"n = {int(row['n_scored'])} · p (una cola) = {row['p_value_greater']:.3f} · "
+             f"diferencia media = {row['effect']:+.4f}"),
+        )
+        st.caption(
+            "La vara aquí es el **ranking previo**, no el mercado: nada en este proyecto descarga "
+            "precios de ciclismo todavía. Un pronóstico que **es** el ranking puntúa exactamente "
+            "cero contra él.", help=HELP["cy_registry_verdict"])
+    elif len(registry):
+        st.info("Nada puntuado todavía: ninguna carrera registrada se ha corrido.")
+
+    st.divider()
+    betlog_page.render(
+        CYCLING_LEDGER_PATH,
+        "Lo que apostaste",
+        HELP["cy_registry_selection"],
+        default_label="plackett-luce",
+        selection_options=riders[:50],
+    )
 
 
 def render_terrain_tab(results):

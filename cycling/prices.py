@@ -144,9 +144,9 @@ def _validate(prices):
         )
 
     total = overround(quoted.to_numpy())
-    if total <= 1.0:
+    if total <= 0.0:
         raise PriceFormatError(
-            f"These prices imply a total of {total:.3f}, at or under 1.0. An outright book always "
+            f"These prices imply a margin of {total:+.3f}, at or under zero. An outright book always "
             "overrounds, so a total below 1 means the field is partial — and normalising a partial "
             "field spreads the absent riders' probability over the ones that are present."
         )

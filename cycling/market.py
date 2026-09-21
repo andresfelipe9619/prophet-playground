@@ -57,14 +57,17 @@ class MarketFormatError(ValueError):
 
 
 def overround(odds):
-    """How much more than 1.0 the raw implied probabilities sum to.
+    """Bookmaker margin: how much the raw implied probabilities exceed 1.
 
-    On an outright market this is large and is *supposed* to be: pricing 180
-    mutually exclusive runners carries a margin on each. A book at 1.40 is
-    ordinary; football's 1.05 would be extraordinary.
+    **Same convention as `football/market.py:overround`** — the excess, not the
+    total — because two functions of the same name meaning different things in
+    two packages of one project is a trap nobody catches by reading either one.
+    On an outright market the number is large and is *supposed* to be: pricing
+    180 mutually exclusive runners carries a margin on each. A book at 0.40 is
+    ordinary here; football's 0.05 would be extraordinary.
     """
     odds = np.asarray(odds, dtype=float)
-    return float(np.nansum(1.0 / odds))
+    return float(np.nansum(1.0 / odds) - 1.0)
 
 
 def _multiplicative(raw):

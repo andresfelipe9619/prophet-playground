@@ -311,7 +311,7 @@ young registry cannot say much and should say so. Full detail in
 
 ## 3. Fútbol: the data contract, the market and the model
 
-Five tabs, and a **Europa / Colombia** source toggle at the top: *Europa
+Six tabs, and a **Europa / Colombia** source toggle at the top: *Europa
 (football-data)* loads the per-league season files through `football/processor.py`;
 *Colombia (archivo extra)* loads a `new/COL.csv`-style file through
 `football/extra_processor.py`. Colombia mode is always opening odds, and every
@@ -325,6 +325,7 @@ prices is against a soft market, not a finding.
 | **Pronóstico** | Two team pickers, optional current decimal odds; head-to-head and recent form (descriptive), then the Dixon-Coles 1X2 vector, **the Elo vector and rating table**, a scoreline heatmap, over/under and BTTS | The two-team view. Model probabilities appear **only beside the de-margined market**, or under an explicit "no baseline for this match" caption — never alone. Elo is here as the cheap baseline: if Dixon-Coles cannot separate itself from one number per team, that is worth seeing. |
 | **¿Le gana al mercado?** | Outcome shares, goals per side, observed rates against the market's mean probabilities, then a gated **multi-model walk-forward backtest against the closing line**, and below it the **out-of-sample calibration** of that backtest's own forecasts | The descriptive charts carry the usual disclaimer — two matching bars are not a result. The backtest is the verdict: one row per selected model, the corrected threshold printed as 0.05 divided by however many ran, and the effect with its 95% interval, through the same `core/` machinery as the lottery backtest. The calibration block sits **after** the verdict and says in its own copy that being calibrated is not having an edge — copying the closing price is perfectly calibrated and worth nothing. |
 | **Valor** | The market's belief, its margin stacked on top, the model as a diamond; then edge, the break-even price and a quarter-Kelly stake per outcome; and below that **closing line value** — how far the price moved between open and close, de-margined on both ends | The staking surface, and the one able to lose someone money. It shows **no stake at all** until the measured verdict from the previous tab is on screen beside it, and it draws the margin rather than describing it: there is a bet only when the diamond clears the whole column. |
+| **Registro** | The model and the de-margined market for a fixture at the prices you can actually get, a button that writes that forecast into `football/registry.py`, the forward verdict against the closing line — and below it, separately, **the stake log** | Two surfaces that must not merge: a forecast is a claim scored against the market, a stake is money. A row that was both would be read as whichever suits. See [§5](#5-the-stake-log). |
 
 The backtest is behind a button and needs ~150 matches; it exposes a
 walk-forward window count, a half-life for time decay, which models to score, and
@@ -375,7 +376,7 @@ as the Baloto page does.
 
 ## 4. Ciclismo: the result contract, the ranking and the model
 
-Five tabs. The first three are the part that costs most when it goes unnoticed —
+Seven tabs. The first three are the part that costs most when it goes unnoticed —
 the three invariants the contract protects are all invisible in the shape of a
 frame, so they are put on screen. The last two are the forecast and its verdict.
 
@@ -385,7 +386,9 @@ frame, so they are put on screen. The last two are the forecast and its verdict.
 | **Abandonos** | Counts per status, the peloton shrinking stage by stage, abandons per stage | Abandons are kept, not dropped, and the caption says why: they concentrate among the riders in worst form, so filtering them makes every accuracy figure optimistic. |
 | **Tiempos** | Seconds behind the leader by placing, the leader's own time, how many share it | A flat opening stretch is a bunch finish; a step is where the race split. **If the curve ever goes down, the times are wrong** — which is what the violation metric counts. |
 | **Pronóstico** | Win and top-N probabilities for one race from the fitted model **and** the ranking baseline, with the uniform draw as a dotted line; a scatter of where the two disagree | Everything is built from results strictly before that race's date. The uniform line is drawn rather than argued: at ~180 riders it is 0.55%, which is why it is not the baseline. |
+| **Terreno y forma** | The inferred terrain of every past race beside the share of finishers on the winner's time, then per-rider climbing form, sprinting form, the tilt between them, team strength and race days | Descriptive. The terrain of a *past* race is read off its result; the terrain of the race being predicted comes from the roadbook, which is why the Pronóstico tab asks the reader for it. Carries its own warning: where sprints are near-random, every strong rider reads as a climber. |
 | **¿Le gana al ranking?** | A gated walk-forward comparison: the model and the uniform draw, each scored against the ranking | The verdict, through the same `core/` machinery as the other two domains. The uniform draw stays in the table on purpose — it comes out worse than the ranking, which is the demonstration that it is not a baseline. See [Evaluation §10](evaluation.md#10-cycling-a-model-vs-the-pre-race-ranking). |
+| **Registro** | A start list and its fitted worths written as **one** forecast into `cycling/registry.py`, the forward verdict against the pre-race ranking, and below it the stake log | The bar here is the ranking, not the market, because nothing in the project fetches cycling prices — the tab says so rather than letting a reader assume they beat a bookmaker. See [§5](#5-the-stake-log). |
 
 The **Plackett-Luce log score is the verdict** and the rank correlations are
 diagnostics, the same split as "the pooled test is the verdict" on the Baloto
@@ -401,7 +404,60 @@ The "hide non-finishers" checkbox filters the table **after** the checks have ru
 the "not one abandon in the whole file" warning still fires on the file as published
 rather than on the filtered view.
 
-## 5. The four layers of explanation
+## 5. The stake log
+
+`dashboard/betlog_page.py`, shared by the domains that have a price, on top of
+`core/ledger.py`. Reached from the **Registro** tab in Fútbol and Ciclismo.
+
+**The headline is the corrected verdict, never the running total.** A
+profit-and-loss figure at the top of a betting log is the single most misleading
+number this project could put on a screen: it looks like evidence, it moves
+every day, and at the sample sizes a person actually reaches it cannot tell a
+real edge from a good run. So the panel renders, in this order:
+
+1. how many stakes are recorded, settled and open;
+2. **the verdict** — does the realised return per unit staked beat break-even,
+   with the Bonferroni threshold applied across strategies;
+3. **what this log could have detected** with that many settled bets, from its
+   own measured spread;
+4. and only then the money, under a caption saying why it is down there.
+
+`core/ledger.py` puts the same rule in `summary`'s column order, so a surface
+and a frame would have to be broken separately for a total to end up on top.
+
+### What the ledger refuses
+
+The registry's three refusals restated for money, and they are enforced in the
+module rather than in the form — the dashboard is another caller of them, not a
+way round them:
+
+- **a stake on an event that has already happened**, which is the easiest thing
+  in the world to do by accident with a date picker;
+- **editing a settled row** — a changed mind is a new row under a new label,
+  which leaves both on the record;
+- **settling a subset**: `resolve` returning None means "not yet" and is the
+  only reason a row may be skipped.
+
+### Two numbers worth understanding
+
+**The null is break-even, and that is generous on purpose.** A bettor with no
+edge paying a bookmaker's margin has a *negative* expected return, so testing
+against zero is a bar the no-edge case sits below rather than merely failing to
+clear. The test must not be able to call someone profitable because the null was
+put where they already were.
+
+**The spread is measured, not assumed.** Per-bet returns have no closed-form
+variance — it depends on the prices someone takes, which is a property of how
+they bet rather than of the game — so it comes from the settled rows, the same
+decision `football/power.py` makes about the paired score difference.
+
+The files (`football_bets.csv`, `cycling_bets.csv`, and the registries'
+`predictions.csv` and friends) are deliberately **not** gitignored, for the
+reason `core/registry.py` gives: committing them dates each row in version
+control, which is a stronger claim than any timestamp a file writes about
+itself.
+
+## 6. The four layers of explanation
 
 The dashboard used to explain itself only to a reader who already knew the
 answer: every "what am I looking at" lived behind a hover ⓘ, and ten unordered
@@ -478,7 +534,7 @@ checks all of this without launching Streamlit: every key a page asks for exists
 no page declares its own copy dict, every `PLAIN`/`READ` key is a real `HELP` key,
 and every `PLAIN` entry has all three fields filled.
 
-## 6. Performance notes
+## 7. Performance notes
 
 Streamlit re-executes every tab on every interaction. The design keeps that cheap:
 
@@ -494,7 +550,7 @@ Streamlit re-executes every tab on every interaction. The design keeps that chea
 Consequence: moving a slider in tab 7 does not re-fit anything. Only pressing
 **Ejecutar backtest** does.
 
-## 7. Extending the UI
+## 8. Extending the UI
 
 - Tabs are positional (`tabs[0]` … `tabs[9]` on the Baloto page, and their **labels carry a 1-based number** that must stay in step). **Inserting a tab
   shifts every index after it** — update them all. Appending at the end is the safe move.
