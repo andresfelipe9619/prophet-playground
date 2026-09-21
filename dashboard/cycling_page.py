@@ -511,7 +511,15 @@ def render_registry_tab(results):
     if history.empty:
         st.info("No hay historia previa con la que construir un pronóstico.")
         return
-    worths = PlackettLuce.fit(history).worths_for(riders)
+    # Through the cached fit, like every other fit on this page: Streamlit
+    # re-runs the whole script on each interaction, and refitting Plackett-Luce
+    # on every keystroke in the label box is a wait with nothing behind it.
+    _, worths, _ = _fit_and_forecast(
+        results, (len(results), str(group["ds"].min()), len(riders), None),
+        riders, group["ds"].min())
+    if worths is None:
+        st.info("No hay historia previa con la que construir un pronóstico.")
+        return
 
     st.caption(
         f"Se registrarían **{len(riders)} ciclistas** con sus fuerzas ajustadas sobre lo anterior "

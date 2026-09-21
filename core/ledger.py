@@ -90,6 +90,12 @@ def load(path: str) -> pd.DataFrame:
     frame["event_date"] = pd.to_datetime(frame["event_date"], errors="coerce")
     for column in ("stake", "price", "payout"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    # An all-empty column reads back as float64, and settling then writes a
+    # string and a bool into it. pandas 2 warns and upcasts; pandas 3 raises,
+    # and `pandas>=2.2` in the requirements allows pandas 3 — so the columns
+    # settling fills are object from the start rather than by accident.
+    for column in ("settled_at", "won"):
+        frame[column] = frame[column].astype(object)
     return frame[list(COLUMNS)]
 
 
@@ -108,13 +114,23 @@ def record(path: str, event_date: Any, label: str, selection: str, stake: float,
     is here to close.
     """
     moment = now or _now()
-    when = pd.to_datetime(event_date)
+    when = pd.to_datetime(event_date, errors="coerce")
     if pd.isna(when):
         raise LedgerError(f"Could not read {event_date!r} as a date.")
-    if when.to_pydatetime().replace(tzinfo=UTC) <= moment:
+
+    # Compared by **day**, the same rule `core/registry.py` uses, and for the
+    # same reason: an event date carries no time of day, so a midnight timestamp
+    # compared against the clock refuses everything later today — including the
+    # match this evening that a person is actually betting on. Today is still
+    # refused, because a date-only "today" may already have happened and the
+    # file cannot tell which.
+    when = when.normalize()
+    today = pd.Timestamp(moment.date())
+    if when <= today:
         raise LedgerError(
-            f"{when:%Y-%m-%d} is not in the future. A ledger that accepts a stake on an event "
-            "that has already happened proves nothing, and one such row makes the file worthless."
+            f"{when:%Y-%m-%d} is not in the future (today is {today:%Y-%m-%d}). A ledger that "
+            "accepts a stake on an event that has already happened proves nothing, and one such "
+            "row makes the file worthless."
         )
 
     amount, odds = float(stake), float(price)
@@ -135,7 +151,11 @@ def record(path: str, event_date: Any, label: str, selection: str, stake: float,
         "stake": amount, "price": odds, "note": str(note),
         "settled_at": np.nan, "won": np.nan, "payout": np.nan,
     }
-    updated = pd.concat([ledger, pd.DataFrame([row])], ignore_index=True)
+    # Not a concat onto an empty frame: pandas deprecates deciding the result's
+    # dtypes from all-NA columns, and the first row of a ledger is exactly that
+    # case. With rows already there, the existing dtypes decide.
+    addition = pd.DataFrame([row])
+    updated = addition if ledger.empty else pd.concat([ledger, addition], ignore_index=True)
     write(updated, path)
     return updated
 

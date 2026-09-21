@@ -135,6 +135,24 @@ def test_a_rescrape_with_nothing_new_leaves_the_store_untouched(store):
     assert info["fingerprint"] == first["fingerprint"]
 
 
+def test_a_frame_that_repeats_a_key_within_itself_is_refused(store):
+    # The doubling arriving from inside the frame rather than from the store.
+    # Checking only against what is stored let it through, and the row count
+    # afterwards looked like a successful append.
+    write_frame(frame(), store, "draws", VERSION)
+    repeated = pd.concat([frame(start="2024-02-01"), frame(start="2024-02-01")],
+                         ignore_index=True)
+
+    with pytest.raises(StorageError, match="repeat a key within the frame"):
+        append_frame(repeated, store, "draws", VERSION, key=["ds"])
+
+    # "skip" means add only what is new, so the first copy lands and the rest
+    # are dropped — including the repeats inside the frame.
+    info = append_frame(repeated, store, "draws", VERSION, key=["ds"], on_duplicate="skip")
+    assert info["n_rows"] == 6
+    assert not read_frame(store, "draws")["ds"].duplicated().any()
+
+
 def test_appending_to_a_table_that_does_not_exist_yet_creates_it(store):
     info = append_frame(frame(), store, "draws", VERSION, key=["ds"])
     assert info["n_rows"] == 3

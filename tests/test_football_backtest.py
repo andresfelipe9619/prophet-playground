@@ -21,6 +21,7 @@ that a real model beats a demonstrably soft market, not a realistic one.
 import pytest
 
 from football.backtest import MODEL_NAMES, compare_models, run_all, run_holdout
+from football.common import ODDS_COLUMNS
 from football.processor import preprocess_matches
 from football.sample_data import generate_matches
 
@@ -157,3 +158,37 @@ def test_the_manifest_records_that_the_run_was_recalibrated():
     table = compare_models(_matches(market_noise=0.9), n_windows=100, min_train=160,
                            models=("elo",), calibrate="temperature")
     assert table.attrs["manifest"]["inputs"]["calibrate"] == "temperature"
+
+
+def test_the_backtest_carries_the_price_of_every_window_it_scored():
+    """The staking surface must not re-derive which matches were scored.
+
+    `compare_models` skips a window any model cannot predict and scores windows
+    that have no price at all, so "the last N priced matches" is a different
+    set of the same length — and a bankroll built from it settles every bet
+    against another match's odds. The prices ride along with the forecasts
+    instead, one row per scored window, in the same order.
+    """
+    matches = _matches(market_noise=0.3)
+    table = compare_models(matches, n_windows=12, min_train=100, models=("elo",))
+    forecasts = table.attrs["forecasts"]
+
+    odds = forecasts["odds"]
+    assert odds.shape == (len(forecasts["outcomes"]), 3)
+    assert odds.shape[0] == len(forecasts["models"]["elo"])
+
+    # Every row is the price of the match it sits beside, not of some other
+    # match with the same index in a differently-filtered frame.
+    scored = matches.sort_values("ds").tail(len(odds))
+    assert odds == pytest.approx(scored[list(ODDS_COLUMNS)].to_numpy(dtype=float), nan_ok=True)
+
+
+def test_recalibration_trims_the_prices_with_everything_else():
+    # The trim is the part that is easy to get wrong: a price series left at its
+    # original length would line every bet up with the wrong match.
+    matches = _matches(market_noise=0.3)
+    table = compare_models(matches, n_windows=40, min_train=100, models=("elo",),
+                           calibrate="temperature", calibrate_min_fit=10)
+    forecasts = table.attrs["forecasts"]
+    assert len(forecasts["odds"]) == len(forecasts["outcomes"])
+    assert len(forecasts["odds"]) == len(forecasts["market"])

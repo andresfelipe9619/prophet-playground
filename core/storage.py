@@ -193,6 +193,20 @@ def append_frame(frame: pd.DataFrame, path: str, table: str, schema_version: str
             raise StorageError(f"Key column(s) {missing} are not in the frame.")
         stored_keys = set(map(tuple, existing[list(key)].astype(str).to_numpy()))
         incoming_keys = list(map(tuple, frame[list(key)].astype(str).to_numpy()))
+
+        # A frame that repeats a key *within itself* is the same doubling this
+        # guard exists to stop, arriving from inside rather than from the store.
+        # Checking only against what is stored lets it straight through, and the
+        # row count afterwards looks like a successful append.
+        seen: set[tuple[Any, ...]] = set()
+        internal = [k for k in incoming_keys if k in seen or seen.add(k)]  # type: ignore[func-returns-value]
+        if internal and on_duplicate == "error":
+            raise StorageError(
+                f"{len(internal)} row(s) repeat a key within the frame being appended, e.g. "
+                f"{internal[:3]}. Two rows under one key is the doubling this store refuses, "
+                "whether the second copy came from the file or from what is already stored."
+            )
+
         overlap = [k for k in incoming_keys if k in stored_keys]
         if overlap and on_duplicate == "error":
             raise StorageError(
@@ -200,8 +214,14 @@ def append_frame(frame: pd.DataFrame, path: str, table: str, schema_version: str
                 "Re-scraping an overlapping window is normal; which copy wins is a decision, so "
                 "pass on_duplicate='skip' to keep what is stored."
             )
-        if overlap:
-            keep = [k not in stored_keys for k in incoming_keys]
+        if overlap or internal:
+            # "skip" means add only what is new, so the first copy of a repeated
+            # key inside the frame is what lands and the rest are dropped.
+            kept_keys: set[tuple[Any, ...]] = set()
+            keep = []
+            for k in incoming_keys:
+                keep.append(k not in stored_keys and k not in kept_keys)
+                kept_keys.add(k)
             frame = frame[keep]
             if frame.empty:
                 # Nothing new is a perfectly ordinary outcome for a re-scrape and

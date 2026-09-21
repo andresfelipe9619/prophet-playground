@@ -93,19 +93,35 @@ def run_check(args):
 
 
 def build_parser():
+    # `--store` is defined on the top-level parser *and* on every subcommand,
+    # through a shared parent, so both orders work. argparse otherwise accepts
+    # it only before the subcommand, and `store_sync status --store X` — the
+    # order everyone types — exits with an error instead of reading that store.
+    # `--store` is accepted on either side of the subcommand, because both
+    # orders are what people type. argparse will not merge them for us: whatever
+    # the subparser produces replaces what the top-level parser already parsed,
+    # with or without a default, so the subcommand's copy writes to its own
+    # `dest` and `main` resolves the two explicitly. Anything cleverer here is a
+    # silently wrong store rather than a parse error.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--store", dest="store_override", default=None,
+                        help="the draw store to act on; may also be given before the subcommand")
+
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--store", default=DEFAULT_STORE)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    importer = sub.add_parser("import", help="import a draw CSV into the store")
+    importer = sub.add_parser("import", parents=[common],
+                              help="import a draw CSV into the store")
     importer.add_argument("--csv", default=DEFAULT_CSV)
     importer.add_argument("--on-duplicate", default="skip", choices=("skip", "error"))
     importer.set_defaults(handler=run_import)
 
-    status = sub.add_parser("status", help="what the store holds")
+    status = sub.add_parser("status", parents=[common], help="what the store holds")
     status.set_defaults(handler=run_status)
 
-    check = sub.add_parser("check", help="exit 1 if the store is stale, missing or mis-versioned")
+    check = sub.add_parser("check", parents=[common],
+                           help="exit 1 if the store is stale, missing or mis-versioned")
     check.add_argument("--max-age-days", type=int, default=DEFAULT_MAX_AGE_DAYS)
     check.set_defaults(handler=run_check)
     return parser
@@ -113,6 +129,8 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    # One name for one fact, whichever side of the subcommand it arrived on.
+    args.store = getattr(args, "store_override", None) or args.store
     return args.handler(args)
 
 

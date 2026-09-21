@@ -19,6 +19,7 @@ moves daily, and means nothing at the sample sizes anyone reaches.
 """
 
 import os
+import warnings
 from datetime import UTC, datetime
 
 import numpy as np
@@ -61,6 +62,21 @@ def test_a_stake_on_an_event_that_already_happened_is_refused(path):
     with pytest.raises(LedgerError, match="not in the future"):
         add(path, date="2024-04-30")
     assert not os.path.exists(path)
+
+
+def test_the_comparison_is_by_day_not_by_clock(path):
+    # An event date carries no time, so comparing a midnight timestamp against
+    # the clock refuses everything later today — including tonight's match. The
+    # rule is `core/registry.py`'s: normalise to a day, refuse today or earlier.
+    # Today stays refused because a date-only "today" may already have happened.
+    with pytest.raises(LedgerError, match="today is 2024-05-01"):
+        record(path, "2024-05-01", "m", "tonight", 1.0, 2.0,
+               now=datetime(2024, 5, 1, 9, tzinfo=UTC))
+    # ... and tomorrow is accepted whatever the hour, which is what stops the
+    # dashboard form erroring on its own default.
+    record(path, "2024-05-02", "m", "tomorrow", 1.0, 2.0,
+           now=datetime(2024, 5, 1, 23, 59, tzinfo=UTC))
+    assert len(load(path)) == 1
 
 
 def test_a_stake_and_a_price_have_to_be_real(path):
@@ -188,6 +204,27 @@ def test_labels_are_corrected_against_each_other(path):
     # Reading the best of three labels is the same mistake as reading the best
     # of three models, so the threshold tightens with the count.
     assert table["bonferroni_threshold"].iloc[0] == pytest.approx(0.05 / 3)
+
+
+def test_recording_and_settling_raise_no_pandas_deprecation(path):
+    """The columns settling writes into must not be float64.
+
+    An all-empty column reads back as float64 and settling then puts a string
+    and a bool in it: pandas 2 warns and upcasts, pandas 3 raises, and
+    `pandas>=2.2` in the requirements allows pandas 3. The same deprecation
+    covers concatenating onto an all-NA empty frame, which is every ledger's
+    first row. Both are errors here so neither can come back quietly.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        add(path)
+        settle_pending(path, lambda row: {"won": True, "payout": 2.0})
+
+    stored = load(path)
+    assert stored["won"].dtype == object
+    assert stored["settled_at"].dtype == object
+    # And the string round trip `summary`'s hit rate depends on still works.
+    assert summary(path).iloc[0]["hit_rate"] == pytest.approx(1.0)
 
 
 def test_an_empty_ledger_summarises_to_nothing_rather_than_to_zero_profit(path):

@@ -26,6 +26,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import datetime as dt
+
 import pandas as pd
 import streamlit as st
 
@@ -61,7 +63,13 @@ def render(path, title, selection_help, default_label="manual", price_help=None,
 def _render_form(path, selection_help, default_label, price_help, selection_options):
     with st.form("registrar_apuesta", clear_on_submit=True):
         c1, c2 = st.columns(2)
-        event_date = c1.date_input("Fecha del evento", help=HELP["log_event_date"])
+        # Tomorrow, not today: `core/ledger.py` refuses an event dated today,
+        # because a date with no time of day may already have happened and the
+        # file cannot tell which. Defaulting to today would make the form's
+        # default submission an error every time.
+        tomorrow = dt.date.today() + dt.timedelta(days=1)
+        event_date = c1.date_input("Fecha del evento", value=tomorrow, min_value=tomorrow,
+                                   help=HELP["log_event_date"])
         label = c2.text_input("Estrategia", value=default_label, help=HELP["log_label"])
 
         if selection_options:

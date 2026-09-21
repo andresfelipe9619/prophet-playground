@@ -779,7 +779,11 @@ def render_registry_tab(matches, method, is_demo):
             o3.number_input("Visitante", min_value=1.01, value=3.60, step=0.05, key="reg_odds_a"))
 
     try:
-        model = _fit_dixon_coles(matches, (len(matches), 0)).predict_outcome(home, away)
+        # Keyed on the frame's fingerprint, not its length: `st.cache_resource`
+        # would otherwise hand back the previous dataset's fit for any frame of
+        # the same size, and this forecast is the one that gets written into the
+        # registry as a claim made before the match.
+        model = _fit_dixon_coles(matches, (*_fingerprint(matches), None)).predict_outcome(home, away)
     except UnknownTeamError as exc:
         st.warning(f"El modelo no conoce a uno de los dos equipos: {exc}")
         return
@@ -928,21 +932,34 @@ def _render_bankroll(matches, method):
 
     section("¿Cómo se sentiría correr estas apuestas?", "fb_bankroll")
 
-    # The forecasts come from the backtest's held-out matches; the raw prices
-    # have to be looked up for the same ones, because a bet pays the margin.
+    # The prices come from the backtest itself, which knows which windows it
+    # scored. Looking them up here as "the last N priced matches" produced a set
+    # of the right length made of the wrong matches: the backtest scores windows
+    # with no price and skips windows an unknown team made unpredictable, so the
+    # two selections drift apart while the length check keeps passing — and each
+    # bet would then be settled against another match's odds.
     outcomes = forecasts["outcomes"]
-    priced = matches.dropna(subset=list(ODDS_COLUMNS)).tail(len(outcomes))
-    if len(priced) != len(outcomes):
-        st.info("No hay cuotas crudas para todos los partidos evaluados; no se puede simular.")
-        return
-
     name = next(iter(forecasts["models"]))
-    model_probs = forecasts["models"][name]
-    odds = priced[list(ODDS_COLUMNS)].to_numpy(dtype=float)
+    model_probs = np.asarray(forecasts["models"][name], dtype=float)
+    market_probs = np.asarray(forecasts["market"], dtype=float)
+    odds = np.asarray(forecasts.get("odds"), dtype=float).reshape(-1, 3)
+
+    # A window with no price was scored (against a NaN market vector) but cannot
+    # be staked on, so it drops out here — from every series at once.
+    usable = np.isfinite(odds).all(axis=1) & np.isfinite(market_probs).all(axis=1)
+    if not usable.any():
+        st.info("No hay cuotas crudas para ninguno de los partidos evaluados; no se puede simular.")
+        return
+    outcomes = [outcome for outcome, keep in zip(outcomes, usable, strict=True) if keep]
+    model_probs, market_probs, odds = model_probs[usable], market_probs[usable], odds[usable]
+    if len(outcomes) < len(usable):
+        st.caption(
+            f"{int((~usable).sum())} de {len(usable)} partidos evaluados no tienen cuota cruda "
+            "y quedan fuera de la simulación: se pueden puntuar sin precio, pero no apostar.")
 
     fraction = st.slider("Fracción de Kelly", 0.05, 1.0, 0.25, step=0.05,
                          help=HELP["fb_kelly_fraction"])
-    simulation = simulate_bankroll(model_probs, forecasts["market"], odds, outcomes,
+    simulation = simulate_bankroll(model_probs, market_probs, odds, outcomes,
                                    fraction=fraction, n_paths=DEFAULT_PATHS, seed=0)
     if not simulation["n_staked"]:
         st.info(
