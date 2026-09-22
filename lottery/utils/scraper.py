@@ -22,7 +22,6 @@ import sys
 import time
 
 import pandas as pd
-import requests
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,8 +31,8 @@ from lottery.models.common import DEFAULT_DATA_PATH, MAIN_BALLS_DRAWN
 BASE_URL = "https://www.loterias.com/baloto/resultados/{year}"
 BALLS_PER_DRAW = MAIN_BALLS_DRAWN + 1  # 5 main + superbalota, in that order
 
-# Keyed by the first three letters so "may"/"mayo" and "sep"/"set"/"septiembre"
-# all resolve; an unknown month raises rather than silently becoming "00".
+# Keyed by the first three letters so "may"/"mayo" and "sep"/"septiembre" both
+# resolve; an unknown month raises rather than silently becoming "00".
 MONTHS = {
     "ene": "01", "feb": "02", "mar": "03", "abr": "04",
     "may": "05", "jun": "06", "jul": "07", "ago": "08",
@@ -127,7 +126,14 @@ def fetch_year(year, session=None, timeout=30, retries=3, backoff=2.0):
     Returns None for a 404 — that is "no page for this year", not a failure to
     retry, and a multi-year scrape should move on rather than burn three
     attempts and abort.
+
+    `requests` is imported inside the function so the parser above can be tested
+    without it installed — the same rule `cycling/scraper.py:fetch_page` and
+    `football/downloader.py:fetch_csv` follow, and the reason requests is absent
+    from requirements-test.txt.
     """
+    import requests  # noqa: PLC0415 — see the docstring
+
     session = session or requests.Session()
     url = BASE_URL.format(year=year)
 
@@ -162,7 +168,10 @@ def scrape_years(years, delay=1.5, session=None):
       date — still raises immediately, from any year. That means the markup
       changed, and silently dropping the year would hide it.
     """
-    session = session or requests.Session()
+    if session is None:
+        import requests  # noqa: PLC0415 — see fetch_year's docstring
+
+        session = requests.Session()
     rows, empty_years, missing_years = [], [], []
 
     for i, year in enumerate(years):

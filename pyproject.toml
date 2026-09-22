@@ -73,3 +73,52 @@ strict = true
 [[tool.mypy.overrides]]
 module = ["scipy.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+# The four library packages, and deliberately not `dashboard/` or `scripts/`.
+# Those are the Streamlit UI and the CLI entry points: pytest never imports
+# them, the `static` CI job byte-compiles them, and the dashboard's real check
+# is a browser (docs/development.md §3.3). Measuring them would report ~1,500
+# statements of untested surface and invite the wrong fix -- unit tests around
+# st.* calls -- instead of the Playwright pass that actually catches a broken
+# page.
+source = ["core", "lottery", "football", "cycling"]
+omit = [
+    # prophet is not in requirements-test.txt by design, so this module cannot
+    # be imported in CI at all. Leaving it measured reports a permanent 0% that
+    # no test is allowed to fix, which reads as neglect rather than as a
+    # decision. The decision is documented in requirements-test.txt.
+    "lottery/models/prophet_model.py",
+    # Legacy top-level scripts with no functions: they do their work on import,
+    # which means "covering" them would mean running them. Kept for existing
+    # local workflows (docs/development.md), superseded for everything else.
+    "lottery/utils/csv_merger.py",
+    "lottery/utils/lib_detector.py",
+]
+
+[tool.coverage.report]
+# Measured at 92.6%. The floor is set just under that rather than at the 80%
+# it needs to clear, because a gate thirteen points below the real number
+# permits thirteen points of silent rot -- which is the only thing the gate
+# exists to stop. Two points of slack absorb a line moving; a drop past that is
+# a module that arrived without tests, and CI should say so.
+#
+# It is a floor, never a target. What this project needs from its suite is the
+# invariants listed in CLAUDE.md -- the things a refactor breaks silently -- and
+# no coverage number can tell whether those are pinned. Raise this when the
+# measured number rises; do not lower it to make a red build green.
+fail_under = 90
+skip_covered = true
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    # argparse wiring under `python -m`. The `static` job byte-compiles every
+    # one of these, and what they do is exercised through the functions they
+    # call; a test that drove them would be testing argparse.
+    "if __name__ == .__main__.:",
+    # The lazy `import torch` / `import timesfm` paths guard themselves with
+    # these, and CI installs neither (see lottery/models/timesfm_model.py,
+    # whose invariants are pinned through an injected stub forecaster instead).
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

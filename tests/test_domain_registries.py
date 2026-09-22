@@ -297,3 +297,108 @@ def test_cycling_status_names_the_next_race(cy_path):
     state = cy.status(cy_path)
     assert state["n_pending"] == 1
     assert state["next_race"] == pd.Timestamp(FUTURE)
+
+
+def test_a_cycling_race_still_to_come_is_listed_as_pending(cy_path, race):
+    cy.record(["a", "b"], [1.0, 2.0], FUTURE, "tour", "model", path=cy_path)
+
+    assert list(cy.pending(cy_path)["race"]) == ["tour"]
+
+
+def _age_stages(path, race):
+    """Backdate each registered row to the date of the stage it names.
+
+    The cycling counterpart of `_age_fixtures`, and for the same reason: one
+    flat date across several stages leaves every row but that day's unable to
+    resolve, which reads in the results as a scorer that skipped them.
+    """
+    when = {int(stage): group["ds"].min().strftime("%Y-%m-%d")
+            for stage, group in race.groupby("stage")}
+    frame = pd.read_csv(path)
+    frame["race_date"] = [when[int(stage)] for stage in frame["stage"]]
+    frame.to_csv(path, index=False)
+
+
+def _register_stages(cy_path, race, worths_for, label="model", stages=(2, 3, 4)):
+    """Register one forecast per stage, from `worths_for(riders, as_of, history)`."""
+    for stage_number in stages:
+        stage = race[race["stage"] == stage_number]
+        riders = list(stage["rider"])
+        as_of = stage["ds"].min()
+        # Each stage needs its own future date: (event, label) is unique by the
+        # registry's second refusal, so one flat FUTURE would read as a second
+        # prediction for the same race rather than a prediction for the next.
+        race_date = (datetime.now(UTC) + timedelta(days=3 + stage_number)).date().isoformat()
+        cy.record(riders, worths_for(riders, as_of, race[race["ds"] < as_of]),
+                  race_date, stage["race"].iloc[0], label, kind=stage["kind"].iloc[0],
+                  stage=stage_number, path=cy_path)
+    _age_stages(cy_path, race)
+
+
+def test_the_cycling_summary_tests_the_scored_races_against_the_ranking(cy_path, race):
+    _register_stages(cy_path, race, lambda riders, as_of, history: np.ones(len(riders)))
+    cy.score_pending(race, form_worths, path=cy_path)
+
+    table = cy.summary(cy_path)
+
+    # Pooled by default: one row covering every scored race, labelled "all".
+    assert list(table["label"]) == ["all"]
+    assert int(table["n_scored"].iloc[0]) == 3
+    # One label, so the corrected threshold is alpha itself -- the tightening
+    # only starts when a second challenger is registered against the same races.
+    assert float(table["bonferroni_threshold"].iloc[0]) == pytest.approx(0.05)
+    assert bool(table["beats_baseline_corrected"].iloc[0]) in (True, False)
+
+
+def test_a_registered_forecast_that_is_the_ranking_accumulates_exactly_zero(cy_path, race):
+    """The endpoint again, now through `summary` rather than one row.
+
+    Every race scores identically to its own baseline, so the two mean scores
+    come out equal — and because the differences are all exactly zero they have
+    no spread, which the z-test reports as no estimable effect rather than as a
+    very precise zero. Both halves matter: the accumulation is nil, and the
+    summary does not turn a degenerate sample into a verdict.
+    """
+    _register_stages(cy_path, race,
+                     lambda riders, as_of, history: form_worths(history, riders, as_of=as_of))
+    registry = cy.score_pending(race, form_worths, path=cy_path)
+
+    assert registry["score_difference"].abs().max() == pytest.approx(0.0, abs=1e-12)
+
+    table = cy.summary(cy_path)
+
+    assert float(table["model_score"].iloc[0]) == pytest.approx(float(table["baseline_score"].iloc[0]))
+    assert pd.isna(table["effect"].iloc[0])
+    assert not bool(table["beats_baseline"].iloc[0])
+    assert not bool(table["beats_baseline_corrected"].iloc[0])
+
+
+def test_a_second_label_tightens_the_corrected_threshold(cy_path, race):
+    """`n_comparisons` is the label count, so registering another challenger
+    against the same races makes the bar harder — the correct direction."""
+    _register_stages(cy_path, race, lambda riders, as_of, history: np.ones(len(riders)),
+                     label="uniform")
+    _register_stages(cy_path, race,
+                     lambda riders, as_of, history: form_worths(history, riders, as_of=as_of),
+                     label="is-the-ranking")
+    _age_stages(cy_path, race)
+    cy.score_pending(race, form_worths, path=cy_path)
+
+    table = cy.summary(cy_path, by_label=True)
+
+    assert sorted(table["label"]) == ["is-the-ranking", "uniform"]
+    assert set(table["bonferroni_threshold"]) == {0.05 / 2}
+
+
+def test_a_single_scored_race_reports_no_interval_rather_than_a_fabricated_one(cy_path, race):
+    """One observation has no spread, so the effect is not estimable. Saying so
+    beats returning a z-test built on a variance of nothing."""
+    _register_stages(cy_path, race, lambda riders, as_of, history: np.ones(len(riders)),
+                     stages=(3,))
+    cy.score_pending(race, form_worths, path=cy_path)
+
+    table = cy.summary(cy_path)
+
+    assert int(table["n_scored"].iloc[0]) == 1
+    assert pd.isna(table["p_value_greater"].iloc[0])
+    assert not bool(table["beats_baseline_corrected"].iloc[0])

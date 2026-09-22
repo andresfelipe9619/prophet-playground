@@ -25,6 +25,12 @@ scikit-learn>=1.4.1.post1
 beautifulsoup4~=4.11.2
 pytest>=8.0
 
+# The coverage gate, configured in pyproject.toml. Pure Python, installs in a
+# second or two, and is what keeps the 80% floor from being a number somebody
+# measured once. See docs/development.md §3.5 for what it does and does not
+# measure -- dashboard/ and scripts/ are deliberately outside it.
+pytest-cov>=5.0
+
 # Lint and type-check, configured in pyproject.toml. Both are pure-Python and
 # install in a couple of seconds, so the `static` CI job runs them without
 # pulling the rest of this file.

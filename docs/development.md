@@ -190,9 +190,8 @@ This is not redundant with the suite: pytest imports `core/`, `lottery/`,
 `football/` and `cycling/`, but never `dashboard/app.py` or the entry points
 under `scripts/`. A syntax error in either passes the whole suite. The `static` CI job runs this
 command for that reason, and its `find` paths have to be extended whenever a new
-top-level package appears — as of this writing the workflow still lists
-`core lottery football scripts dashboard tests`, so `cycling/` is compiled
-locally but not in CI.
+top-level package appears — `cycling/` was missing from that list for a while,
+so the third domain was compiled locally and not in CI.
 
 ### 3.2 Behaviour, against synthetic data
 
@@ -266,7 +265,7 @@ Two jobs:
 | Job | What it does | Needs installing |
 | --- | --- | --- |
 | `static` | Byte-compiles every module; verifies documentation links | Nothing — both are pure standard library, so it reports in about a second |
-| `tests` | The full suite, `slow` markers included, on Python 3.11 / 3.12 / 3.13 | `requirements-test.txt` |
+| `tests` | The full suite, `slow` markers included, on Python 3.11, behind a 90% coverage floor | `requirements-test.txt` |
 
 #### Why CI installs a different requirements file
 
@@ -283,19 +282,71 @@ runtime to exercise code no test touches.
 with an `ImportError` rather than skipping quietly, which is the intended
 behaviour — a silently skipped test is worse than a red build.
 
-#### The version matrix
+#### One Python version, not a matrix
 
-3.11 is the developed-on version. 3.12 and 3.13 were each run green against the
-full suite before being added to the matrix, rather than assumed to work.
-`fail-fast: false` so one version failing still reports the others.
+3.11 only. It is the developed-on version and the one every other piece of
+configuration already names — `requires-python = ">=3.11"`, ruff's
+`target-version = "py311"`, mypy's `python_version = "3.11"`.
+
+There used to be a 3.11 / 3.12 / 3.13 matrix, which was dropped because of what
+it cost against what it bought. The expensive part of the job is the install,
+not the suite: scipy, statsforecast, xgboost and scikit-learn come down three
+times over, and the pip cache is keyed per version so a cold cache pays it
+three times in full. What it bought was re-running a deterministic suite — every
+fixture comes from the seeded generators — against two interpreters nothing in
+this project is deployed to. The dashboard runs locally on 3.11; there is no
+library here for anyone else to install on 3.13.
+
+If a later version becomes the developed-on one, **move the pin** rather than
+adding a second entry beside it, and move `requires-python`, `target-version`
+and `python_version` with it.
+
+#### The coverage floor, and what it is not
+
+```bash
+pytest -q --cov --cov-report=term-missing        # the gate, as CI runs it
+```
+
+Everything — the packages measured, the omissions, the floor — is in
+`[tool.coverage.*]` in [`pyproject.toml`](../pyproject.toml), so the flag here
+carries no configuration of its own.
+
+**The number is 92.6%, and the floor is 90.** The floor sits just under the
+measured number rather than at some round target below it: a gate thirteen
+points under the real figure permits thirteen points of silent rot, which is the
+only thing a gate is for. Two points of slack absorb a line moving. Raise the
+floor when the number rises; do not lower it to make a red build green.
+
+**What it measures.** `core/`, `lottery/`, `football/` and `cycling/`.
+
+**What it deliberately does not.** `dashboard/` and `scripts/` are outside the
+source list. pytest never imports them, the `static` job byte-compiles them, and
+the dashboard's real check is a browser (§3.3). Measuring them would report
+about 1,500 statements of untested surface and invite the wrong fix — unit tests
+wrapped around `st.*` calls — instead of the Playwright pass that actually
+catches a broken page. Three files are omitted individually and each says why in
+the config: `lottery/models/prophet_model.py` (prophet is not installed in CI by
+design, so no test is *allowed* to cover it), and the two legacy scripts
+`csv_merger.py` and `lib_detector.py`, which do their work on import and so
+could only be "covered" by being run. `if __name__ == "__main__":` blocks are
+excluded as argparse wiring.
+
+**What the number is for.** It catches a module arriving with no tests at all.
+It cannot tell you whether the invariants in [CLAUDE.md](../CLAUDE.md) are
+pinned, and those are what a refactor breaks silently — a suite can sit at 95%
+and still not notice `beats_chance_test` losing its one-sided p-value. Treat 80%
+as a floor a change has to clear, never as the thing being aimed at. When the
+number goes up, the question to ask is which invariant the new tests pin.
 
 #### What CI does not do
 
-No linter, no coverage gate, no deployment. The dashboard is run locally
-(§3.3), and the Playwright check is **not** in CI — it needs a browser and a
-running Streamlit server, and the value it adds is a human looking at the
-result. Treat it as a pre-merge step for dashboard changes, not something the
-build will catch for you.
+No linter, no deployment. `ruff` and `mypy` are configured in
+[`pyproject.toml`](../pyproject.toml) and run locally (§3.1); wiring them into
+the `static` job needs a push with GitHub's `workflow` scope. The dashboard is
+run locally (§3.3), and the Playwright check is **not** in CI — it needs a
+browser and a running Streamlit server, and the value it adds is a human looking
+at the result. Treat it as a pre-merge step for dashboard changes, not something
+the build will catch for you.
 
 ## 3.6 Reproducibility
 
