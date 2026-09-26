@@ -13,3 +13,11 @@ holdout_summary.csv
 holdout_detail.csv
 sensitivity_report.csv
 .DS_Store
+
+# Coverage artefacts. Note predictions.csv and the ledger files are deliberately
+# NOT ignored (see core/registry.py) — these are, because a coverage database is
+# a measurement of one run on one machine, not a record of anything.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

@@ -30,11 +30,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      # pytest imports core/, lottery/ and football/, but never dashboard/app.py
-      # or the entry points under scripts/ — a syntax error in those would
-      # otherwise reach master unnoticed.
+      # pytest imports core/, lottery/, football/ and cycling/, but never
+      # dashboard/app.py or the entry points under scripts/ — a syntax error in
+      # those would otherwise reach master unnoticed.
+      #
+      # Every top-level package has to be listed here: `cycling` was missing
+      # until now, so the third domain was compiled locally and not in CI.
       - name: Byte-compile every module
-        run: python -m py_compile $(find core lottery football scripts dashboard tests -name '*.py')
+        run: python -m py_compile $(find core lottery football cycling scripts dashboard tests -name '*.py')
 
       # The documentation carries most of this project's reasoning, so a rotted
       # cross-reference is a real defect. The checker is pure standard library.
@@ -42,37 +45,45 @@ jobs:
         run: python -m lottery.utils.check_docs
 
   tests:
-    name: pytest (Python ${{ matrix.python-version }})
+    name: pytest (Python 3.11)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      # Report every version, not just the first to fail.
-      fail-fast: false
-      matrix:
-        # 3.11 is the developed-on version; 3.12 and 3.13 were confirmed green
-        # before being added here rather than assumed.
-        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
 
+      # One version, not a matrix. 3.11 is the developed-on version, the one
+      # `requires-python`, ruff's `target-version` and mypy's `python_version`
+      # all name, and the only one anybody here actually runs the dashboard on.
+      # A three-way matrix tripled the install (scipy, statsforecast, xgboost
+      # and scikit-learn are the expensive part, not the suite) to re-run a
+      # deterministic suite against interpreters nothing in this project is
+      # deployed to. If a later version becomes the developed-on one, move this
+      # pin rather than adding a second entry beside it.
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-test.txt
 
       # requirements-test.txt, not requirements.txt: the suite never imports
-      # prophet, streamlit, plotly, matplotlib, seaborn, requests or
-      # beautifulsoup4. Installing prophet and cmdstanpy here would dominate
-      # the job to exercise code no test touches. A test that ever needs one
-      # fails loudly with an ImportError rather than skipping quietly.
+      # prophet, streamlit, plotly, matplotlib, seaborn or requests. Installing
+      # prophet and cmdstanpy here would dominate the job to exercise code no
+      # test touches. A test that ever needs one fails loudly with an
+      # ImportError rather than skipping quietly. beautifulsoup4 *is* in there:
+      # the scraper parsers are tested against saved-style HTML.
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
 
-      # The whole suite, `slow` markers included — it runs in under a minute
-      # and the slow tests are the ones that fit real models.
+      # The whole suite, `slow` markers included — the slow tests are the ones
+      # that fit real models, and they are the ones worth running.
+      #
+      # `--cov` reads its source list, its omissions and the 90% floor from
+      # pyproject.toml, so the gate is configured in one place rather than
+      # restated in a flag here. The floor is a floor: it fails a change that
+      # lands a module with no tests, and says nothing about whether the
+      # invariants in CLAUDE.md are pinned.
       - name: Run the test suite
-        run: pytest -q
+        run: pytest -q --cov --cov-report=term
