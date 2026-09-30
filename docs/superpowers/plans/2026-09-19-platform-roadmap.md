@@ -370,12 +370,17 @@ is a single point of failure for a project whose entire thesis is data disciplin
       downstream changes. `core/storage.py` + the store path in `lottery/utils/processor.py`.
 - [~] The job's *steps* exist as `python -m scripts.store_sync import|status|check`, with
       validation before the write and a non-zero exit on a stale or mis-versioned store.
-      **The schedule itself does not**: `.github/workflows/refresh.yml` needs a push carrying
-      GitHub's `workflow` scope, the same block that keeps ruff and mypy out of CI. Re-scoring
-      the registries on the same schedule is not wired either.
-- [~] `store_sync check` exits 1 on a contract violation, a mis-versioned store and a source
-      gone silent (no draw in `--max-age-days`). The registry half is not wired, and with no
-      scheduler there is nothing to carry the exit code to a person yet.
+      **Now chained**: `python -m scripts.nightly [--run]` checks the store, re-scores all
+      three registries and queues each page's default evaluation, exiting 1 if any step
+      fails — written for cron on the machine the dashboard runs on, since this project
+      runs locally. A hosted `.github/workflows/refresh.yml` is still not written; it would
+      have no data to run on without the private CSVs.
+- [x] `store_sync check` exits 1 on a contract violation, a mis-versioned store and a source
+      gone silent (no draw in `--max-age-days`); `scripts/nightly.py` runs it with the
+      registry scoring and carries the exit code to cron, which mails a non-zero run.
+- [x] **Background jobs** (`core/jobs.py`, `*/jobs.py`, `dashboard/jobs_ui.py`,
+      `scripts/worker.py`): the dashboard's heavy evaluations leave the request, their
+      results survive a refresh, and every result says which commit produced it.
 
 ## Item 13: the dashboard bet/ticket log
 

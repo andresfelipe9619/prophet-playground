@@ -260,7 +260,12 @@ makes it true by construction regardless.
 │
 ├── core/                         Domain-agnostic evaluation — knows no lottery
 │   ├── windows.py                Walk-forward and date-cutoff splits
-│   └── significance.py           ★ z-test vs a null, Bonferroni correction
+│   ├── significance.py           ★ z-test vs a null, Bonferroni correction
+│   ├── manifest.py               ★ Provenance: commit, dirty flag, data fingerprints
+│   ├── registry.py               Pre-registration and its three refusals
+│   ├── ledger.py                 What was staked, kept apart from what was forecast
+│   ├── storage.py                SQLite store that refuses shape and dtype drift
+│   └── jobs.py                   Background job queue; results stored bit-exact
 │
 ├── football/                     Second domain — real signal, market baseline
 │   ├── common.py                 ★ The three outcomes and their (H, D, A) ordering
@@ -274,6 +279,7 @@ makes it true by construction regardless.
 │   ├── backtest.py               Walk-forward; compare_models corrects across models
 │   ├── value.py                  Edge, the two bars, quarter-Kelly staking
 │   ├── downloader.py             Season files, validated through the contract on arrival
+│   ├── jobs.py                   compare_models as a background job, and its defaults
 │   └── sample_data.py            Synthetic seasons carrying the generative truth
 │
 ├── cycling/                      Third domain — an ordering, not an outcome
@@ -284,10 +290,12 @@ makes it true by construction regardless.
 │   ├── plackett_luce.py          Rider strengths by MM, shrunk toward the field
 │   ├── evaluation.py             ★ Paired one-sided test against the ranking
 │   ├── scraper.py                procyclingstats.com, tables found by their headers
+│   ├── jobs.py                   The walk-forward as a background job, and its defaults
 │   └── sample_data.py            Synthetic stage races carrying the generative truth
 │
 ├── lottery/                      Everything Baloto-specific
 │   ├── backtest.py               Walk-forward evaluation vs chance (CLI)
+│   ├── jobs.py                   Walk-forward and holdout as background jobs, and defaults
 │   ├── constants.py              Colombian holidays (opt-in Prophet regressor)
 │   ├── models/
 │   │   ├── common.py             ★ Game rules, positions, calendar, long-format
@@ -312,12 +320,18 @@ makes it true by construction regardless.
 │   ├── prophet_forecast.py       Prophet forecast per position
 │   ├── statsforecast_forecast.py statsforecast forecast per position
 │   ├── xgboost_forecast.py       XGBoost held-out evaluation
+│   ├── store_sync.py             Draw store import / status / check (exit 1 when stale)
+│   ├── worker.py                 Runs the dashboard's queued jobs
+│   ├── nightly.py                Scheduled chain: check, score registries, queue defaults
 │   └── summary_charts.py         Legacy: original static matplotlib charts
 │
 ├── tests/                        pytest suite — the Baloto invariants
 └── dashboard/                    Streamlit UI — the primary surface
     ├── app.py                    Shell: page config, domain selector, lazy dispatch
     ├── ui.py                     ★ HELP / PLAIN / READ / GLOSSARY + section() / chart()
+    ├── jobs_ui.py                The shared run panel and the sidebar's queue status
+    ├── mobile.py                 The phone layout, installed once by the shell
+    ├── betlog_page.py            The stake log, shared by the priced domains
     ├── baloto_page.py            The ten Baloto tabs
     ├── football_page.py          Data, market, forecast, the verdict, and staking
     └── cycling_page.py           The contract, a race forecast, and the verdict
