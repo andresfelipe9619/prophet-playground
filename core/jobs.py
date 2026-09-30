@@ -67,6 +67,12 @@ from core.manifest import data_fingerprint, run_manifest
 
 SCHEMA_VERSION = "1"
 
+# One default for the dashboard, the worker and the nightly run, so all three
+# read and write the same queue unless told otherwise. Under exported_data/,
+# which is gitignored: this file is a cache of results, not a record — the
+# registries and the ledger are the records, and they are committed.
+DEFAULT_PATH = "exported_data/jobs.sqlite"
+
 QUEUED, RUNNING, DONE, FAILED = "queued", "running", "done", "failed"
 STATUSES = (QUEUED, RUNNING, DONE, FAILED)
 ACTIVE = (QUEUED, RUNNING)
@@ -806,7 +812,7 @@ def run_here(path: str, kind: str, params: Mapping[str, Any], inputs: Mapping[st
     if job["status"] in (DONE, RUNNING):
         return job
     worker = f"inline:{new_worker_id()}"
-    claimed = _claim_specific(path, int(job["id"]), worker)
+    claimed = _claim_specific(path, int(job["id"]), worker, run_manifest({"worker": worker}))
     if claimed is None:
         return get(path, int(job["id"]))  # type: ignore[return-value]
 
@@ -822,15 +828,16 @@ def run_here(path: str, kind: str, params: Mapping[str, Any], inputs: Mapping[st
     return get(path, int(job["id"]))  # type: ignore[return-value]
 
 
-def _claim_specific(path: str, job_id: int, worker: str) -> dict[str, Any] | None:
+def _claim_specific(path: str, job_id: int, worker: str,
+                    worker_manifest: Mapping[str, Any]) -> dict[str, Any] | None:
     connection = _connect(path)
     try:
         connection.execute("BEGIN IMMEDIATE")
         now = _now()
         cursor = connection.execute(
             "UPDATE jobs SET status = ?, started_at = ?, heartbeat_at = ?, worker = ?, "
-            "attempts = attempts + 1, error = NULL WHERE id = ? AND status = ?",
-            (RUNNING, now, now, worker, job_id, QUEUED))
+            "attempts = attempts + 1, error = NULL, worker_manifest = ? WHERE id = ? AND status = ?",
+            (RUNNING, now, now, worker, json.dumps(_encode_value(dict(worker_manifest))), job_id, QUEUED))
         connection.execute("COMMIT")
     except BaseException:
         if connection.in_transaction:

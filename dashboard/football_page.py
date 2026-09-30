@@ -27,7 +27,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import football.jobs as football_jobs
 from dashboard import betlog_page
+from dashboard.jobs_ui import run_panel
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 from football.backtest import MODEL_NAMES
 from football.calibration import (
@@ -159,25 +161,6 @@ def _fit_dixon_coles(_matches, cache_key):
 
     half_life = cache_key[-1]
     return DixonColes.fit(_matches, half_life=half_life or None)
-
-
-@st.cache_data(show_spinner=False)
-def _run_backtest(cache_key, _matches, n_windows, half_life, method, models,
-                  blend_weight, pool):
-    """Walk-forward model-vs-market backtest over several models at once.
-
-    `_matches` is underscore-prefixed so Streamlit does not try to hash the
-    frame (it carries `.attrs`); identity comes from `cache_key` plus the
-    parameters. Slow: it refits Dixon-Coles once per evaluated match, which is
-    also why every model is scored in that one pass rather than one run each.
-    """
-    from football.backtest import compare_models
-
-    # Floor on the training set; window_bounds already takes max(min_train,
-    # n - n_windows), so this is just "never fit on fewer than 100 matches".
-    return compare_models(_matches, n_windows=n_windows, min_train=100,
-                          half_life=half_life, method=method, models=models,
-                          blend_weight=blend_weight, pool=pool)
 
 
 @st.cache_resource(show_spinner="Ajustando el Elo…")
@@ -616,6 +599,9 @@ def render():
             )
 
         section("¿Le gana este modelo al mercado?", "fb_eval_tab")
+        if source is None or len(matches) < 150:
+            # No measurable verdict on this data, so none from other data either.
+            st.session_state.pop("fb_backtest", None)
         if source is None:
             st.warning("Sin cuotas no hay contra qué medir el modelo.")
         elif len(matches) < 150:
@@ -628,17 +614,29 @@ def render():
                     "La línea base de estos datos es de **apertura**. Cualquier ventaja que "
                     "aparezca aquí es contra un mercado blando y no es prueba de una ventaja real."
                 )
+            # Defaults come from football/jobs.py, which the nightly run reads too.
+            defaults = football_jobs.default_compare(method)
+            full_windows = football_jobs.full_history_windows(len(matches))
+            full_history = st.checkbox(
+                f"Evaluar todo el historial cargado ({full_windows} partidos)",
+                value=False, help=HELP["fb_full_history"])
             c1, c2 = st.columns(2)
-            n_windows = c1.slider("Partidos a evaluar (walk-forward)", 20, 200, 40, step=10)
+            if full_history:
+                n_windows = full_windows
+                c1.metric("Partidos a evaluar", n_windows)
+            else:
+                n_windows = c1.slider("Partidos a evaluar (walk-forward)", 20, 200,
+                                      defaults["n_windows"], step=10)
             half_life = c2.number_input(
                 "Vida media (días), 0 = sin decaimiento",
-                min_value=0, value=180, step=30, help=HELP["fb_half_life"])
+                min_value=0, value=defaults["half_life"], step=30, help=HELP["fb_half_life"])
             chosen_models = st.multiselect(
-                "Modelos a medir", list(MODEL_NAMES), default=list(MODEL_NAMES),
+                "Modelos a medir", list(MODEL_NAMES), default=defaults["models"],
                 format_func=lambda name: MODEL_ES[name], help=HELP["fb_models_pick"])
 
             b1, b2 = st.columns(2)
-            blend_weight = b1.slider("Peso del modelo en la mezcla", 0.0, 1.0, 0.5, step=0.05,
+            blend_weight = b1.slider("Peso del modelo en la mezcla", 0.0, 1.0,
+                                     defaults["blend_weight"], step=0.05,
                                      help=HELP["fb_blend_weight"])
             pool = b2.selectbox("Regla de mezcla", list(POOLS), help=HELP["fb_pool"])
             st.caption(
@@ -649,16 +647,32 @@ def render():
                 help=HELP["fb_blend"],
             )
 
-            eval_key = (*_fingerprint(matches), source, n_windows, int(half_life), method,
-                        tuple(chosen_models), blend_weight, pool)
-            if st.button("Correr backtest") and chosen_models:
-                with st.spinner("Reajustando los modelos por ventana…"):
-                    table = _run_backtest(
-                        eval_key, matches, n_windows, int(half_life) or None, method,
-                        tuple(chosen_models), blend_weight, pool)
-                st.session_state["fb_backtest"] = table
+            table = None
+            if chosen_models:
+                result = run_panel(
+                    football_jobs.COMPARE_MODELS,
+                    {"n_windows": int(n_windows), "min_train": football_jobs.MIN_TRAIN,
+                     "half_life": int(half_life), "method": method,
+                     "models": list(chosen_models), "blend_weight": float(blend_weight),
+                     "pool": pool},
+                    {"matches": matches}, football_jobs.run_compare_models,
+                    label=f"Fútbol · {len(chosen_models)} modelo(s) contra el mercado, "
+                          f"{n_windows} partidos",
+                    button="Correr backtest", key="fb_backtest")
+                if result is not None:
+                    table = result["table"]
+            else:
+                st.caption("Elige al menos un modelo para medir.")
 
-            table = st.session_state.get("fb_backtest")
+            # Valor and the bankroll read the verdict from here. It is the verdict
+            # for exactly this data and these parameters, or nothing: a stake shown
+            # beside a verdict measured on other matches is the thing those tabs
+            # exist to refuse, and the session-state version used to allow it.
+            if table is not None:
+                st.session_state["fb_backtest"] = table
+            else:
+                st.session_state.pop("fb_backtest", None)
+
             if table is not None:
                 winners = [MODEL_ES[m] for m in
                            table.loc[table["beats_market_corrected"], "model"]]

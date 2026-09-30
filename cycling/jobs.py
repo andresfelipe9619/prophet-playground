@@ -14,8 +14,19 @@ cannot disagree about what "plackett_luce" means.
 from cycling.baseline import form_worths, uniform_worths
 from cycling.evaluation import compare_forecasters
 from cycling.plackett_luce import PlackettLuce
+from cycling.scoring import DEFAULT_METRIC
 
 COMPARE_FORECASTERS = "cycling.compare_forecasters"
+
+
+def default_min_history(n_races):
+    """How many races of history the cycling evaluation opens on, for `n_races`."""
+    return min(4, max(2, int(n_races) // 2))
+
+
+def default_compare(n_races):
+    """The walk-forward the cycling page opens on; shared with the nightly run."""
+    return {"metric": DEFAULT_METRIC, "min_history": default_min_history(n_races)}
 
 FORECASTERS = {
     "ranking": lambda history, riders, as_of: form_worths(history, riders, as_of=as_of),

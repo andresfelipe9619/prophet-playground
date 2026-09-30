@@ -21,15 +21,15 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import cycling.jobs as cycling_jobs
 from cycling.baseline import (
     baseline_frame,
     form_worths,
     predicted_order,
-    uniform_worths,
     win_probabilities,
 )
 from cycling.common import DEFAULT_DATA_DIR, FINISHED, STAGE, format_seconds
-from cycling.evaluation import compare_forecasters, race_groups
+from cycling.evaluation import race_groups
 from cycling.features import CLIMB, SPRINT, feature_frame, infer_terrain
 from cycling.plackett_luce import PlackettLuce, TerrainPlackettLuce
 from cycling.processor import (
@@ -42,6 +42,7 @@ from cycling.processor import (
 from cycling.sample_data import generate_stage_race
 from cycling.scoring import METRICS, spearman, top_n_accuracy
 from dashboard import betlog_page
+from dashboard.jobs_ui import run_panel
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section
 
 # Spanish labels for the code-facing constants in cycling/common.py.
@@ -98,17 +99,6 @@ def _fit_and_forecast(_results, cache_key, riders, as_of, terrain=None):
     fitted = TerrainPlackettLuce.fit(history)
     available = terrain in fitted.available
     return ranking, fitted.worths_for(riders, terrain), (available, fitted.n_races.get(terrain, 0))
-
-
-@st.cache_data(show_spinner=False)
-def _evaluate(_results, cache_key, metric, min_history):
-    """Walk-forward comparison of the model and a uniform draw against the ranking."""
-    return compare_forecasters(
-        _results,
-        {"ranking": lambda h, r, a: form_worths(h, r, as_of=a),
-         "plackett_luce": lambda h, r, a: PlackettLuce.fit(h).worths_for(r),
-         "uniform": lambda h, r, a: uniform_worths(len(r))},
-        baseline="ranking", metric=metric, min_history=min_history)
 
 
 def result_files(directory):
@@ -657,26 +647,28 @@ def render_evaluation_tab(results):
         )
         return
 
+    # Defaults come from cycling/jobs.py, which the nightly run reads too.
+    defaults = cycling_jobs.default_compare(len(groups))
     c1, c2 = st.columns(2)
     metric = c1.selectbox("Regla de puntuación", list(METRICS),
+                          index=list(METRICS).index(defaults["metric"]),
                           format_func=lambda m: METRIC_ES[m], help=HELP["cy_metric"])
     min_history = c2.slider("Carreras de historia antes de empezar a puntuar", 1,
-                            max(2, len(groups) // 2), min(4, max(2, len(groups) // 2)))
+                            max(2, len(groups) // 2), defaults["min_history"])
 
-    if st.button("Correr la evaluación"):
-        with st.spinner("Reajustando el modelo carrera por carrera…"):
-            st.session_state["cy_eval"] = _evaluate(
-                results, (len(results), metric, min_history), metric, min_history)
-
-    stored = st.session_state.get("cy_eval")
-    if stored is None:
+    result = run_panel(
+        cycling_jobs.COMPARE_FORECASTERS, {"metric": metric, "min_history": int(min_history)},
+        {"results": results}, cycling_jobs.run_compare_forecasters,
+        label=f"Ciclismo · modelo contra el ranking, {len(groups)} carreras",
+        button="Correr la evaluación", key="cy_eval")
+    if result is None:
         st.caption(
             "Cada carrera se puntúa dos veces — con el modelo y con el ranking previo — usando "
             "solo lo anterior a su fecha. La diferencia media entre las dos es el resultado."
         )
         return
 
-    table, scores = stored
+    table, scores = result["table"], result["scores"]
     model_row = table[table["forecaster"] == "plackett_luce"]
     if not model_row.empty:
         row = model_row.iloc[0]

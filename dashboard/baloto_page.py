@@ -22,6 +22,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import lottery.backtest as bt
+import lottery.jobs as lottery_jobs
+from dashboard.jobs_ui import run_panel
 from dashboard.ui import HELP, chart, glossary, plain_verdict, section, verdict_badge
 from lottery.analysis.popularity import (
     compare_tickets,
@@ -118,7 +120,7 @@ from lottery.utils.processor import (
 )
 from lottery.utils.sample_data import load_sample_and_preprocess
 
-MIN_TRAIN_FLOOR = 20  # below this the models have nothing to learn from
+MIN_TRAIN_FLOOR = lottery_jobs.MIN_TRAIN_FLOOR  # below this the models have nothing to learn from
 
 # Prophet ships in every environment this app is meant to run in, deployment
 # included — a hosted instance missing a model is a different app, not a smaller
@@ -1064,14 +1066,19 @@ def render():
             help=HELP["experiment_choice"],
         )
 
+        backtest_summary = holdout_result = None
         if experiment == "Últimos N sorteos":
             c1, c2, c3 = st.columns(3)
+            # Defaults come from lottery/jobs.py, which the nightly run reads too:
+            # the same numbers in two places would drift, and the page would
+            # quietly recompute what the schedule already stored.
+            defaults = lottery_jobs.default_walk_forward(n_draws, PROPHET_AVAILABLE)
             max_windows = max(5, min(40, n_draws - MIN_TRAIN_FLOOR))
-            n_windows = c1.slider("Ventanas (sorteos a evaluar)", 5, max_windows, min(15, max_windows),
+            n_windows = c1.slider("Ventanas (sorteos a evaluar)", 5, max_windows, defaults["n_windows"],
                                   help=HELP["n_windows"])
             max_train = max(MIN_TRAIN_FLOOR, n_draws - 1)
             min_train = c2.slider("Mínimo de sorteos para entrenar", MIN_TRAIN_FLOOR, max_train,
-                                  min(60, max_train), help=HELP["min_train"])
+                                  defaults["min_train"], help=HELP["min_train"])
             include_prophet = c3.checkbox("Incluir Prophet", value=PROPHET_AVAILABLE,
                                            disabled=not PROPHET_AVAILABLE,
                                            help=HELP["include_prophet"] if PROPHET_AVAILABLE
@@ -1102,16 +1109,16 @@ def render():
                     "ventana por evaluar. Baja el mínimo de entrenamiento o usa un histórico más largo."
                 )
 
-            if st.button("Ejecutar backtest"):
-                with st.spinner("Corriendo backtest walk-forward..."):
-                    try:
-                        results = bt.run_all(position_series, n_columns, n_windows=n_windows,
-                                              min_train=min_train, include_prophet=include_prophet,
-                                              include_timesfm=include_timesfm)
-                        st.session_state["backtest_summary"] = bt.summarize(results)
-                        st.session_state.pop("holdout", None)
-                    except ValueError as exc:
-                        st.error(str(exc))
+            if start_idx < total:
+                result = run_panel(
+                    lottery_jobs.WALK_FORWARD,
+                    {"n_windows": n_windows, "min_train": min_train,
+                     "include_prophet": bool(include_prophet), "include_timesfm": bool(include_timesfm)},
+                    {"draws": lottery_jobs.draws_input(df, balls_expanded)}, lottery_jobs.walk_forward,
+                    label=f"Baloto · backtest de {n_windows} ventanas", button="Ejecutar backtest",
+                    key="baloto_wf")
+                if result is not None:
+                    backtest_summary = result["summary"]
         else:
             st.caption(
                 "Entrena con todos los sorteos hasta la fecha de corte y predice los que vinieron "
@@ -1160,21 +1167,20 @@ def render():
                     "de prueba, o acerca la fecha de corte al final del histórico."
                 )
 
-            if st.button("Ejecutar holdout"):
-                with st.spinner("Entrenando hasta el corte y prediciendo lo que ya pasó..."):
-                    try:
-                        results, info = bt.run_holdout(position_series, n_columns, pd.Timestamp(cutoff),
-                                                        mode=mode, include_prophet=include_prophet,
-                                                        include_timesfm=include_timesfm)
-                        st.session_state["backtest_summary"] = bt.summarize(results)
-                        st.session_state["holdout"] = (
-                            bt.holdout_detail(results, position_series, n_columns), info
-                        )
-                    except ValueError as exc:
-                        st.error(str(exc))
+            if n_holdout_preview:
+                result = run_panel(
+                    lottery_jobs.HOLDOUT,
+                    {"cutoff": str(cutoff), "mode": mode, "include_prophet": bool(include_prophet),
+                     "include_timesfm": bool(include_timesfm)},
+                    {"draws": lottery_jobs.draws_input(df, balls_expanded)}, lottery_jobs.holdout,
+                    label=f"Baloto · holdout desde {cutoff}", button="Ejecutar holdout",
+                    key="baloto_holdout")
+                if result is not None:
+                    backtest_summary = result["summary"]
+                    holdout_result = (result["detail"], result["info"])
 
-        if "holdout" in st.session_state:
-            detail, info = st.session_state["holdout"]
+        if holdout_result is not None:
+            detail, info = holdout_result
             section("Sorteo por sorteo", "holdout_detail")
             st.caption(
                 f"Entrenado con {info['n_train']} sorteos hasta {info['cutoff']:%Y-%m-%d}; "
@@ -1201,8 +1207,8 @@ def render():
                 "modelos y varios sorteos es normal ver alguno. Lo que decide es el promedio de abajo."
             )
 
-        if "backtest_summary" in st.session_state:
-            summary = st.session_state["backtest_summary"]
+        if backtest_summary is not None:
+            summary = backtest_summary
             winners = summary.loc[summary["beats_chance_corrected"], "model"].tolist()
             best = summary.loc[summary["avg_main_hits"].idxmax()]
             # good_is_pass=False: here "nothing beat chance" is the expected and

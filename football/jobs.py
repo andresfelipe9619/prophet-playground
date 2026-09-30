@@ -16,9 +16,34 @@ wrong market or none. `core/jobs.py` refuses any input that does not come back
 out of the store exactly, attrs among it.
 """
 
-from football.backtest import compare_models
+from football.backtest import MODEL_NAMES, compare_models
+from football.market import METHODS
 
 COMPARE_MODELS = "football.compare_models"
+
+# The training floor the page and the nightly run share: never fit on fewer
+# than this many matches.
+MIN_TRAIN = 100
+
+
+def default_compare(method=METHODS[0]):
+    """The market test the football page opens on.
+
+    Shared with the nightly run for the reason `lottery/jobs.py` gives: one
+    definition, so a result computed overnight is the one the page reads.
+    """
+    return {"n_windows": 40, "min_train": MIN_TRAIN, "half_life": 180, "method": method,
+            "models": list(MODEL_NAMES), "blend_weight": 0.5, "pool": "linear"}
+
+
+def full_history_windows(n_matches):
+    """Every match after the training floor — the evaluation this module exists for.
+
+    A season of one league resolves an edge of about 0.010 RPS at best; the
+    page's 40-match default resolves far less. Scoring every held-out match is
+    minutes of refitting, which is exactly what a background job is for.
+    """
+    return max(0, int(n_matches) - MIN_TRAIN)
 
 
 def run_compare_models(params, inputs, progress):

@@ -23,6 +23,25 @@ from lottery.models.common import build_position_series
 WALK_FORWARD = "lottery.walk_forward"
 HOLDOUT = "lottery.holdout"
 
+# Below this the models have nothing to learn from. The dashboard's sliders
+# bottom out here too.
+MIN_TRAIN_FLOOR = 20
+
+
+def default_walk_forward(n_draws, include_prophet):
+    """The walk-forward the Baloto page opens on, for a history of `n_draws`.
+
+    One definition for the page's slider defaults and for the nightly run, so a
+    job the schedule computed overnight has the same key as the one the page
+    asks for in the morning and is read rather than recomputed. Two copies of
+    these numbers would drift, and the only symptom would be a page that
+    quietly recomputes what was already there.
+    """
+    max_windows = max(5, min(40, n_draws - MIN_TRAIN_FLOOR))
+    max_train = max(MIN_TRAIN_FLOOR, n_draws - 1)
+    return {"n_windows": min(15, max_windows), "min_train": min(60, max_train),
+            "include_prophet": bool(include_prophet), "include_timesfm": False}
+
 
 def draws_input(df, balls_expanded):
     """The job input for a draw history: `ds` and one `b{position}` column per ball."""

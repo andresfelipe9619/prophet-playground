@@ -38,7 +38,7 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-from dashboard import mobile
+from dashboard import jobs_ui, mobile
 
 mobile.apply()
 
@@ -73,6 +73,10 @@ def main():
         )
         module_name, state = DOMAINS[choice]
         st.caption(state)
+        st.divider()
+        # Shared by all three domains, so it lives in the shell rather than a page:
+        # a backtest queued from Baloto is still running while you look at cycling.
+        jobs_ui.sidebar_status()
         st.divider()
 
     # On a phone the sidebar is an overlay behind the ☰ button, so the domain

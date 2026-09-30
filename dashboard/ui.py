@@ -697,6 +697,32 @@ HELP = {
                       "convierte cada diferencia publicada en un tiempo total.",
     "cy_same_time": "Cuántos ciclistas comparten el tiempo del primero. En una llegada en pelotón "
                     "son la mayoría del grupo, y es lo que significa el marcador «,,» en la página.",
+
+    # -- Trabajos en segundo plano (compartido por las tres páginas)
+    "jobs_queue": "Manda el cálculo a un proceso aparte (un «worker») y deja el panel libre mientras "
+                  "tanto. El resultado aparece aquí solo cuando termina, y queda guardado: si "
+                  "recargas la página o vuelves mañana con los mismos datos y parámetros, sale al "
+                  "instante sin volver a calcularlo.",
+    "jobs_run_here": "Calcula en esta misma página, como antes: el panel espera hasta que termine. "
+                     "El resultado se guarda igual que si lo hubiera hecho un worker, así que "
+                     "tampoco se pierde al recargar. Úsalo si no tienes un worker corriendo.",
+    "jobs_no_worker": "No hay ningún worker corriendo, así que «aquí» es la opción rápida. Para "
+                      "cálculos largos inicia uno en la barra lateral (o con "
+                      "`python -m scripts.worker`) y manda el trabajo a segundo plano.",
+    "jobs_provenance": "Qué produjo este resultado. Un resultado calculado desde un árbol con cambios "
+                       "sin guardar no se puede reproducir desde ningún commit; por eso se dice. "
+                       "Si cambias cualquier parámetro o los datos, este resultado deja de mostrarse: "
+                       "responde a otra pregunta.",
+    "jobs_sidebar": "Los cálculos pesados (backtests, evaluaciones) corren en una cola aparte de la "
+                    "página. Aquí ves si hay algún worker trabajando, qué espera turno y qué terminó. "
+                    "Un trabajo cuyo worker muere vuelve solo a la cola; si mata a su worker tres "
+                    "veces, se marca como fallido en vez de reintentarse para siempre.",
+    "jobs_start_worker": "Arranca un worker en segundo plano en esta máquina. Sigue vivo aunque "
+                         "cierres la pestaña; su registro queda en `exported_data/worker.log`.",
+    "fb_full_history": "Puntúa cada partido cargado después de los primeros 100, no solo los últimos "
+                       "40. Es la única forma de que el veredicto contra el mercado tenga resolución: "
+                       "con 40 partidos casi cualquier ventaja real es invisible. Tarda minutos, así "
+                       "que conviene mandarlo a segundo plano.",
 }
 
 

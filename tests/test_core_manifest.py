@@ -134,6 +134,43 @@ def test_the_fingerprint_survives_a_round_trip_through_csv(tmp_path):
     assert data_fingerprint(first) == data_fingerprint(second)
 
 
+@pytest.mark.parametrize("make", [
+    # Built from joined pieces so each call makes new string objects, the way
+    # reading a file does. Literals are interned and would hide the defect.
+    lambda: pd.array(["".join(["Man", "chester City"]), "".join(["Arse", "nal"])], dtype="string"),
+    lambda: pd.to_datetime(["2024-01-03", "2024-01-06"]).tz_localize("UTC"),
+    lambda: pd.array([1, None], dtype="Int64"),
+], ids=["string", "zoned-datetime", "nullable-int"])
+def test_extension_dtypes_fingerprint_their_values_not_their_addresses(make):
+    """`to_numpy()` on an extension column is an object array, and `tobytes()`
+    on that hashes pointers. Football and cycling frames carry `string`
+    columns, so their manifests' data fingerprints changed on every load."""
+    assert data_fingerprint(pd.DataFrame({"c": make()})) == data_fingerprint(pd.DataFrame({"c": make()}))
+
+
+def test_extension_columns_still_see_an_edited_value():
+    before = pd.DataFrame({"team": pd.array(["Arsenal", "Chelsea"], dtype="string")})
+    after = pd.DataFrame({"team": pd.array(["Arsenal", "Everton"], dtype="string")})
+
+    assert data_fingerprint(before) != data_fingerprint(after)
+
+
+def test_the_same_football_season_file_fingerprints_the_same_on_every_load(tmp_path):
+    """The end-to-end case that surfaced the defect: the job queue keys on the
+    fingerprint, and a nightly job never matched the page's question."""
+    from football.processor import load_seasons
+    from football.sample_data import generate_matches
+
+    path = tmp_path / "E0_2324.csv"
+    generate_matches(n_teams=6, seed=1).drop(columns=["TrueH", "TrueD", "TrueA"]).to_csv(
+        path, index=False)
+
+    first = load_seasons([str(path)], validate=False)
+    second = load_seasons([str(path)], validate=False)
+
+    assert data_fingerprint(first) == data_fingerprint(second)
+
+
 def test_an_empty_frame_fingerprints(frame):
     empty = frame.iloc[:0]
     assert data_fingerprint(empty) != data_fingerprint(frame)
