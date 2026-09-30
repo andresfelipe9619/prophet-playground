@@ -313,8 +313,11 @@ young registry cannot say much and should say so. Full detail in
 
 Six tabs, and a **Europa / Colombia** source toggle at the top: *Europa
 (football-data)* loads the per-league season files through `football/processor.py`;
-*Colombia (archivo extra)* loads a `new/COL.csv`-style file through
-`football/extra_processor.py`. Colombia mode is always opening odds, and every
+*Colombia (archivo extra)* loads a `COL.csv` in football-data's "extra" shape
+through `football/extra_processor.py`. football-data does not publish Colombia,
+so that file is built by hand from another provider —
+[Data Sources §1.3](data-sources.md#13-colombia) has the recipe, and explains
+when Colombian data with genuine closing prices belongs in *Europa* mode instead. Colombia mode is always opening odds, and every
 model surface in that mode carries a banner saying so — an edge against those
 prices is against a soft market, not a finding.
 
@@ -545,10 +548,60 @@ Streamlit re-executes every tab on every interaction. The design keeps that chea
 | Six randomness reports | `@st.cache_data` on `randomness_reports` |
 | Gap table, pooled tests | `@st.cache_data` |
 | ACF for the selected position | Reused from the cached report, not recomputed |
-| Model fitting, backtests | Behind buttons; results parked in `st.session_state` |
+| Backtests and evaluations | A background job (§7.1); the page reads the stored result |
+| Other model fitting | Behind buttons; results parked in `st.session_state` |
 
-Consequence: moving a slider in tab 7 does not re-fit anything. Only pressing
-**Ejecutar backtest** does.
+Consequence: moving a slider in tab 8 does not re-fit anything. Only pressing
+**Ejecutar backtest** does — and once it has, the answer is stored.
+
+### 7.1 Background jobs
+
+The four evaluations that refit every model per window — Baloto's walk-forward
+and holdout, football's market test, cycling's walk-forward against the ranking
+— used to run inside the button click. The page blocked behind a spinner, the
+result lived in `st.session_state`, and a browser refresh threw it away. They now
+go through a job queue ([`core/jobs.py`](../core/jobs.py)), and every page
+renders them through one shared panel,
+[`dashboard/jobs_ui.py`](../dashboard/jobs_ui.py), for the same reason `ui.py`
+owns the copy: three pages each wiring their own queue could not be reviewed as a
+set.
+
+What a reader sees:
+
+- **The stored answer for the current question, with no click.** A job is keyed
+  on the evaluation, its parameters and a fingerprint of the data on screen, so
+  a refresh, a return visit tomorrow, or opening the page after the nightly run
+  all show the result immediately. Change a slider and the result disappears: a
+  result for other parameters is not the answer to this question, which the
+  session-state version showed anyway.
+- **Two buttons.** *…en segundo plano* hands the job to a worker; the page stays
+  usable and the result appears on its own (a fragment polls every two seconds
+  and reruns the page when the job finishes). *…aquí* runs it in the page, for a
+  reader with no worker, and stores it exactly as a worker would. Whichever is
+  available is the primary button.
+- **A provenance line under every result**: how long ago, whether a worker or
+  the page computed it, the commit, and — in bold — whether that tree had
+  uncommitted edits, the field [`core/manifest.py`](../core/manifest.py) treats
+  as load-bearing.
+- **The sidebar's *Trabajos en segundo plano***: live workers, counts per status,
+  the last few jobs, and **Iniciar un worker**, which starts
+  `python -m scripts.worker` detached (it outlives the tab; its log is
+  `exported_data/worker.log`), so nobody needs a second terminal.
+
+Football's verdict tabs changed with it. **Valor** and the bankroll read the
+verdict for exactly the data and parameters on screen, or none — the
+session-state version handed them the last verdict computed on *any* data,
+which could put a stake beside a verdict measured on other matches. And the
+market test gains **Evaluar todo el historial cargado**: every match after the
+first 100 rather than the last 40. That is the run that can actually resolve an
+edge (a season of one league bottoms out near 0.010 RPS), and minutes of
+refitting is what the queue is for.
+
+`python -m scripts.nightly` precomputes each page's *default* question, with the
+data and parameters the page opens on — both defined once, in each domain's
+`jobs.py`, so the page and the schedule cannot drift. If they did, nothing
+would break; the page would simply not find the stored answer and offer to
+compute it. See [Development §2](development.md#2-running-things).
 
 ## 8. Extending the UI
 

@@ -1,4 +1,10 @@
-"""The football-data.co.uk "extra" file contract: new/COL.csv and its siblings.
+"""The football-data.co.uk "extra" file contract: new/ARG.csv and its siblings.
+
+football-data publishes sixteen of these (see `football/downloader.py:EXTRA_LEAGUES`)
+and **Colombia is not one of them**. The contract is still how this project
+reads Colombian data, from a file the reader builds from another source in the
+same shape — docs/data-sources.md has the recipe — which is why the tests and
+the dashboard still speak of a COL.csv.
 
 Their main league files carry HomeTeam/AwayTeam/FTHG/FTAG, one league per file,
 and — from 2019/20 — closing odds. The "extra" files for the rest of the world

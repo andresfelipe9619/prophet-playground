@@ -25,6 +25,8 @@ import pytest
 
 DASHBOARD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
 PAGES = ("app.py", "baloto_page.py", "football_page.py", "cycling_page.py")
+# Not pages, but they render copy, so they answer to the same copy rules.
+SHARED = ("jobs_ui.py",)
 
 
 def source(name):
@@ -63,7 +65,7 @@ def keys_used(name):
 def test_the_help_dict_is_the_single_one():
     # Three page modules with their own inline strings could not be reviewed as a
     # set, which is the only way the "say what it does not mean" rule is checkable.
-    for name in PAGES:
+    for name in PAGES + SHARED:
         for dict_name in ("HELP", "PLAIN", "READ", "GLOSSARY"):
             assert f"{dict_name} = " not in source(name), \
                 f"{name} declares a second {dict_name}; all copy lives in ui.py"
@@ -89,13 +91,13 @@ def test_every_guided_box_says_what_it_does_not_mean():
         assert all(entry[field].strip() for field in entry), f"PLAIN[{key!r}] has an empty field"
 
 
-@pytest.mark.parametrize("name", PAGES)
+@pytest.mark.parametrize("name", PAGES + SHARED)
 def test_every_help_key_a_page_asks_for_exists(name):
     missing = sorted(keys_used(name) - help_keys())
     assert not missing, f"{name} asks for HELP keys that do not exist: {missing}"
 
 
-@pytest.mark.parametrize("name", PAGES)
+@pytest.mark.parametrize("name", PAGES + SHARED)
 def test_no_page_renders_a_chart_outside_the_helper(name):
     assert "st.plotly_chart" not in source(name), (
         f"{name} calls st.plotly_chart directly. Route it through ui.chart(), which "

@@ -48,6 +48,43 @@ The three model scripts additionally expect
 `exported_data/exported_data_2024.csv` for their comparison step, and write into
 `prophet_results/`, `statsforecast_<model>_results/` and `xgboost_results/`.
 
+### 2.1 Background jobs and the nightly run
+
+```bash
+python -m scripts.worker                    # run the dashboard's queued jobs; poll forever
+python -m scripts.worker --once             # drain what is queued now, then exit
+python -m scripts.nightly                   # check the store, score registries, queue defaults
+python -m scripts.nightly --run             # ...and run the queued jobs before exiting
+```
+
+The dashboard's heavy evaluations go through a queue in `exported_data/jobs.sqlite`
+([Dashboard §7.1](dashboard.md#71-background-jobs)). A worker can be started from
+the dashboard's sidebar, or beside Streamlit by hand; several can share one store
+and each job goes to exactly one. **A worker keeps running the code it
+imported**, so restart it after editing a model — every job records the commit
+its worker started from, and the page prints it, but that is still not the code
+on disk.
+
+`scripts/nightly.py` is written for cron on the machine the dashboard runs on:
+
+```
+15 3 * * *  cd /path/to/prophet-playground && venv/bin/python -m scripts.nightly --run
+```
+
+It checks the draw store (`store_sync check`), scores every registry prediction
+that has resolved in all three domains, and queues each domain's default
+evaluation, plus football's full-history run. Each step prints OK, SKIP or FAIL; a
+step with nothing to act on is a SKIP that says why, one broken step does not
+stop the others, and **the exit code is 1 if any step failed** — a schedule that
+only logs hides exactly what it exists to catch. It does not scrape: the scrapers
+cannot be verified against the live sites from here, so running them unattended
+would be trusting a parser nobody has watched run.
+
+The job store is a cache of results, not a record, which is why it sits under the
+gitignored `exported_data/` while the registries and ledgers are committed. A
+store written under another schema version is refused with a message saying so;
+deleting the file starts a fresh queue and loses nothing that cannot be recomputed.
+
 ## 3. Verification
 
 **There is a test suite, a linter and CI.** Work is verified in four ways
@@ -378,6 +415,26 @@ and date ranges are the usual stand-ins and both miss a single corrected cell.
 Column order is in there because a frame whose superbalota column moved scores
 differently while hashing identically under a values-only digest, and position
 semantics are the thing this codebase is most careful about.
+
+**Only plain numpy columns are hashed from their bytes.** Every other dtype —
+object, categorical, and pandas' extension dtypes (`string`, `Int64`, zoned
+datetimes) — goes through its string form. This was learned the hard way: an
+extension column's `to_numpy()` is an object array, and `tobytes()` on that
+hashes memory addresses. Football and cycling frames carry `string` columns, so
+the same season file loaded twice fingerprinted differently, and every manifest
+those two domains had attached carried a "which data" field nobody could
+reproduce. Nothing looked wrong — a fingerprint is supposed to look random. It
+surfaced only when the job queue keyed on it and a nightly job never matched the
+question the page asked. A test now loads the same football file twice.
+
+**A result read from the job queue is bit-identical to the direct call.** Inputs
+and results pass through the store column by column, with each dtype recorded
+and replayed, and both are refused unless they come back *exactly* — compared
+with `check_exact`, element types included. Two losses motivated that:
+`DataFrame.to_json` rounds floats to ten significant digits (so a worker fitted
+on odds that differed from the page's), and its table schema turns an object
+column of `None` into `float64`. The first version of the guard passed the
+rounding, because `assert_frame_equal` defaults to a relative tolerance of 1e-5.
 
 **The library list is not a dependency list.** It holds the libraries whose
 version can move a number. Adding streamlit would record something that cannot

@@ -135,6 +135,8 @@ See **[docs/local-setup.md](docs/local-setup.md)**.
 
 ```bash
 streamlit run dashboard/app.py                       # main entry point
+python -m scripts.worker                             # run the dashboard's background jobs
+python -m scripts.nightly --run                      # for cron: check data, score, precompute
 
 python -m lottery.backtest --n-windows 20 --min-train 100    # evaluate vs chance
 python -m lottery.backtest --n-windows 20 --include-prophet  # +11% runtime

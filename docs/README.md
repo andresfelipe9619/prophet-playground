@@ -24,6 +24,7 @@ make sense against it.
 | 12 | **[Dashboard](dashboard.md)** | One app, three domains: the sidebar selector, Baloto's ten tabs, football's five, cycling's five, and the four layers of explanation that make them readable without a statistics background. |
 | 13 | **[Development](development.md)** | Setup, the test suite, the verification workflow, conventions, how to extend, gotchas. |
 | 14 | **[Local Setup](local-setup.md)** | Installing, your own data, reading the dashboard on your phone over your own network, and what every model does with a local machine. |
+| 15 | **[Data Sources](data-sources.md)** | Populating football and cycling step by step, recipes that convert any provider's data into each contract (tested), and a catalogue of 36 remote sources marked supported, recipe or reference. |
 
 ## Quick answers
 
@@ -64,7 +65,9 @@ make sense against it.
 | How do you score a finishing order? | [Cycling §7](cycling.md#7-scoring-an-ordering-cyclingscoringpy) |
 | Why is the sum of the balls a bell curve if all tickets are equal? | [Evaluation §4.1](evaluation.md#41-the-order-agnostic-summaries) |
 | I don't know what a p-value is — where do I start? | The **Glosario** in the dashboard sidebar · [Dashboard §6](dashboard.md#6-the-four-layers-of-explanation) |
-| How do I use the Colombian league data? | [Data Pipeline §5.1](data-pipeline.md#51-footballs-extra-files) |
+| How do I use the Colombian league data? | [Data Sources §1.3](data-sources.md#13-colombia) — football-data does not publish it |
+| Where else can football or cycling data come from? | [Data Sources §4](data-sources.md#4-source-catalogue) |
+| How do I load data from an API into the football or cycling pages? | [Data Sources §3](data-sources.md#3-recipes-any-source-into-the-contract) |
 | How do I read the dashboard on my phone? | [Local Setup §3](local-setup.md#3-reading-it-on-your-phone) |
 | Why does it show synthetic data? | [Local Setup §2](local-setup.md#your-data) |
 | How do I install TimesFM without 3 GB of CUDA? | [Local Setup §2](local-setup.md#2-installing) |

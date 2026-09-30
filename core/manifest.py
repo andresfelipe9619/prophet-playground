@@ -142,7 +142,14 @@ def data_fingerprint(frame: pd.DataFrame) -> str:
         series = frame[column]
         digest.update(str(column).encode())
         digest.update(str(series.dtype).encode())
-        if series.dtype == object or isinstance(series.dtype, pd.CategoricalDtype):
+        # Only a plain numpy dtype has bytes that *are* its values. Everything
+        # else — object, categorical, and every pandas extension dtype (`string`,
+        # `Int64`, zoned datetimes) — goes through its string form. An extension
+        # column's `to_numpy()` is an object array, and `tobytes()` on that hashes
+        # memory addresses: the same team names loaded twice fingerprinted
+        # differently, so every football and cycling manifest's "which data"
+        # field was unreproducible until the job queue keyed on it and noticed.
+        if series.dtype == object or not isinstance(series.dtype, np.dtype):
             digest.update("\x1f".join(series.astype(str)).encode())
         else:
             # `np.ascontiguousarray` because a sliced or transposed frame can

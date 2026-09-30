@@ -62,15 +62,33 @@ BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 EXTRA_URL = "https://www.football-data.co.uk/new/{code}.csv"
 
 # The "extra" files football-data publishes for the rest of the world
-# (new/COL.csv, new/ARG.csv, ...). A different contract — Home/Away/HG/AG,
-# many leagues and seasons stacked per file, opening odds only — read by
-# football/extra_processor.py rather than football/processor.py. Reached with
-# the --extra flag; without it these codes are refused by name below.
+# (new/ARG.csv, new/BRA.csv, ...). A different contract — Home/Away/HG/AG,
+# many seasons stacked per file — read by football/extra_processor.py rather
+# than football/processor.py. Reached with the --extra flag; without it these
+# codes are refused by name below.
+#
+# These are the sixteen football-data lists on all_new_data.php ("Football
+# Results and Betting Odds for 16 Worldwide leagues"), checked 2026-09-30
+# against that page and the footballcsv/cache.footballdata README. **Colombia
+# is not among them.** An earlier version of this dict offered "COL", which
+# could only ever 404: Colombian data has to come from another source and be
+# converted to this contract by hand — docs/data-sources.md says how.
 EXTRA_LEAGUES = {
-    "COL": "Colombia — Primera A / Primera B",
-    "ARG": "Argentina — Liga Profesional",
+    "ARG": "Argentina — Primera División",
+    "AUT": "Austria — Bundesliga",
     "BRA": "Brazil — Serie A",
+    "CHN": "China — Super League",
+    "DNK": "Denmark — Superliga",
+    "FIN": "Finland — Veikkausliiga",
+    "IRL": "Ireland — Premier Division",
+    "JPN": "Japan — J1 League",
     "MEX": "Mexico — Liga MX",
+    "NOR": "Norway — Eliteserien",
+    "POL": "Poland — Ekstraklasa",
+    "ROU": "Romania — Liga 1",
+    "RUS": "Russia — Premier League",
+    "SWE": "Sweden — Allsvenskan",
+    "SWZ": "Switzerland — Super League",
     "USA": "USA — MLS",
 }
 
@@ -213,7 +231,7 @@ def parse_leagues(spec, extra=False):
     """'E0,SP1' -> ['E0', 'SP1'], rejecting codes this contract does not cover.
 
     With `extra=True` the codes are validated against `EXTRA_LEAGUES`
-    (COL, ARG, ...) instead, for the `--extra` download path.
+    (ARG, BRA, ...) instead, for the `--extra` download path.
     """
     codes = [c.strip().upper() for c in spec.split(",") if c.strip()]
     if not codes:
@@ -484,7 +502,7 @@ def download_seasons(seasons, leagues, out_dir=DEFAULT_DATA_DIR, delay=1.0,
 def download_extra(codes, out_dir=DEFAULT_DATA_DIR, dry_run=False, force=False, session=None):
     """Fetch football-data.co.uk new/{code}.csv files. Opening odds only.
 
-    These are the "extra" leagues (COL, ARG, ...): one file per country, many
+    These are the "extra" leagues (ARG, BRA, ...): one file per country, many
     competitions and seasons stacked inside, a different column set. The file is
     written verbatim to `out_dir/{code}.csv` — `football/extra_processor.py`
     owns the contract — but it is routed through `preprocess_extra` first so a
@@ -566,7 +584,7 @@ if __name__ == "__main__":
     parser.add_argument("--leagues", default="E0",
                         help=f"comma-separated codes; known: {', '.join(sorted(LEAGUES))}")
     parser.add_argument("--extra", action="store_true",
-                        help="fetch the new/ 'extra' files (COL, ARG, ...) instead of league "
+                        help="fetch the new/ 'extra' files (ARG, BRA, ...) instead of league "
                              "files; opening odds only, several competitions stacked per file")
     parser.add_argument("--out-dir", default=DEFAULT_DATA_DIR)
     parser.add_argument("--delay", type=float, default=1.0, help="seconds between requests")

@@ -91,7 +91,11 @@ Bookmakers publish a price when a market **opens** and a different one when it
 first guess rather than the market.
 
 football-data marks closing odds with a `C` (`AvgCH`, `B365CH`) and publishes
-them **only from 2019/20 onward**. So a merged history spanning that boundary
+them **only from 2019/20 onward**. Its other prices are not strictly opening
+prices either: its notes say they are collected on Friday afternoons for weekend
+games and Tuesday afternoons for midweek ones. This project calls them
+"opening" throughout; what matters, and what holds, is that they are taken well
+before the close and are soft relative to it. So a merged history spanning that boundary
 has closing odds for its recent half and none for its older half. Filling that
 gap from the opening columns produces one `odds_home` column that silently
 means two different things, and every model evaluated on it is judged against
@@ -154,6 +158,12 @@ results when the question is about score dependence itself.
 
 ## 5. Getting real data
 
+> **The step-by-step guide is [Data Sources](data-sources.md)**: every league
+> code, the checks to run after a first download, how to bring in data from any
+> other provider (Colombia included, which football-data does not publish), and
+> a catalogue of the remote sources. This section keeps the reasoning behind the
+> downloader.
+
 `football/downloader.py` fetches the season files. football-data publishes CSV
 directly, so this downloads rather than scrapes — hence `downloader`, not
 `scraper` — but it keeps the [lottery scraper's posture](data-pipeline.md#31-design-principle-fail-loudly):
@@ -191,14 +201,24 @@ Four decisions in it are worth knowing:
 
 ### The "extra league" files
 
-The rest of the world (`new/COL.csv`, `new/ARG.csv` and friends) is published on
-a **different contract** — `Home`/`Away`/`HG`/`AG`, several leagues and seasons
-stacked in one file, and **opening odds only** (`AvgH` / `PH` / `B365H`, never a
-`C` column). `football/processor.py` does not read them.
+Sixteen leagues outside the main set (`new/ARG.csv`, `new/BRA.csv`, … — the list
+is in [Data Sources §1.2](data-sources.md#12-the-sixteen-extra-leagues-supported-with-one-open-question))
+are published on a **different contract**: `Home`/`Away`/`HG`/`AG` and every
+season stacked in one file. `football/processor.py` does not read them.
+**Colombia is not among them**, and an earlier version of this page and of the
+downloader said it was; Colombian data is brought in by hand
+([Data Sources §1.3](data-sources.md#13-colombia)) and read through the same
+contract.
 
 ```bash
-python -m football.downloader --leagues COL --extra          # writes exported_data/football/COL.csv
+python -m football.downloader --leagues ARG --extra          # writes exported_data/football/ARG.csv
 ```
+
+The parser reads `AvgH` / `PH` / `B365H` as **opening** prices. Whether the real
+files carry those or closing (`C`) columns could not be checked from the
+sandbox — football-data's own description of these leagues mentions closing
+odds — so the first real download settles it; the check and what to do either
+way are in [Data Sources §1.2](data-sources.md#12-the-sixteen-extra-leagues-supported-with-one-open-question).
 
 `football/extra_processor.py` owns this contract — `preprocess_extra(df, league=None)`,
 `load_extra(path, league=None)`, `available_leagues(path)` — and maps it onto the
@@ -214,7 +234,7 @@ dashboard consume it unchanged. Two rules are enforced hard:
 `--seasons` is ignored on the `--extra` path (these files are not per-season), and
 without `--extra` the codes are refused by name. **The limit:** opening odds mean
 the market baseline is the soft one, so **no corrected edge claim is possible on
-Colombian data** — a model that beats these prices has probably beaten a
+a file read through this contract** — Colombia's included — a model that beats these prices has probably beaten a
 bookmaker's first guess rather than the market.
 
 ### The limit of this verification
