@@ -313,8 +313,11 @@ young registry cannot say much and should say so. Full detail in
 
 Six tabs, and a **Europa / Colombia** source toggle at the top: *Europa
 (football-data)* loads the per-league season files through `football/processor.py`;
-*Colombia (archivo extra)* loads a `new/COL.csv`-style file through
-`football/extra_processor.py`. Colombia mode is always opening odds, and every
+*Colombia (archivo extra)* loads a `COL.csv` in football-data's "extra" shape
+through `football/extra_processor.py`. football-data does not publish Colombia,
+so that file is built by hand from another provider —
+[Data Sources §1.3](data-sources.md#13-colombia) has the recipe, and explains
+when Colombian data with genuine closing prices belongs in *Europa* mode instead. Colombia mode is always opening odds, and every
 model surface in that mode carries a banner saying so — an edge against those
 prices is against a soft market, not a finding.
 

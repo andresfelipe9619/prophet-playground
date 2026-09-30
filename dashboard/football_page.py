@@ -363,7 +363,9 @@ def render():
             is_demo = True
             st.info(
                 f"No se encontró el archivo **{col_path}** — mostrando **datos sintéticos**. "
-                "Descárgalo con `python -m football.downloader --extra --leagues COL`."
+                "football-data.co.uk **no publica Colombia**: este archivo lo armas tú desde otra "
+                "fuente, con el formato de sus archivos «extra». La receta está en "
+                "`docs/data-sources.md`."
             )
         report = check_match_format(matches)
         # Colombia's extra files are opening prices only, so there is no second

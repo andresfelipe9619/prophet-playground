@@ -131,6 +131,14 @@ python -m cycling.scraper --race tour-de-france --year 2024 --kind gc --stage 21
 python -m cycling.scraper --race milano-sanremo --year 2024 --kind one_day
 ```
 
+**`--kind gc` always fetches the race's `/gc` page** — the current standing, or
+the final one once the race is over — and `--stage` only labels those rows. Run
+it on a finished race with `--stage` set to the last stage; run mid-race with an
+earlier number, it would store today's standing under that stage's name.
+Step-by-step population, recipes for other sources and a catalogue of where
+cycling data (and prices, and roadbooks) can come from are in
+[Data Sources](data-sources.md).
+
 Each run writes `exported_data/cycling/<race>_<year>_<kind>.csv`, merging into
 whatever is there (keyed on race, kind, stage and rider; existing rows win, so
 a hand-corrected file survives a re-scrape) and validating the result through

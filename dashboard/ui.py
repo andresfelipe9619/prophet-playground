@@ -403,8 +403,10 @@ HELP = {
 
     "fb_source_toggle": (
         "Europa usa los archivos de liga de football-data.co.uk (cuotas de cierre desde "
-        "2019/20). Colombia usa el archivo «extra» new/COL.csv: mismo deporte, pero solo "
-        "cuotas de apertura — la línea base es blanda y ninguna ventaja medida ahí está probada."
+        "2019/20). Colombia lee un archivo COL.csv con el formato «extra» de football-data, "
+        "que tú armas desde otra fuente (football-data no publica Colombia; ver "
+        "docs/data-sources.md). Se lee como cuotas de apertura — la línea base es blanda y "
+        "ninguna ventaja medida ahí está probada."
     ),
     "fb_forecast_tab": (
         "Un pronóstico para un partido concreto. Las probabilidades del modelo se muestran "

@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from football.downloader import (
+    EXTRA_LEAGUES,
     LEAGUES,
     DownloadError,
     download_extra,
@@ -102,11 +103,25 @@ def test_every_known_league_has_a_name_for_the_error_message():
 
 def test_extra_code_rejected_without_the_flag():
     with pytest.raises(ValueError):
-        parse_leagues("COL")  # extra flag not set
+        parse_leagues("ARG")  # extra flag not set
 
 
 def test_extra_codes_parse_with_the_flag():
-    assert parse_leagues("COL,ARG", extra=True) == ["COL", "ARG"]
+    assert parse_leagues("ARG,BRA", extra=True) == ["ARG", "BRA"]
+
+
+def test_colombia_is_refused_because_football_data_does_not_publish_it():
+    """An earlier version offered COL, which could only ever 404. football-data's
+    extra leagues are sixteen countries and Colombia is not one of them (checked
+    2026-09-30); refusing the code by name, with the known list, is the loud
+    version of that 404."""
+    with pytest.raises(ValueError, match="Unknown extra code"):
+        parse_leagues("COL", extra=True)
+
+
+def test_the_extra_list_is_the_sixteen_football_data_publishes():
+    assert sorted(EXTRA_LEAGUES) == ["ARG", "AUT", "BRA", "CHN", "DNK", "FIN", "IRL", "JPN",
+                                     "MEX", "NOR", "POL", "ROU", "RUS", "SWE", "SWZ", "USA"]
 
 
 # ------------------------------------------------------------------ the guard
@@ -239,16 +254,18 @@ EXTRA_FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "new_COL_sam
 
 
 def test_download_extra_handles_a_real_multi_league_file(tmp_path, monkeypatch):
-    # Every real extra file stacks several leagues (COL = Primera A + Primera B).
-    # The download-time check must validate ONE league, not choke on the file it
-    # exists to fetch. Regression: download_extra used to pass league=None.
+    # An extra file can stack several leagues; the fixture is a contract sample
+    # with two (served here under a real code, since what is being tested is the
+    # multi-league handling, not the country). The download-time check must
+    # validate ONE league, not choke on the file it exists to fetch.
+    # Regression: download_extra used to pass league=None.
     text = open(EXTRA_FIXTURE, encoding="utf-8").read()
     monkeypatch.setattr("football.downloader._fetch_text",
                         lambda url, session=None, **kw: text)
     # The soft-baseline warning fires because the file carries opening odds — pin it.
     with pytest.warns(UserWarning, match="opening"):
-        summary = download_extra(["COL"], out_dir=str(tmp_path), dry_run=True)
-    assert list(summary["code"]) == ["COL"]
+        summary = download_extra(["ARG"], out_dir=str(tmp_path), dry_run=True)
+    assert list(summary["code"]) == ["ARG"]
     assert "Colombia Primera A" in summary.loc[0, "leagues"]
     assert "Colombia Primera B" in summary.loc[0, "leagues"]
     assert not bool(summary.loc[0, "odds_are_closing"])

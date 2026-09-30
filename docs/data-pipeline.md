@@ -336,6 +336,9 @@ Everything above is Baloto's. The other two domains have their own sources, and
 each carries a trap that is invisible in the shape of the frame — the same
 class of problem as [the two eras](#12-two-eras-of-the-game) here.
 
+Step-by-step population of both domains, recipes for any other provider and a
+catalogue of 36 remote sources are in **[Data Sources](data-sources.md)**.
+
 | Domain | Source | Fetched by | The trap |
 | --- | --- | --- | --- |
 | Football | [football-data.co.uk](https://www.football-data.co.uk/) CSVs | `football/downloader.py` ([docs](football.md#5-getting-real-data)) | [Opening odds silently standing in for closing ones](football.md#the-trap-never-mix-opening-and-closing-odds) |
@@ -349,15 +352,18 @@ not a CSV — raises from the first row that shows it.
 
 ### 5.1 Football's "extra" files
 
-football-data.co.uk publishes the rest of the world (Colombia, Argentina,
-Brazil, Mexico, USA, ...) as `new/COL.csv` and siblings, on a **different
-contract** from the main league files:
+football-data.co.uk publishes sixteen leagues outside the main set (Argentina,
+Brazil, Mexico, USA, the Nordic leagues, … — **not Colombia**; the full list is
+in [Data Sources §1.2](data-sources.md#12-the-sixteen-extra-leagues-supported-with-one-open-question))
+as `new/ARG.csv` and siblings, on a **different contract** from the main league
+files. Colombian data, brought in from another provider, is written in the same
+shape ([Data Sources §1.3](data-sources.md#13-colombia)):
 
 | | Main league file | Extra file |
 | --- | --- | --- |
 | Teams / goals | `HomeTeam` / `AwayTeam` / `FTHG` / `FTAG` | `Home` / `Away` / `HG` / `AG` |
 | Scope | one league, one season per file | many leagues **and** seasons stacked, with `League` / `Season` columns |
-| Odds | closing from 2019/20 (`AvgCH`, `B365CH`) | **opening only** (`AvgH` / `PH` / `B365H`) |
+| Odds | closing from 2019/20 (`AvgCH`, `B365CH`) | read as **opening** (`AvgH` / `PH` / `B365H`) — whether the real files carry closing columns instead is [still to be checked](data-sources.md#12-the-sixteen-extra-leagues-supported-with-one-open-question) |
 
 `football/extra_processor.py` owns this contract — `preprocess_extra`,
 `load_extra`, `available_leagues` — and maps it onto the same tidy frame
@@ -371,11 +377,12 @@ enforced hard:
 - **`odds_are_closing` is always `False`.** An extra file can never resolve to
   a closing source; `odds_source` is always an `extra_*_opening` name.
 
-`python -m football.downloader --leagues COL --extra` fetches these (writing
-`exported_data/football/COL.csv` verbatim, validated through `preprocess_extra`
+`python -m football.downloader --leagues ARG --extra` fetches these (writing
+`exported_data/football/ARG.csv` verbatim, validated through `preprocess_extra`
 first); `--seasons` is ignored on that path. Without `--extra` the codes are
-refused by name. **The limit:** opening odds mean the market baseline is the
-soft one, so no corrected edge claim is possible on Colombian data — a model
+refused by name, and `COL` is refused on either path because football-data does
+not publish it. **The limit:** opening odds mean the market baseline is the
+soft one, so no corrected edge claim is possible on a file read this way — a model
 that beats these prices has probably beaten a bookmaker's first guess.
 
 ## 6. The store: a file that can describe itself
